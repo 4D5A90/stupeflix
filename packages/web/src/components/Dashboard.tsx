@@ -1,0 +1,226 @@
+import { useState } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { api } from "../api/client";
+import { ServiceIcon } from "./ui/ServiceIcon";
+
+interface DashboardProps {
+  onReconfigure: () => void;
+}
+
+const SERVICE_LABELS: Record<string, string> = {
+  mediamanager: "MediaManager",
+  jellyfin: "Jellyfin",
+  plex: "Plex",
+  emby: "Emby",
+  transmission: "Transmission",
+  qbittorrent: "qBittorrent",
+};
+
+const statusStyles: Record<string, { dot: string; text: string }> = {
+  running: { dot: "bg-green-500", text: "text-green-400" },
+  exited: { dot: "bg-red-500", text: "text-red-400" },
+  not_found: { dot: "bg-gray-500", text: "text-gray-400" },
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  torrentClient: "Torrent",
+  mediaServer: "Media",
+  mediaManager: "Manager",
+};
+
+export function Dashboard({ onReconfigure }: DashboardProps) {
+  const queryClient = useQueryClient();
+
+  const { data: services, isLoading } = useQuery({
+    queryKey: ["services"],
+    queryFn: api.getServices,
+    refetchInterval: 5000,
+  });
+
+  const { data: templates } = useQuery({
+    queryKey: ["templates"],
+    queryFn: api.getTemplates,
+  });
+
+  const { data: credentials } = useQuery({
+    queryKey: ["credentials"],
+    queryFn: api.getCredentials,
+  });
+
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const copyPassword = (serviceId: string) => {
+    const pass = credentials?.[serviceId]?.pass ?? credentials?.[serviceId]?.password;
+    if (!pass) return;
+    navigator.clipboard.writeText(pass);
+    setCopied(serviceId);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const invalidateTemplates = () => {
+    queryClient.invalidateQueries({ queryKey: ["templates"] });
+    queryClient.invalidateQueries({ queryKey: ["registry"] });
+  };
+
+  const reload = useMutation({
+    mutationFn: api.reloadTemplates,
+    onSuccess: () => {
+      invalidateTemplates();
+      setTimeout(() => reload.reset(), 3000);
+    },
+  });
+
+  const upload = useMutation({
+    mutationFn: api.uploadTemplate,
+    onSuccess: invalidateTemplates,
+  });
+
+  if (isLoading || !services) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+      </div>
+    );
+  }
+
+  const enabledServices = services.filter((s) => s.enabled);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-xl font-semibold mb-2">Services</h2>
+          <p className="text-gray-400 text-sm">
+            Your media stack is running.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onReconfigure}
+          className="px-3 py-1.5 text-sm text-red-400 border border-red-400/30 rounded-lg hover:bg-red-400/10 transition-colors"
+        >
+          Reconfigure
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        {enabledServices.map((service) => {
+          const style = statusStyles[service.status] ?? statusStyles.not_found;
+          const label = SERVICE_LABELS[service.name] ?? service.name;
+          const url = `http://localhost:${service.port}`;
+
+          return (
+            <div
+              key={service.name}
+              className="flex items-center justify-between px-4 py-3 bg-gray-700 rounded-lg"
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-2.5 h-2.5 rounded-full ${style.dot}`} />
+                <span className="text-gray-400">
+                  <ServiceIcon id={service.name} />
+                </span>
+                <span className="text-white font-medium">{label}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                {credentials?.[service.name]?.pass ? (
+                  <button
+                    type="button"
+                    onClick={() => copyPassword(service.name)}
+                    className="p-2 text-gray-400 hover:text-blue-400 transition-colors"
+                    title="Copy credentials"
+                  >
+                    {copied === service.name ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4 text-green-400">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                      </svg>
+                    )}
+                  </button>
+                ) : null}
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 text-gray-400 hover:text-blue-400 transition-colors"
+                  title={`Open ${label}`}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
+                  </svg>
+                </a>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="border-t border-gray-700 pt-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-xl font-semibold">Templates</h2>
+          <div className="flex items-center gap-2">
+            <label
+              className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Add
+              <input
+                type="file"
+                accept=".yml,.yaml"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) upload.mutate(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => reload.mutate()}
+              disabled={reload.isPending}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                className={`w-4 h-4 ${reload.isPending ? "animate-spin" : ""}`}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Reload
+            </button>
+          </div>
+        </div>
+        {templates ? (
+          <div className="flex flex-wrap gap-2">
+            {templates.map((tpl) => (
+              <div
+                key={tpl.id}
+                className="flex items-center gap-2 px-3 py-1.5 bg-gray-700/50 rounded-lg"
+              >
+                <span className="text-gray-400">
+                  <ServiceIcon id={tpl.id} />
+                </span>
+                <span className="text-gray-200 text-sm">{tpl.name}</span>
+                <span className="text-xs text-gray-500">{CATEGORY_LABELS[tpl.category] ?? tpl.category}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {reload.isSuccess ? (
+          <p className="mt-2 text-xs text-green-400">
+            Reloaded {reload.data.count} templates
+          </p>
+        ) : null}
+      </div>
+
+    </div>
+  );
+}

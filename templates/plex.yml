@@ -1,0 +1,11 @@
+id: plex
+name: Plex
+description: Popular, account required
+category: mediaServer
+defaultEnabled: false
+container: plex
+port: 32400
+
+credentials: []
+
+setup: []

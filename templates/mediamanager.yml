@@ -1,0 +1,34 @@
+id: mediamanager
+name: MediaManager
+description: Automated library management
+category: mediaManager
+defaultEnabled: false
+container: mediamanager_server
+port: 8000
+
+credentials:
+  - key: email
+    type: email
+    label: Email
+  - key: pass
+    type: password
+    label: Password
+
+setup:
+  - name: wait_ready
+    label: Wait for MediaManager API
+    type: wait_ready
+    url: http://localhost:8000/api/v1/health
+
+  - name: register_user
+    label: Register admin user
+    type: api_call
+    url: http://localhost:8000/api/v1/auth/register
+    method: POST
+    body:
+      email: "{{credentials.email}}"
+      password: "{{credentials.pass}}"
+      is_active: null
+      is_superuser: null
+      is_verified: null
+    ignoreStatus: [400]

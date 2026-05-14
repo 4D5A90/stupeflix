@@ -1,0 +1,90 @@
+id: jellyfin
+name: Jellyfin
+description: Open source, free
+category: mediaServer
+defaultEnabled: true
+container: jellyfin
+port: 8096
+
+credentials:
+  - key: user
+    type: text
+    label: Username
+    default: admin
+  - key: pass
+    type: password
+    label: Password
+
+setup:
+  - name: wait_ready
+    label: Wait for Jellyfin API
+    type: wait_ready
+    url: http://localhost:8096/System/Info/Public
+
+  - name: set_language
+    label: Set language
+    type: api_call
+    url: http://localhost:8096/Startup/Configuration
+    method: POST
+    body:
+      UICulture: en-US
+      MetadataCountryCode: US
+      PreferredMetadataLanguage: en
+
+  - name: get_user
+    label: Get startup user
+    type: api_call
+    url: http://localhost:8096/Startup/User
+    method: GET
+
+  - name: create_user
+    label: Create admin user
+    type: api_call
+    url: http://localhost:8096/Startup/User
+    method: POST
+    body:
+      Name: "{{credentials.user}}"
+      Password: "{{credentials.pass}}"
+
+  - name: add_movies_library
+    label: Add Movies library
+    type: api_call
+    url: http://localhost:8096/Library/VirtualFolders?name=Movies&collectionType=movies&paths=/media/Movies&refreshLibrary=false
+    method: POST
+    body:
+      LibraryOptions:
+        EnableRealtimeMonitor: true
+
+  - name: add_tvshows_library
+    label: Add TV Shows library
+    type: api_call
+    url: http://localhost:8096/Library/VirtualFolders?name=TvShows&collectionType=tvshows&paths=/media/TvShows&refreshLibrary=false
+    method: POST
+    body:
+      LibraryOptions:
+        EnableRealtimeMonitor: true
+
+  - name: complete_wizard
+    label: Complete setup wizard
+    type: api_call
+    url: http://localhost:8096/Startup/Complete
+    method: POST
+
+  - name: login
+    label: Login
+    type: api_call
+    url: http://localhost:8096/Users/AuthenticateByName
+    method: POST
+    headers:
+      Authorization: 'MediaBrowser Client="Stupeflix", Device="Server", DeviceId="stupeflix-setup", Version="1.0.0"'
+    storeToken: AccessToken
+    body:
+      Username: "{{credentials.user}}"
+      Pw: "{{credentials.pass}}"
+
+  - name: scan_libraries
+    label: Scan libraries
+    type: api_call
+    url: http://localhost:8096/Library/Refresh
+    method: POST
+    useToken: true

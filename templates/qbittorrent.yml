@@ -1,0 +1,100 @@
+id: qbittorrent
+name: qBittorrent
+description: Pre-configured Movies/TvShows categories
+category: torrentClient
+defaultEnabled: true
+container: qbittorrent
+port: 8080
+
+credentials:
+  - key: user
+    type: text
+    label: Username
+    default: admin
+  - key: pass
+    type: password
+    label: Password
+    rules:
+      minLength: 6
+      message: Must be at least 6 characters
+
+setup:
+  - name: config
+    label: Write config file
+    type: config_file
+
+  - name: wait_ready
+    label: Wait for qBittorrent API
+    type: wait_ready
+    url: http://localhost:8080/api/v2/app/version
+
+  - name: extract_temp_pass
+    label: Extract temporary password
+    type: extract_from_logs
+    container: qbittorrent
+    regex: "A temporary password is provided for this session: (\\S+)"
+    storeAs: temp_pass
+
+  - name: login
+    label: Login with temporary password
+    type: api_call
+    url: http://localhost:8080/api/v2/auth/login
+    method: POST
+    contentType: form
+    storeCookie: true
+    body:
+      username: admin
+      password: "{{internal.temp_pass}}"
+
+  - name: set_credentials
+    label: Set credentials
+    type: api_call
+    url: http://localhost:8080/api/v2/app/setPreferences
+    method: POST
+    contentType: form
+    useCookie: true
+    body:
+      json: '{"web_ui_username":"{{credentials.user}}","web_ui_password":"{{credentials.pass}}"}'
+
+  - name: login_new_creds
+    label: Login with new credentials
+    type: api_call
+    url: http://localhost:8080/api/v2/auth/login
+    method: POST
+    contentType: form
+    storeCookie: true
+    body:
+      username: "{{credentials.user}}"
+      password: "{{credentials.pass}}"
+
+  - name: set_auto_tmm
+    label: Enable automatic torrent management
+    type: api_call
+    url: http://localhost:8080/api/v2/app/setPreferences
+    method: POST
+    contentType: form
+    useCookie: true
+    body:
+      json: '{"auto_tmm_enabled":true,"torrent_changed_tmm_enabled":true,"save_path_changed_tmm_enabled":true,"category_changed_tmm_enabled":true}'
+
+  - name: add_movies_category
+    label: Add Movies category
+    type: api_call
+    url: http://localhost:8080/api/v2/torrents/createCategory
+    method: POST
+    contentType: form
+    useCookie: true
+    body:
+      category: Movies
+      savePath: /media/Movies
+
+  - name: add_tvshows_category
+    label: Add TvShows category
+    type: api_call
+    url: http://localhost:8080/api/v2/torrents/createCategory
+    method: POST
+    contentType: form
+    useCookie: true
+    body:
+      category: TvShows
+      savePath: /media/TvShows

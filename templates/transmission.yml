@@ -1,0 +1,21 @@
+id: transmission
+name: Transmission
+description: Lightweight client with Flood UI
+category: torrentClient
+defaultEnabled: false
+container: transmission
+port: 9091
+
+credentials:
+  - key: user
+    type: text
+    label: Username
+    default: admin
+  - key: pass
+    type: password
+    label: Password
+
+setup:
+  - name: config
+    label: Configure Transmission
+    type: config_file
