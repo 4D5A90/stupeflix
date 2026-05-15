@@ -124,6 +124,12 @@ function Recap({ registry, config }: { registry: ServiceMeta[]; config: SetupCon
 					<p className="text-gray-400">
 						Media: <span className="text-gray-100">{config.paths.media}</span>
 					</p>
+					{config.libraries.map((lib, i) => (
+						<p key={lib.name} className="text-gray-500 text-xs ml-4">
+							{i < config.libraries.length - 1 ? "├── " : "└── "}
+							<span className="text-gray-300">{lib.name}/</span>
+						</p>
+					))}
 					<p className="text-gray-400">
 						Torrents: <span className="text-gray-100">{config.paths.torrents}</span>
 					</p>
