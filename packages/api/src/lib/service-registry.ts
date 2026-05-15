@@ -300,18 +300,25 @@ export async function runSetupStep(
 			}
 			const configPath = db.get("paths.config") as string;
 			const filePath = join(configPath, step.file);
-			try {
-				const content = readFileSync(filePath, "utf-8");
-				const match = content.match(new RegExp(step.regex));
-				if (!match?.[1]) {
-					return `Pattern not found in ${step.file}: ${step.regex}`;
+			const maxAttempts = step.maxRetries ?? 15;
+			for (let attempt = 0; attempt <= maxAttempts; attempt++) {
+				try {
+					const content = readFileSync(filePath, "utf-8");
+					const match = content.match(new RegExp(step.regex));
+					if (match?.[1]) {
+						db.set(`internal.${serviceId}.${step.storeAs}`, match[1]);
+						debug(`Extracted ${step.storeAs} from ${step.file}`);
+						return null;
+					}
+				} catch {
+					// file not ready yet
 				}
-				db.set(`internal.${serviceId}.${step.storeAs}`, match[1]);
-				debug(`Extracted ${step.storeAs} from ${step.file}`);
-				return null;
-			} catch (e) {
-				return `Failed to read ${step.file}: ${e instanceof Error ? e.message : e}`;
+				if (attempt < maxAttempts) {
+					debug(`Waiting for ${step.file} (${attempt + 1}/${maxAttempts})...`);
+					await new Promise((r) => setTimeout(r, 3000));
+				}
 			}
+			return `Pattern not found in ${step.file} after ${maxAttempts} attempts`;
 		}
 
 		default:
