@@ -1,6 +1,5 @@
 import { useCallback, useEffect } from "react";
 import { RadioGroup } from "../ui/RadioGroup";
-import { Accordion } from "../ui/Accordion";
 import { Button } from "../ui/Button";
 import type { SetupConfig, ServiceMeta } from "../../types/setup";
 import { isSingleSelect } from "../../types/setup";
@@ -72,74 +71,90 @@ export function ServicesStep({
         </p>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {[...categories.entries()].map(([category, services]) => {
           const label = CATEGORY_LABELS[category] ?? category;
           const single = isSingleSelect(category);
-
-          if (single) {
-            const selected = services.find((s) => config.services[s.id]?.enabled);
-            const selectedName = selected?.name ?? "";
-            const options = services.map((s) => ({
-              value: s.id,
-              label: s.name,
-              description: s.description,
-            }));
-
-            return (
-              <Accordion key={category} label={label} summary={selectedName}>
-                <RadioGroup
-                  label=""
-                  options={options}
-                  value={selected?.id ?? ""}
-                  onChange={(v) => selectSingle(category, v)}
-                />
-              </Accordion>
-            );
-          }
-
-          // Multi-select: toggles
-          const enabledNames = services
-            .filter((s) => config.services[s.id]?.enabled)
-            .map((s) => s.name)
-            .join(", ");
+          const enabledServices = services.filter((s) => config.services[s.id]?.enabled);
+          const hasSelection = enabledServices.length > 0;
 
           return (
-            <Accordion key={category} label={label} summary={enabledNames}>
-              <div className="space-y-2">
-                {services.map((svc) => {
-                  const enabled = config.services[svc.id]?.enabled ?? false;
+            <CategorySection key={category} label={label} hasSelection={hasSelection}>
+              {(open) => {
+                if (!open) {
                   return (
-                    <button
-                      key={svc.id}
-                      type="button"
-                      onClick={() => toggleService(svc.id, !enabled)}
-                      className={`flex items-center justify-between w-full px-4 py-3 rounded-lg text-left transition-colors ${
-                        enabled
-                          ? "bg-blue-600/20 border border-blue-500"
-                          : "bg-gray-700 border border-transparent hover:bg-gray-600"
-                      }`}
-                    >
-                      <div>
-                        <span className="text-gray-100">{svc.name}</span>
-                        <p className="text-gray-400 text-sm">{svc.description}</p>
-                      </div>
-                      <div
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          enabled ? "bg-blue-600" : "bg-gray-600"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            enabled ? "translate-x-6" : "translate-x-1"
-                          }`}
-                        />
-                      </div>
-                    </button>
+                    <div className="flex flex-wrap gap-1.5">
+                      {hasSelection ? (
+                        enabledServices.map((s) => (
+                          <span
+                            key={s.id}
+                            className="px-2 py-0.5 text-xs bg-blue-600/20 text-blue-300 border border-blue-500/30 rounded"
+                          >
+                            {s.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-gray-600 italic">None selected</span>
+                      )}
+                    </div>
                   );
-                })}
-              </div>
-            </Accordion>
+                }
+
+                if (single) {
+                  const selected = enabledServices[0];
+                  return (
+                    <div className="mt-3">
+                      <RadioGroup
+                        label=""
+                        options={services.map((s) => ({
+                          value: s.id,
+                          label: s.name,
+                          description: s.description,
+                        }))}
+                        value={selected?.id ?? ""}
+                        onChange={(v) => selectSingle(category, v)}
+                      />
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="mt-3 space-y-2">
+                    {services.map((svc) => {
+                      const enabled = config.services[svc.id]?.enabled ?? false;
+                      return (
+                        <button
+                          key={svc.id}
+                          type="button"
+                          onClick={() => toggleService(svc.id, !enabled)}
+                          className={`flex items-center justify-between w-full px-4 py-3 rounded-lg text-left transition-colors ${
+                            enabled
+                              ? "bg-blue-600/20 border border-blue-500"
+                              : "bg-gray-700 border border-transparent hover:bg-gray-600"
+                          }`}
+                        >
+                          <div>
+                            <span className="text-gray-100">{svc.name}</span>
+                            <p className="text-gray-400 text-sm">{svc.description}</p>
+                          </div>
+                          <div
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              enabled ? "bg-blue-600" : "bg-gray-600"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                enabled ? "translate-x-6" : "translate-x-1"
+                              }`}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              }}
+            </CategorySection>
           );
         })}
       </div>
@@ -150,6 +165,53 @@ export function ServicesStep({
         </Button>
         <Button onClick={onNext}>Next</Button>
       </div>
+    </div>
+  );
+}
+
+import { useState, type ReactNode } from "react";
+
+function CategorySection({
+  label,
+  hasSelection,
+  children,
+}: {
+  label: string;
+  hasSelection: boolean;
+  children: (open: boolean) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className={`p-4 rounded-xl border transition-colors ${
+        hasSelection
+          ? "bg-gray-800/50 border-blue-500/30"
+          : "bg-gray-800/30 border-gray-700"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center justify-between w-full text-left"
+      >
+        <span className="flex items-center gap-2">
+          <span className="text-gray-200 font-medium">{label}</span>
+          {hasSelection ? (
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+          ) : null}
+        </span>
+        <svg
+          className={`w-4 h-4 text-gray-500 transition-transform shrink-0 ${open ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {!open ? <div className="mt-2">{children(false)}</div> : children(true)}
     </div>
   );
 }
