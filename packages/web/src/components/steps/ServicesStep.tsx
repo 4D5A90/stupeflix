@@ -192,11 +192,12 @@ function CategorySection({
         hasSelection
           ? "bg-gray-800/50 border-blue-500/30"
           : "bg-gray-800/30 border-gray-700"
-      }`}
+      } ${!open ? "cursor-pointer" : ""}`}
+      onClick={!open ? () => setOpen(true) : undefined}
     >
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
         className="flex items-center justify-between w-full text-left"
       >
         <span className="flex items-center gap-2">

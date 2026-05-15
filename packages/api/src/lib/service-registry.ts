@@ -19,6 +19,7 @@ export interface CredentialField {
 	type: "text" | "password" | "email";
 	label: string;
 	default?: string;
+	required?: boolean;
 	rules?: FieldRules;
 }
 
@@ -213,7 +214,11 @@ export async function runSetupStep(
 			const maxRetries = step.maxRetries ?? 10;
 			for (let attempt = 0; attempt <= maxRetries; attempt++) {
 				try {
-					const headers: Record<string, string> = { ...step.headers };
+					const headers: Record<string, string> = step.headers
+						? Object.fromEntries(
+								Object.entries(step.headers).map(([k, v]) => [k, resolveTemplateVars(v, vars) as string]),
+							)
+						: {};
 					if (contentType) headers["Content-Type"] = contentType;
 					if (step.useCookie) {
 						const cookie = db.get(`internal.${serviceId}.cookie`) as string;
@@ -223,6 +228,7 @@ export async function runSetupStep(
 						const token = db.get(`internal.${serviceId}.token`) as string;
 						if (token) headers.Authorization = `MediaBrowser Token="${token}"`;
 					}
+					debug(`${method} ${url}`, { headers, hasBody: !!body });
 					const res = await fetch(url, { method, headers, body });
 					if (step.storeCookie) {
 						const cookie = res.headers.get("set-cookie");

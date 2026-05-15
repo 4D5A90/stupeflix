@@ -69,7 +69,9 @@ export function CredentialsStep({
   );
 
   const allFilled = enabledWithCreds.every((svc) =>
-    svc.credentials.every((f) => config.credentials[svc.id]?.[f.key]),
+    svc.credentials.every((f) =>
+      f.required === false || config.credentials[svc.id]?.[f.key],
+    ),
   );
 
   const canProceed = allFilled && !hasErrors;

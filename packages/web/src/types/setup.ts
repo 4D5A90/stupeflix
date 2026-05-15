@@ -10,6 +10,7 @@ export interface CredentialField {
   type: "text" | "password" | "email";
   label: string;
   default?: string;
+  required?: boolean;
   rules?: FieldRules;
 }
 
