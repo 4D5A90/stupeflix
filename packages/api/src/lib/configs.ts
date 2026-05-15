@@ -7,14 +7,15 @@ import { debug, error, log } from "./logger.js";
 const MEDIAMANAGER_CONFIG_URL =
 	"https://raw.githubusercontent.com/maxdorninger/MediaManager/master/config.example.toml";
 
-const MEDIA_DIRS = ["Movies", "TvShows"];
-
 export function generateConfigs(db: Db): void {
 	const s = db.all();
 	const configPath = s["paths.config"] as string;
 	const mediaPath = s["paths.media"] as string;
 
-	createMediaDirs(mediaPath);
+	const libraries: Array<{ name: string }> = JSON.parse(
+		(s.libraries as string) || '[{"name":"Movies"},{"name":"TvShows"}]',
+	);
+	createMediaDirs(mediaPath, libraries);
 
 	if (s["services.transmission.enabled"]) {
 		configureTransmission(db, configPath);
@@ -29,9 +30,9 @@ export function generateConfigs(db: Db): void {
 	}
 }
 
-function createMediaDirs(mediaPath: string): void {
-	for (const dir of MEDIA_DIRS) {
-		mkdirSync(`${mediaPath}/${dir}`, { recursive: true });
+function createMediaDirs(mediaPath: string, libraries: Array<{ name: string }>): void {
+	for (const lib of libraries) {
+		mkdirSync(`${mediaPath}/${lib.name}`, { recursive: true });
 	}
 	log("Media directories created");
 }

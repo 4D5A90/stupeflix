@@ -17,12 +17,25 @@ function setStatus(db: Db, step: string, status: StepStatus) {
 	db.set(`setup.status.${step}`, status);
 }
 
+function getLibraries(db: Db): Array<{ name: string; type: string }> {
+	const raw = db.get("libraries") as string;
+	if (!raw) return [{ name: "Movies", type: "movies" }, { name: "TvShows", type: "tvshows" }];
+	return JSON.parse(raw);
+}
+
 function getSteps(db: Db): string[] {
 	const steps = ["compose", "containers"];
+	const libraries = getLibraries(db);
 	for (const tpl of getTemplates()) {
 		if (!db.get(`services.${tpl.id}.enabled`)) continue;
 		for (const step of tpl.setup) {
-			steps.push(`${tpl.id}.${step.name}`);
+			if (step.foreach === "libraries") {
+				for (const lib of libraries) {
+					steps.push(`${tpl.id}.${step.name}_${lib.name}`);
+				}
+			} else {
+				steps.push(`${tpl.id}.${step.name}`);
+			}
 		}
 	}
 	return steps;
@@ -81,20 +94,47 @@ async function runSetup(db: Db) {
 		setStatus(db, "containers", "completed");
 
 		// Run per-service setup steps from templates
+		const libraries = getLibraries(db);
 		for (const tpl of getTemplates()) {
 			if (!db.get(`services.${tpl.id}.enabled`)) continue;
 			for (const step of tpl.setup) {
-				const stepKey = `${tpl.id}.${step.name}`;
-				setStatus(db, stepKey, "in_progress");
-				log(`Running ${step.label}...`);
+				if (step.foreach === "libraries") {
+					for (const lib of libraries) {
+						const stepKey = `${tpl.id}.${step.name}_${lib.name}`;
+						setStatus(db, stepKey, "in_progress");
+						log(`Running ${step.label} (${lib.name})...`);
 
-				const err = await runSetupStep(step, db, tpl.id);
-				if (err) {
-					throw new Error(`${step.label}: ${err}`);
+						const libVars: Record<string, string> = {
+							"library.name": lib.name,
+							"library.type": lib.type,
+						};
+						const mapped = step.typeMap?.[lib.type];
+						if (mapped) {
+							for (const [k, v] of Object.entries(mapped)) {
+								libVars[`library.${k}`] = v;
+							}
+						}
+						const err = await runSetupStep(step, db, tpl.id, libVars);
+						if (err) {
+							throw new Error(`${step.label} (${lib.name}): ${err}`);
+						}
+
+						setStatus(db, stepKey, "completed");
+						log(`${step.label} (${lib.name}) completed`);
+					}
+				} else {
+					const stepKey = `${tpl.id}.${step.name}`;
+					setStatus(db, stepKey, "in_progress");
+					log(`Running ${step.label}...`);
+
+					const err = await runSetupStep(step, db, tpl.id);
+					if (err) {
+						throw new Error(`${step.label}: ${err}`);
+					}
+
+					setStatus(db, stepKey, "completed");
+					log(`${step.label} completed`);
 				}
-
-				setStatus(db, stepKey, "completed");
-				log(`${step.label} completed`);
 			}
 		}
 
@@ -115,6 +155,10 @@ function applyPaths(
 	db.set("paths.config", paths.config);
 	db.set("paths.media", paths.media);
 	db.set("paths.torrents", paths.torrents);
+}
+
+function applyLibraries(db: Db, libraries: Array<{ name: string; type: string }>) {
+	db.set("libraries", JSON.stringify(libraries));
 }
 
 function applyCredentials(
@@ -156,6 +200,7 @@ export function setupRoutes(db: Db) {
 		const body = await c.req.json().catch(() => ({}));
 
 		if (body.paths) applyPaths(db, body.paths);
+		if (body.libraries) applyLibraries(db, body.libraries);
 		if (body.credentials) applyCredentials(db, body.credentials);
 		if (body.services) applyServices(db, body.services);
 

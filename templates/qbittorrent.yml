@@ -77,24 +77,14 @@ setup:
     body:
       json: '{"auto_tmm_enabled":true,"torrent_changed_tmm_enabled":true,"save_path_changed_tmm_enabled":true,"category_changed_tmm_enabled":true}'
 
-  - name: add_movies_category
-    label: Add Movies category
+  - name: add_category
+    label: Add category
     type: api_call
+    foreach: libraries
     url: http://localhost:8080/api/v2/torrents/createCategory
     method: POST
     contentType: form
     useCookie: true
     body:
-      category: Movies
-      savePath: /media/Movies
-
-  - name: add_tvshows_category
-    label: Add TvShows category
-    type: api_call
-    url: http://localhost:8080/api/v2/torrents/createCategory
-    method: POST
-    contentType: form
-    useCookie: true
-    body:
-      category: TvShows
-      savePath: /media/TvShows
+      category: "{{library.name}}"
+      savePath: "/media/{{library.name}}"

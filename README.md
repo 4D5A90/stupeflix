@@ -6,7 +6,7 @@ Self-hosted media stack orchestrator with a web-based setup wizard.
 
 ## Prerequisites
 
-- Node.jss
+- Node.js
 - pnpm (`npm install --global pnpm`)
 - Docker & Docker Compose
 
@@ -21,27 +21,36 @@ Open `http://localhost:5173` and follow the setup wizard.
 
 ## How it Works
 
-1. **Paths** — Choose where to store config, media, and torrents
-2. **Services** — Pick a torrent client, media server, and optional services
+1. **Paths** — Choose where to store config, media, and torrents. Define media libraries (Movies, TvShows, Anime, etc.)
+2. **Services** — Pick a torrent client, one or more media servers, and optional services
 3. **Credentials** — Set usernames and passwords (auto-generate available)
 4. **Setup** — Review and launch. Stupeflix generates `docker-compose.yml`, starts containers, and configures each service automatically
 
 ## Services
 
-| Service | Port | Category |
-|---------|------|----------|
-| Jellyfin | 8096 | Media Server |
-| Plex | 32400 | Media Server |
-| Emby | 8096 | Media Server |
-| qBittorrent | 8080 | Torrent Client |
-| Transmission | 9091 | Torrent Client |
-| MediaManager | 8000 | Media Manager |
+| Service | Port | Category | Multi-select |
+|---------|------|----------|:---:|
+| Jellyfin | 8096 | Media Server | Yes |
+| Plex | 32400 | Media Server | Yes |
+| Emby | 8096 | Media Server | Yes |
+| qBittorrent | 8080 | Torrent Client | No |
+| Transmission | 9091 | Torrent Client | No |
+| MediaManager | 8000 | Media Manager | Yes |
 
-Services are defined as YAML templates in `templates/`. Add new services by dropping a `.yml` file — no code changes needed.
+Media servers can be enabled simultaneously. Torrent client is single-select.
+
+## Media Libraries
+
+Libraries are defined in the first step of the wizard (under Media Path). Each library has a name and a type (`movies`, `tvshows`, or `music`). Default: Movies + TvShows.
+
+During setup, Stupeflix automatically:
+- Creates the folders on disk
+- Creates matching libraries in each enabled media server (Jellyfin, Plex, etc.)
+- Creates matching download categories in the torrent client (qBittorrent, etc.)
 
 ## Service Templates
 
-Each service is declared in a YAML file:
+Services are defined as YAML files in `templates/`. Add new services by dropping a `.yml` file — no code changes needed.
 
 ```yaml
 id: myservice
@@ -84,13 +93,68 @@ setup:
 | Type | Description |
 |------|-------------|
 | `wait_ready` | Poll a URL until the service responds |
-| `api_call` | HTTP request with template variables, retry, cookies, tokens |
+| `api_call` | HTTP request with retry, cookies, tokens, custom headers |
 | `config_file` | Handled by imperative code in `configs.ts` |
 | `extract_from_logs` | Extract a value from container logs via regex |
+| `extract_from_config` | Extract a value from a config file via regex |
 
 ### Template variables
 
-Use `{{credentials.key}}` to reference credential values and `{{internal.key}}` for values stored by previous steps (e.g., extracted tokens).
+| Variable | Source |
+|----------|--------|
+| `{{credentials.key}}` | Credential values from the wizard |
+| `{{internal.key}}` | Values stored by previous steps (tokens, passwords) |
+| `{{library.name}}` | Library folder name (in `foreach: libraries` steps) |
+| `{{library.type}}` | Library type: `movies`, `tvshows`, `music` |
+
+### `foreach: libraries`
+
+Steps with `foreach: libraries` are expanded once per media library. Use `typeMap` to map standard library types to service-specific values:
+
+```yaml
+- name: add_library
+  type: api_call
+  foreach: libraries
+  typeMap:
+    movies:
+      content_type: movie
+      agent: tv.plex.agents.movie
+    tvshows:
+      content_type: show
+      agent: tv.plex.agents.series
+  url: http://localhost:32400/library/sections?type={{library.content_type}}&agent={{library.agent}}
+  method: POST
+```
+
+Mapped values are injected as `{{library.key}}`.
+
+### `api_call` options
+
+| Option | Description |
+|--------|-------------|
+| `contentType: form` | Send body as `application/x-www-form-urlencoded` |
+| `storeCookie: true` | Save response cookie for subsequent calls |
+| `useCookie: true` | Send stored cookie |
+| `storeToken: AccessToken` | Extract a JSON field from response and store as token |
+| `useToken: true` | Send stored token as `Authorization` header |
+| `headers: {}` | Custom request headers |
+| `retryOn: [503]` | Retry on specific status codes (default: `[503]`) |
+| `maxRetries: 10` | Max retry attempts (default: `10`) |
+| `ignoreStatus: [400]` | Treat these status codes as success |
+
+### Credential field rules
+
+```yaml
+credentials:
+  - key: pass
+    type: password
+    label: Password
+    rules:
+      minLength: 6
+      maxLength: 50
+      pattern: "^[a-zA-Z0-9]+$"
+      message: Custom error message
+```
 
 ## API
 

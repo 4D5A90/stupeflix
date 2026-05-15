@@ -1,6 +1,3 @@
-export type TorrentClient = "transmission" | "qbittorrent";
-export type MediaServer = "jellyfin" | "plex" | "emby";
-
 export interface FieldRules {
   minLength?: number;
   maxLength?: number;
@@ -25,44 +22,22 @@ export interface ServiceMeta {
   credentials: CredentialField[];
 }
 
-export interface ServiceCategories {
-  torrentClient: TorrentClient;
-  mediaServer: MediaServer;
-  mediamanager: boolean;
+// Categories where only one service can be selected
+const SINGLE_SELECT_CATEGORIES = ["torrentClient"];
+
+export function isSingleSelect(category: string): boolean {
+  return SINGLE_SELECT_CATEGORIES.includes(category);
 }
 
-export function categoriesToServices(
-  registry: ServiceMeta[],
-  cats: ServiceCategories,
-): Record<string, { enabled: boolean }> {
-  const result: Record<string, { enabled: boolean }> = {};
-  for (const svc of registry) {
-    if (svc.category === "torrentClient") {
-      result[svc.id] = { enabled: cats.torrentClient === svc.id };
-    } else if (svc.category === "mediaServer") {
-      result[svc.id] = { enabled: cats.mediaServer === svc.id };
-    } else if (svc.category === "mediaManager") {
-      result[svc.id] = { enabled: cats.mediamanager };
-    }
-  }
-  return result;
+export interface Library {
+  name: string;
+  type: "movies" | "tvshows" | "music";
 }
 
-export function servicesToCategories(
-  services: Record<string, { enabled: boolean }>,
-): ServiceCategories {
-  return {
-    torrentClient: services.qbittorrent?.enabled
-      ? "qbittorrent"
-      : "transmission",
-    mediaServer: services.plex?.enabled
-      ? "plex"
-      : services.emby?.enabled
-        ? "emby"
-        : "jellyfin",
-    mediamanager: services.mediamanager?.enabled ?? false,
-  };
-}
+export const DEFAULT_LIBRARIES: Library[] = [
+  { name: "Movies", type: "movies" },
+  { name: "TvShows", type: "tvshows" },
+];
 
 export interface SetupConfig {
   paths: {
@@ -70,6 +45,7 @@ export interface SetupConfig {
     media: string;
     torrents: string;
   };
+  libraries: Library[];
   credentials: Record<string, Record<string, string>>;
   services: Record<string, { enabled: boolean }>;
 }
@@ -96,5 +72,5 @@ export function buildDefaultConfig(registry: ServiceMeta[]): SetupConfig {
       }
     }
   }
-  return { paths: { config: "", media: "", torrents: "" }, credentials, services };
+  return { paths: { config: "", media: "", torrents: "" }, libraries: [...DEFAULT_LIBRARIES], credentials, services };
 }

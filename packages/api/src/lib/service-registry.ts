@@ -25,7 +25,7 @@ export interface CredentialField {
 export interface SetupStepDef {
 	name: string;
 	label: string;
-	type: "config_file" | "api_call" | "wait_ready" | "extract_from_logs";
+	type: "config_file" | "api_call" | "wait_ready" | "extract_from_logs" | "extract_from_config";
 	url?: string;
 	method?: string;
 	headers?: Record<string, string>;
@@ -35,10 +35,13 @@ export interface SetupStepDef {
 	useCookie?: boolean;
 	storeToken?: string;
 	useToken?: boolean;
+	foreach?: string;
+	typeMap?: Record<string, Record<string, string>>;
 	retryOn?: number[];
 	maxRetries?: number;
 	ignoreStatus?: number[];
 	container?: string;
+	file?: string;
 	regex?: string;
 	storeAs?: string;
 }
@@ -173,10 +176,11 @@ export async function runSetupStep(
 	step: SetupStepDef,
 	db: Db,
 	serviceId: string,
+	extraVars?: Record<string, string>,
 ): Promise<string | null> {
-	const vars = buildVars(db, serviceId);
+	const vars = { ...buildVars(db, serviceId), ...extraVars };
 	// Force IPv4 — containers listen on 0.0.0.0, but localhost may resolve to ::1
-	const url = step.url?.replace("://localhost", "://127.0.0.1");
+	const url = (resolveTemplateVars(step.url ?? "", vars) as string).replace("://localhost", "://127.0.0.1") || undefined;
 
 	switch (step.type) {
 		case "wait_ready": {
@@ -287,6 +291,26 @@ export async function runSetupStep(
 				return null;
 			} catch (e) {
 				return `Failed to read ${step.container} logs: ${e instanceof Error ? e.message : e}`;
+			}
+		}
+
+		case "extract_from_config": {
+			if (!step.file || !step.regex || !step.storeAs) {
+				return "extract_from_config requires file, regex, and storeAs";
+			}
+			const configPath = db.get("paths.config") as string;
+			const filePath = join(configPath, step.file);
+			try {
+				const content = readFileSync(filePath, "utf-8");
+				const match = content.match(new RegExp(step.regex));
+				if (!match?.[1]) {
+					return `Pattern not found in ${step.file}: ${step.regex}`;
+				}
+				db.set(`internal.${serviceId}.${step.storeAs}`, match[1]);
+				debug(`Extracted ${step.storeAs} from ${step.file}`);
+				return null;
+			} catch (e) {
+				return `Failed to read ${step.file}: ${e instanceof Error ? e.message : e}`;
 			}
 		}
 

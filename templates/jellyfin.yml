@@ -46,19 +46,11 @@ setup:
       Name: "{{credentials.user}}"
       Password: "{{credentials.pass}}"
 
-  - name: add_movies_library
-    label: Add Movies library
+  - name: add_library
+    label: Add library
     type: api_call
-    url: http://localhost:8096/Library/VirtualFolders?name=Movies&collectionType=movies&paths=/media/Movies&refreshLibrary=false
-    method: POST
-    body:
-      LibraryOptions:
-        EnableRealtimeMonitor: true
-
-  - name: add_tvshows_library
-    label: Add TV Shows library
-    type: api_call
-    url: http://localhost:8096/Library/VirtualFolders?name=TvShows&collectionType=tvshows&paths=/media/TvShows&refreshLibrary=false
+    foreach: libraries
+    url: http://localhost:8096/Library/VirtualFolders?name={{library.name}}&collectionType={{library.type}}&paths=/media/{{library.name}}&refreshLibrary=false
     method: POST
     body:
       LibraryOptions:

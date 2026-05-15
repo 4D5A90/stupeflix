@@ -6,6 +6,46 @@ defaultEnabled: false
 container: plex
 port: 32400
 
-credentials: []
+credentials:
+  - key: claim
+    type: text
+    label: Claim Token (plex.tv/claim)
 
-setup: []
+setup:
+  - name: wait_ready
+    label: Wait for Plex API
+    type: wait_ready
+    url: http://localhost:32400/identity
+
+  - name: extract_token
+    label: Extract server token
+    type: extract_from_config
+    file: plex/Library/Application Support/Plex Media Server/Preferences.xml
+    regex: 'PlexOnlineToken="([^"]+)"'
+    storeAs: token
+
+  - name: add_library
+    label: Add library
+    type: api_call
+    foreach: libraries
+    typeMap:
+      movies:
+        content_type: movie
+        agent: tv.plex.agents.movie
+        scanner: Plex Movie
+      tvshows:
+        content_type: show
+        agent: tv.plex.agents.series
+        scanner: Plex Series
+      music:
+        content_type: artist
+        agent: tv.plex.agents.music
+        scanner: Plex Music
+    url: http://localhost:32400/library/sections?name={{library.name}}&type={{library.content_type}}&agent={{library.agent}}&scanner={{library.scanner}}&language=en&location=/media/{{library.name}}&X-Plex-Token={{internal.token}}
+    method: POST
+
+  - name: scan_libraries
+    label: Scan libraries
+    type: api_call
+    url: http://localhost:32400/library/sections/all/refresh?X-Plex-Token={{internal.token}}
+    method: GET

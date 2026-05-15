@@ -66,6 +66,7 @@ export function generateCompose(db: Db): string {
 	}
 
 	if (s["services.plex.enabled"]) {
+		const plexClaim = s["credentials.plex.claim"] as string;
 		services.plex = {
 			image: "linuxserver/plex:latest",
 			container_name: "plex",
@@ -74,6 +75,7 @@ export function generateCompose(db: Db): string {
 				`PGID=${PGID}`,
 				"TZ=Europe/Paris",
 				"VERSION=docker",
+				...(plexClaim ? [`PLEX_CLAIM=${plexClaim}`] : []),
 			],
 			volumes: [
 				`${s["paths.config"]}/plex:/config`,
