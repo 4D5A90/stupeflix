@@ -54,13 +54,17 @@ export function ServicesStep({
     onChange({ ...config, services: updated });
   };
 
-  // Group services by category
-  const categories = new Map<string, ServiceMeta[]>();
+  // Group services by category in display order
+  const CATEGORY_ORDER = ["torrentClient", "mediaServer", "mediaManager"];
+  const categoryMap = new Map<string, ServiceMeta[]>();
   for (const svc of registry) {
-    const list = categories.get(svc.category) ?? [];
+    const list = categoryMap.get(svc.category) ?? [];
     list.push(svc);
-    categories.set(svc.category, list);
+    categoryMap.set(svc.category, list);
   }
+  const categories = [...categoryMap.entries()].sort(
+    ([a], [b]) => (CATEGORY_ORDER.indexOf(a) === -1 ? 99 : CATEGORY_ORDER.indexOf(a)) - (CATEGORY_ORDER.indexOf(b) === -1 ? 99 : CATEGORY_ORDER.indexOf(b)),
+  );
 
   return (
     <div className="space-y-6">
@@ -72,7 +76,7 @@ export function ServicesStep({
       </div>
 
       <div className="space-y-3">
-        {[...categories.entries()].map(([category, services]) => {
+        {categories.map(([category, services]) => {
           const label = CATEGORY_LABELS[category] ?? category;
           const single = isSingleSelect(category);
           const enabledServices = services.filter((s) => config.services[s.id]?.enabled);
@@ -130,7 +134,7 @@ export function ServicesStep({
                           className={`flex items-center justify-between w-full px-4 py-3 rounded-lg text-left transition-colors ${
                             enabled
                               ? "bg-blue-600/20 border border-blue-500"
-                              : "bg-gray-700 border border-transparent hover:bg-gray-600"
+                              : "bg-gray-700 border border-transparent hover:bg-gray-700/70"
                           }`}
                         >
                           <div>
