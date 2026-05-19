@@ -57,6 +57,21 @@ export function Dashboard({ onReconfigure }: DashboardProps) {
     setTimeout(() => setCopied(null), 2000);
   };
 
+  const SCANNABLE = ["jellyfin", "plex", "emby"];
+  const [scanned, setScanned] = useState<string | null>(null);
+
+  const [scanning, setScanning] = useState<string | null>(null);
+
+  const scanLibrary = (name: string) => {
+    setScanning(name);
+    const minSpin = new Promise((r) => setTimeout(r, 1000));
+    Promise.all([api.scanLibrary(name), minSpin]).then(() => {
+      setScanning(null);
+      setScanned(name);
+      setTimeout(() => setScanned(null), 3000);
+    }).catch(() => setScanning(null));
+  };
+
   const invalidateTemplates = () => {
     queryClient.invalidateQueries({ queryKey: ["templates"] });
     queryClient.invalidateQueries({ queryKey: ["registry"] });
@@ -110,8 +125,8 @@ export function Dashboard({ onReconfigure }: DashboardProps) {
           const url = `http://localhost:${service.port}`;
 
           return (
+            <div key={service.name}>
             <div
-              key={service.name}
               className="flex items-center justify-between px-4 py-3 bg-gray-700 rounded-lg"
             >
               <div className="flex items-center gap-3">
@@ -122,6 +137,28 @@ export function Dashboard({ onReconfigure }: DashboardProps) {
                 <span className="text-white font-medium">{label}</span>
               </div>
               <div className="flex items-center gap-1">
+                {SCANNABLE.includes(service.name) ? (
+                  <button
+                    type="button"
+                    onClick={() => scanLibrary(service.name)}
+                    disabled={scanning === service.name}
+                    className="flex items-center gap-1.5 p-2 text-gray-400 hover:text-blue-400 transition-colors disabled:opacity-50"
+                    title="Refresh libraries"
+                  >
+                    {scanned === service.name ? (
+                      <>
+                        <span className="text-xs text-green-400">Library refreshed</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4 text-green-400">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={`w-4 h-4 ${scanning === service.name ? "animate-spin" : ""}`}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M21.015 4.357v4.992" />
+                      </svg>
+                    )}
+                  </button>
+                ) : null}
                 {credentials?.[service.name]?.pass ? (
                   <button
                     type="button"
@@ -152,6 +189,7 @@ export function Dashboard({ onReconfigure }: DashboardProps) {
                   </svg>
                 </a>
               </div>
+            </div>
             </div>
           );
         })}

@@ -107,6 +107,25 @@ app.post("/services/:name/scan", async (c) => {
 		return c.json({ success: res.ok });
 	}
 
+	if (name === "plex") {
+		const token = db.get("internal.plex.token") as string;
+		if (!token) return c.json({ error: "No auth token, reconfigure Plex" }, 400);
+		const res = await fetch("http://127.0.0.1:32400/library/sections/all/refresh", {
+			headers: { "X-Plex-Token": token },
+		});
+		return c.json({ success: res.ok });
+	}
+
+	if (name === "emby") {
+		const token = db.get("internal.emby.token") as string;
+		if (!token) return c.json({ error: "No auth token, reconfigure Emby" }, 400);
+		const res = await fetch("http://127.0.0.1:8096/Library/Refresh", {
+			method: "POST",
+			headers: { "X-Emby-Token": token },
+		});
+		return c.json({ success: res.ok });
+	}
+
 	return c.json({ error: "Scan not supported for this service" }, 400);
 });
 
