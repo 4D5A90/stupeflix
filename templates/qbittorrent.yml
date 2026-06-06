@@ -85,6 +85,7 @@ setup:
     method: POST
     contentType: form
     useCookie: true
+    ignoreStatus: [409]
     body:
       category: "{{library.name}}"
       savePath: "/media/{{library.name}}"

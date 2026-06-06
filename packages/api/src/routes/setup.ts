@@ -211,6 +211,10 @@ export function setupRoutes(db: Db) {
 			return c.json({ error: "Missing required paths" }, 400);
 		}
 
+		if (db.get("setup.global") === "in_progress") {
+			return c.json({ error: "Setup already in progress" }, 409);
+		}
+
 		resetStatus(db);
 		runSetup(db);
 
