@@ -1,8 +1,15 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { stringify } from "yaml";
 import type { Db } from "../db.js";
+import { ASSETS_DIR, COMPOSE_FILE, PGID, PUID } from "./env.js";
 
-const PUID = process.getuid?.() ?? 1000;
-const PGID = process.getgid?.() ?? 1000;
+/** Writes the generated compose file where the docker CLI wrapper expects it. */
+export function writeCompose(db: Db): string {
+	mkdirSync(dirname(COMPOSE_FILE), { recursive: true });
+	writeFileSync(COMPOSE_FILE, generateCompose(db));
+	return COMPOSE_FILE;
+}
 
 export function generateCompose(db: Db): string {
 	const s = db.all();
@@ -24,7 +31,7 @@ export function generateCompose(db: Db): string {
 				`${s["paths.config"]}/transmission:/config`,
 				`${s["paths.torrents"]}:/downloads`,
 				`${s["paths.media"]}:/media`,
-				"./assets/flood-for-transmission:/ui",
+				`${ASSETS_DIR}/flood-for-transmission:/ui`,
 			],
 			ports: ["9091:9091", "49153:49153", "49153:49153/udp"],
 			restart: "unless-stopped",

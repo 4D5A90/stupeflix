@@ -1,18 +1,27 @@
 import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { initDb } from "./db.js";
-import { loadTemplates, getTemplates, getServiceMetas, reloadTemplates, getTemplateFiles } from "./lib/service-registry.js";
+import { PORT, ROOT, SERVICE_HOST, TEMPLATES_DIR, WEB_DIR, serviceUrl } from "./lib/env.js";
+import {
+	loadTemplates,
+	getTemplates,
+	getServiceMetas,
+	getTemplatesDir,
+	reloadTemplates,
+	getTemplateFiles,
+} from "./lib/service-registry.js";
 import { dockerRoutes } from "./routes/docker.js";
 import { installRoutes } from "./routes/install.js";
 import { servicesRoutes } from "./routes/services.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { setupRoutes } from "./routes/setup.js";
 
-loadTemplates(resolve(import.meta.dirname, "../../../templates"));
+loadTemplates(TEMPLATES_DIR ?? resolve(import.meta.dirname, "../../../templates"));
 
 const db = await initDb();
 
@@ -22,21 +31,16 @@ if (db.get("setup.global") === "in_progress") {
 	db.set("setup.error", "Server was restarted during setup");
 }
 
-const app = new Hono();
+const api = new Hono();
 
-app.use("*", logger());
-app.use("*", cors());
+api.get("/health", (c) => c.json({ status: "ok" }));
 
-app.onError((err, c) => {
-	console.error(err);
-	return c.json({ error: err.message }, 500);
-});
+/** Runtime environment, so the wizard can prefill paths when a host root is mounted. */
+api.get("/runtime", (c) => c.json({ root: ROOT, serviceHost: SERVICE_HOST }));
 
-app.get("/health", (c) => c.json({ status: "ok" }));
+api.get("/registry", (c) => c.json(getServiceMetas()));
 
-app.get("/registry", (c) => c.json(getServiceMetas()));
-
-app.get("/templates", (c) => {
+api.get("/templates", (c) => {
 	const files = getTemplateFiles();
 	const templates = getTemplates().map((t) => ({
 		id: t.id,
@@ -47,12 +51,12 @@ app.get("/templates", (c) => {
 	return c.json(templates);
 });
 
-app.post("/templates/reload", (c) => {
+api.post("/templates/reload", (c) => {
 	reloadTemplates();
 	return c.json({ success: true, count: getTemplates().length });
 });
 
-app.post("/templates/upload", async (c) => {
+api.post("/templates/upload", async (c) => {
 	const body = await c.req.parseBody();
 	const file = body.file;
 	if (!(file instanceof File)) {
@@ -68,7 +72,7 @@ app.post("/templates/upload", async (c) => {
 	return c.json({ success: true, count: getTemplates().length });
 });
 
-app.get("/status", (c) => {
+api.get("/status", (c) => {
 	const setupCompleted = db.get("setup.completed");
 	const containers: Record<string, string> = {};
 
@@ -86,7 +90,7 @@ app.get("/status", (c) => {
 	return c.json({ setup_completed: setupCompleted, containers });
 });
 
-app.get("/credentials", (c) => {
+api.get("/credentials", (c) => {
 	const all = db.all();
 	const result: Record<string, Record<string, string>> = {};
 	for (const [key, value] of Object.entries(all)) {
@@ -100,7 +104,7 @@ app.get("/credentials", (c) => {
 	return c.json(result);
 });
 
-app.post("/services/:name/scan", async (c) => {
+api.post("/services/:name/scan", async (c) => {
 	const name = c.req.param("name");
 	const tpl = getTemplates().find((t) => t.id === name);
 	if (!tpl) return c.json({ error: "Service not found" }, 404);
@@ -108,7 +112,7 @@ app.post("/services/:name/scan", async (c) => {
 	if (name === "jellyfin") {
 		const token = db.get("internal.jellyfin.token") as string;
 		if (!token) return c.json({ error: "No auth token, reconfigure Jellyfin" }, 400);
-		const res = await fetch("http://127.0.0.1:8096/Library/Refresh", {
+		const res = await fetch(serviceUrl("http://127.0.0.1:8096/Library/Refresh"), {
 			method: "POST",
 			headers: { Authorization: `MediaBrowser Token="${token}"` },
 		});
@@ -118,7 +122,7 @@ app.post("/services/:name/scan", async (c) => {
 	if (name === "plex") {
 		const token = db.get("internal.plex.token") as string;
 		if (!token) return c.json({ error: "No auth token, reconfigure Plex" }, 400);
-		const res = await fetch("http://127.0.0.1:32400/library/sections/all/refresh", {
+		const res = await fetch(serviceUrl("http://127.0.0.1:32400/library/sections/all/refresh"), {
 			headers: { "X-Plex-Token": token },
 		});
 		return c.json({ success: res.ok });
@@ -127,7 +131,7 @@ app.post("/services/:name/scan", async (c) => {
 	if (name === "emby") {
 		const token = db.get("internal.emby.token") as string;
 		if (!token) return c.json({ error: "No auth token, reconfigure Emby" }, 400);
-		const res = await fetch("http://127.0.0.1:8096/Library/Refresh", {
+		const res = await fetch(serviceUrl("http://127.0.0.1:8096/Library/Refresh"), {
 			method: "POST",
 			headers: { "X-Emby-Token": token },
 		});
@@ -137,11 +141,32 @@ app.post("/services/:name/scan", async (c) => {
 	return c.json({ error: "Scan not supported for this service" }, 400);
 });
 
-app.route("/settings", settingsRoutes(db));
-app.route("/setup", setupRoutes(db));
-app.route("/docker", dockerRoutes(db));
-app.route("/services", servicesRoutes(db));
-app.route("/install", installRoutes(db));
+api.route("/settings", settingsRoutes(db));
+api.route("/setup", setupRoutes(db));
+api.route("/docker", dockerRoutes(db));
+api.route("/services", servicesRoutes(db));
+api.route("/install", installRoutes(db));
 
-serve({ fetch: app.fetch, port: 3000 });
-console.log("Stupeflix API running on http://localhost:3000");
+const app = new Hono();
+
+app.use("*", logger());
+app.use("*", cors());
+
+app.onError((err, c) => {
+	console.error(err);
+	return c.json({ error: err.message }, 500);
+});
+
+// Mounted twice: at the root for `pnpm dev` (Vite strips the /api prefix when proxying),
+// and under /api for the packaged build where the API also serves the frontend.
+app.route("/", api);
+app.route("/api", api);
+
+if (WEB_DIR) {
+	app.use("/*", serveStatic({ root: WEB_DIR }));
+	// SPA fallback — any unmatched route renders the wizard
+	app.get("*", serveStatic({ path: "index.html", root: WEB_DIR }));
+}
+
+serve({ fetch: app.fetch, port: PORT });
+console.log(`Stupeflix running on http://localhost:${PORT}`);

@@ -1,11 +1,29 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import initSqlJs, { type Database } from "sql.js";
+import { DB_PATH, ROOT, WASM_PATH } from "./lib/env.js";
+
+const nodeRequire = createRequire(import.meta.url);
+
+/**
+ * The bundled build sits away from node_modules, so sql.js looks for its wasm
+ * next to dist/index.js. Use the shipped copy, or fall back to node_modules.
+ */
+function resolveWasm(): string | undefined {
+	if (WASM_PATH) return WASM_PATH;
+	try {
+		return nodeRequire.resolve("sql.js/dist/sql-wasm.wasm");
+	} catch {
+		return undefined;
+	}
+}
 
 const DEFAULTS: Record<string, unknown> = {
-	"paths.config": "",
-	"paths.media": "",
-	"paths.torrents": "",
+	// Prefilled when a host root is mounted, so the wizard has sane defaults
+	"paths.config": ROOT ? `${ROOT}/config` : "",
+	"paths.media": ROOT ? `${ROOT}/media` : "",
+	"paths.torrents": ROOT ? `${ROOT}/torrents` : "",
 	"credentials.transmission.user": "admin",
 	"credentials.transmission.pass": "",
 	"credentials.mediamanager.email": "",
@@ -28,8 +46,9 @@ export interface Db {
 	delete: (key: string) => void;
 }
 
-export async function initDb(dbPath = "./data/stupeflix.db"): Promise<Db> {
-	const SQL = await initSqlJs();
+export async function initDb(dbPath = DB_PATH): Promise<Db> {
+	const wasmPath = resolveWasm();
+	const SQL = await initSqlJs(wasmPath ? { locateFile: () => wasmPath } : undefined);
 
 	mkdirSync(dirname(dbPath), { recursive: true });
 

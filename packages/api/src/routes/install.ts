@@ -1,10 +1,10 @@
 import { exec } from "node:child_process";
-import { writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { Hono } from "hono";
 import type { Db } from "../db.js";
-import { generateCompose } from "../lib/compose.js";
+import { writeCompose } from "../lib/compose.js";
 import { configureJoal } from "../lib/configs.js";
+import { compose } from "../lib/docker-cli.js";
 import { getTemplates, runSetupStep } from "../lib/service-registry.js";
 import type { ServiceTemplate } from "../lib/service-registry.js";
 import { error as logError, log } from "../lib/logger.js";
@@ -27,9 +27,9 @@ async function runServiceInstall(db: Db, tpl: ServiceTemplate): Promise<void> {
 	try {
 		db.set("setup.global", "in_progress");
 
-		writeFileSync("./docker-compose.yml", generateCompose(db));
+		writeCompose(db);
 		if (tpl.id === "joal") configureJoal(db.get("paths.config") as string);
-		await execAsync(`docker compose up -d ${tpl.container}`);
+		await execAsync(compose(`up -d ${tpl.container}`));
 
 		const libraries = getLibraries(db);
 		for (const step of tpl.setup) {
@@ -70,7 +70,7 @@ async function runServiceInstall(db: Db, tpl: ServiceTemplate): Promise<void> {
 		db.set(`services.${tpl.id}.enabled`, false);
 		db.set("setup.global", "failed");
 		db.set("setup.error", e instanceof Error ? e.message : String(e));
-		try { await execAsync(`docker compose stop ${tpl.container}`); } catch {}
+		try { await execAsync(compose(`stop ${tpl.container}`)); } catch {}
 	}
 }
 

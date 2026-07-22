@@ -1,7 +1,8 @@
 import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Db } from "../db.js";
+import { serviceUrl } from "./env.js";
 import { debug, error, log } from "./logger.js";
 
 const MEDIAMANAGER_CONFIG_URL =
@@ -131,13 +132,24 @@ function configureMediaManager(db: Db, configPath: string): void {
 		transmissionPass: transmissionPass ? "***" : "(empty)",
 	});
 
-	const sedScript = [
-		`s|^token_secret = .*|token_secret = "${tokenSecret}"|`,
-		`s|^admin_emails = .*|admin_emails = ["${adminEmail}"]|`,
-		`/\\[torrents.transmission\\]/,/^\\[/ { s|enabled = false|enabled = true|; s|username = "admin"|username = "${transmissionUser}"|; s|password = "admin"|password = "${transmissionPass}"|; s|host = "localhost"|host = "transmission"|; s|https_enabled = true|https_enabled = false|; }`,
-	].join("; ");
+	// Rewritten in JS rather than sed: the sed flags differ between BSD (macOS) and GNU (container)
+	const toml = readFileSync(configFile, "utf-8")
+		.replace(/^token_secret = .*$/m, `token_secret = "${tokenSecret}"`)
+		.replace(/^admin_emails = .*$/m, `admin_emails = ["${adminEmail}"]`);
 
-	execSync(`sed -i '' '${sedScript}' "${configFile}"`);
+	// The transmission tweaks only apply inside the [torrents.transmission] section
+	const section = /(\[torrents\.transmission\][\s\S]*?)(\n\[|$)/;
+	const patched = toml.replace(section, (_m, body: string, next: string) => {
+		const updated = body
+			.replace("enabled = false", "enabled = true")
+			.replace('username = "admin"', `username = "${transmissionUser}"`)
+			.replace('password = "admin"', `password = "${transmissionPass}"`)
+			.replace('host = "localhost"', 'host = "transmission"')
+			.replace("https_enabled = true", "https_enabled = false");
+		return updated + next;
+	});
+
+	writeFileSync(configFile, patched);
 	log("MediaManager configured");
 }
 
@@ -196,7 +208,7 @@ async function waitForMediaManager(maxWait = 60000): Promise<boolean> {
 	const start = Date.now();
 	while (Date.now() - start < maxWait) {
 		try {
-			const res = await fetch("http://localhost:8000/api/v1/health");
+			const res = await fetch(serviceUrl("http://localhost:8000/api/v1/health"));
 			if (res.ok) {
 				log("MediaManager API ready");
 				return true;
@@ -230,7 +242,7 @@ export async function registerMediaManagerUser(db: Db): Promise<boolean> {
 	log("Registering MediaManager user...");
 
 	try {
-		const res = await fetch("http://localhost:8000/api/v1/auth/register", {
+		const res = await fetch(serviceUrl("http://localhost:8000/api/v1/auth/register"), {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({

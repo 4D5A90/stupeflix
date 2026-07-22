@@ -4,20 +4,55 @@
 
 Self-hosted media stack orchestrator with a web-based setup wizard.
 
-## Prerequisites
+## Quick Start (Docker)
 
-- Node.js
-- pnpm (`npm install --global pnpm`)
-- Docker & Docker Compose
+Only Docker is required — the image builds the API and the wizard itself.
 
-## Quick Start
+```bash
+docker build -t stupeflix .
+
+docker run -d --name stupeflix \
+  -p 3000:3000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /srv/stupeflix:/srv/stupeflix \
+  -v stupeflix-data:/data \
+  --add-host=host.docker.internal:host-gateway \
+  stupeflix
+```
+
+Open `http://localhost:3000` and follow the setup wizard.
+
+| Mount | Why |
+|-------|-----|
+| `/var/run/docker.sock` | Stupeflix drives the host Docker daemon to run your media stack |
+| `/srv/stupeflix` | Config, media and torrents. **Mounted at the same path inside**, so the bind mounts Stupeflix generates resolve on the host. Every path set in the wizard must live under it |
+| `stupeflix-data:/data` | SQLite database and generated `docker-compose.yml` |
+
+`--add-host` is only needed on Linux; Docker Desktop and OrbStack provide
+`host.docker.internal` out of the box. To use another host directory, change both
+sides of the mount and pass `-e STUPEFLIX_ROOT=/your/path`.
+
+| Env var | Default (image) | Description |
+|---------|-----------------|-------------|
+| `STUPEFLIX_ROOT` | `/srv/stupeflix` | Host directory mounted at the same path; prefills the wizard |
+| `STUPEFLIX_SERVICE_HOST` | `host.docker.internal` | Host reachable from the container, where services publish their ports |
+| `STUPEFLIX_DB_PATH` | `/data/stupeflix.db` | SQLite database |
+| `STUPEFLIX_COMPOSE_FILE` | `/data/docker-compose.yml` | Generated compose file |
+| `STUPEFLIX_COMPOSE_PROJECT` | `stupeflix` | Compose project name |
+| `PUID` / `PGID` | `1000` | Ownership applied to the service containers |
+| `PORT` | `3000` | HTTP port (API + wizard) |
+
+## Development
+
+Requires Node.js and pnpm (`npm install --global pnpm`) on top of Docker.
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:5173` and follow the setup wizard.
+Open `http://localhost:5173`. In dev the API runs on port 3000 and Vite proxies
+`/api` to it; in the image the API serves the built wizard on the same port.
 
 ## How it Works
 

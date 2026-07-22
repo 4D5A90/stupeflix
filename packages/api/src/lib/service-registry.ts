@@ -3,6 +3,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import type { Db } from "../db.js";
+import { compose } from "./docker-cli.js";
+import { serviceUrl } from "./env.js";
 import { log, debug, error as logError } from "./logger.js";
 
 // ── YAML schema types ──
@@ -181,8 +183,7 @@ export async function runSetupStep(
 	extraVars?: Record<string, string>,
 ): Promise<string | null> {
 	const vars = { ...buildVars(db, serviceId), ...extraVars };
-	// Force IPv4 — containers listen on 0.0.0.0, but localhost may resolve to ::1
-	const url = (resolveTemplateVars(step.url ?? "", vars) as string).replace("://localhost", "://127.0.0.1") || undefined;
+	const url = serviceUrl(resolveTemplateVars(step.url ?? "", vars) as string) || undefined;
 
 	switch (step.type) {
 		case "wait_ready": {
@@ -285,10 +286,9 @@ export async function runSetupStep(
 				return "extract_from_logs requires container, regex, and storeAs";
 			}
 			try {
-				const logs = execSync(
-					`docker compose logs ${step.container} 2>&1`,
-					{ encoding: "utf-8" },
-				);
+				const logs = execSync(compose(`logs ${step.container} 2>&1`), {
+					encoding: "utf-8",
+				});
 				const match = logs.match(new RegExp(step.regex));
 				if (!match?.[1]) {
 					return `Pattern not found in ${step.container} logs: ${step.regex}`;

@@ -1,10 +1,12 @@
 import { exec } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import { Hono } from "hono";
 import type { Db } from "../db.js";
-import { generateCompose } from "../lib/compose.js";
+import { writeCompose } from "../lib/compose.js";
 import { generateConfigs } from "../lib/configs.js";
+import { compose } from "../lib/docker-cli.js";
+import { COMPOSE_FILE } from "../lib/env.js";
 import { getTemplates, runSetupStep } from "../lib/service-registry.js";
 import { cleanConfigs, downloadFloodUI } from "../lib/helpers.js";
 import { debug, error, log } from "../lib/logger.js";
@@ -65,10 +67,10 @@ async function runSetup(db: Db) {
 		db.set("setup.global", "in_progress");
 
 		// Reset if re-running
-		if (existsSync("./docker-compose.yml")) {
+		if (existsSync(COMPOSE_FILE)) {
 			log("Stopping previous containers...");
 			try {
-				await execAsync("docker compose down --timeout 10");
+				await execAsync(compose("down --timeout 10"));
 				log("Previous containers stopped");
 			} catch (e) {
 				debug("docker compose down warning", e);
@@ -79,7 +81,7 @@ async function runSetup(db: Db) {
 		// Generate compose
 		setStatus(db, "compose", "in_progress");
 		log("Generating docker-compose.yml...");
-		writeFileSync("./docker-compose.yml", generateCompose(db));
+		writeCompose(db);
 		if (s["services.transmission.enabled"]) {
 			downloadFloodUI();
 		}
@@ -89,7 +91,7 @@ async function runSetup(db: Db) {
 		// Start containers
 		setStatus(db, "containers", "in_progress");
 		log("Starting containers...");
-		const { stdout, stderr } = await execAsync("docker compose up -d");
+		const { stdout, stderr } = await execAsync(compose("up -d"));
 		debug("docker compose up", { stdout, stderr });
 		setStatus(db, "containers", "completed");
 

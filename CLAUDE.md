@@ -34,9 +34,19 @@ pnpm build            # Build all packages
 Package-specific:
 ```bash
 pnpm --filter api dev     # Run API in dev mode
-pnpm --filter api build   # Build API
+pnpm --filter api build   # Build API (esbuild bundle, see packages/api/build.mjs)
 pnpm --filter web dev     # Run web dev server
 pnpm --filter web build   # Build web
+```
+
+Packaged (single image, API serves the built wizard):
+```bash
+docker build -t stupeflix .
+docker run -d -p 3000:3000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /srv/stupeflix:/srv/stupeflix \
+  -v stupeflix-data:/data \
+  --add-host=host.docker.internal:host-gateway stupeflix
 ```
 
 ## Architecture
@@ -59,9 +69,11 @@ To add a new service, create a YAML file in `templates/` — no code changes nee
 
 ```
 src/
-├── index.ts              # Entry point - loads templates, Hono server
+├── index.ts              # Entry point - loads templates, Hono server, serves the web build
 ├── db.ts                 # sql.js SQLite wrapper
 ├── lib/
+│   ├── env.ts            # Runtime config (paths, service host, PUID/PGID) from env vars
+│   ├── docker-cli.ts     # `docker compose` command builder (file + project name)
 │   ├── service-registry.ts # Loads YAML templates, runs setup steps
 │   ├── compose.ts        # Docker Compose generation
 │   ├── configs.ts        # Service configuration (config_file steps)
@@ -90,6 +102,20 @@ src/
 │   └── ui/           # Button, Input, Toggle, StatusBadge
 └── types/setup.ts    # TypeScript interfaces
 ```
+
+### Running inside a container
+
+The API shells out to `docker` and writes service configs on the host filesystem,
+so everything path- or host-related goes through `lib/env.ts`:
+
+- Host paths must be identical inside and outside the container — hence the single
+  `STUPEFLIX_ROOT` bind mount, which also prefills the wizard (`GET /runtime`).
+- Service containers publish on the host, so template URLs (`http://localhost:8096`)
+  are rewritten to `STUPEFLIX_SERVICE_HOST` by `serviceUrl()`.
+- Never call `docker compose` directly: use `compose()` from `lib/docker-cli.ts`,
+  which pins `-f <generated file>` and the project name.
+- Defaults keep host development unchanged (compose file at the repo root, no
+  project name, `127.0.0.1` as service host).
 
 ## Key Files
 

@@ -20,6 +20,12 @@ async function request<T>(
   return res.json();
 }
 
+export interface RuntimeInfo {
+  /** Host directory mounted into the container, empty when running on the host */
+  root: string;
+  serviceHost: string;
+}
+
 export interface AppStatus {
   setup_completed: boolean;
   containers: Record<string, string>;
@@ -47,6 +53,8 @@ export const api = {
   getServices: () => request<ServiceInfo[]>("/services"),
 
   getRegistry: () => request<ServiceMeta[]>("/registry"),
+
+  getRuntime: () => request<RuntimeInfo>("/runtime"),
 
   getCredentials: () =>
     request<Record<string, Record<string, string>>>("/credentials"),

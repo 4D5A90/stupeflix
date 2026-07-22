@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { api } from "../../api/client";
 import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { Accordion } from "../ui/Accordion";
@@ -19,6 +20,7 @@ const LIBRARY_TYPES: { value: Library["type"]; label: string }[] = [
 export function PathsStep({ config, onChange, onNext }: PathsStepProps) {
   const [useBasePath, setUseBasePath] = useState(true);
   const [basePath, setBasePath] = useState("");
+  const [mountedRoot, setMountedRoot] = useState("");
 
   const updatePath = (key: keyof SetupConfig["paths"], value: string) => {
     onChange({
@@ -53,6 +55,35 @@ export function PathsStep({ config, onChange, onNext }: PathsStepProps) {
       updateBasePath(basePath);
     }
   };
+
+  // Running in Docker: only the mounted host root is reachable, so start from it
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getRuntime()
+      .then((runtime) => {
+        if (cancelled || !runtime.root) return;
+        setMountedRoot(runtime.root);
+        setBasePath((current) => current || runtime.root);
+        onChange({
+          ...config,
+          paths: config.paths.config
+            ? config.paths
+            : {
+                config: `${runtime.root}/config`,
+                media: `${runtime.root}/media`,
+                torrents: `${runtime.root}/torrents`,
+              },
+        });
+      })
+      .catch(() => {
+        /* running on the host — no mounted root to suggest */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const updateLibrary = (index: number, field: keyof Library, value: string) => {
     const libs = [...config.libraries];
@@ -122,12 +153,18 @@ export function PathsStep({ config, onChange, onNext }: PathsStepProps) {
           <span className="text-sm text-gray-300">Base Path</span>
         </div>
         <input
-          placeholder="/path/to/stupeflix"
+          placeholder={mountedRoot || "/path/to/stupeflix"}
           value={basePath}
           onChange={(e) => updateBasePath(e.target.value)}
           disabled={!useBasePath}
           className="block w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
         />
+        {mountedRoot && (
+          <p className="text-xs text-gray-500">
+            Running in Docker — paths must stay inside {mountedRoot}, the
+            directory mounted from the host.
+          </p>
+        )}
       </div>
 
       <div className="space-y-4">

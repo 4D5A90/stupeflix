@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { ASSETS_DIR } from "./env.js";
 import { debug, log } from "./logger.js";
 
 export function cleanConfigs(configPath: string): void {
@@ -34,16 +35,16 @@ export function cleanConfigs(configPath: string): void {
 }
 
 export function downloadFloodUI(): void {
-	mkdirSync("./assets", { recursive: true });
+	mkdirSync(ASSETS_DIR, { recursive: true });
 
-	if (existsSync("./assets/flood-for-transmission")) {
+	if (existsSync(`${ASSETS_DIR}/flood-for-transmission`)) {
 		debug("Flood UI already downloaded");
 		return;
 	}
 
 	log("Downloading Flood UI...");
 	execSync(
-		"curl -sL https://github.com/johman10/flood-for-transmission/releases/latest/download/flood-for-transmission.tar.gz | tar xz -C ./assets",
+		`curl -sL https://github.com/johman10/flood-for-transmission/releases/latest/download/flood-for-transmission.tar.gz | tar xz -C "${ASSETS_DIR}"`,
 	);
 	log("Flood UI downloaded");
 }
