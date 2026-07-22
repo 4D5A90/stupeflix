@@ -7,6 +7,7 @@ import { logger } from "hono/logger";
 import { initDb } from "./db.js";
 import { loadTemplates, getTemplates, getServiceMetas, reloadTemplates, getTemplateFiles } from "./lib/service-registry.js";
 import { dockerRoutes } from "./routes/docker.js";
+import { installRoutes } from "./routes/install.js";
 import { servicesRoutes } from "./routes/services.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { setupRoutes } from "./routes/setup.js";
@@ -14,6 +15,13 @@ import { setupRoutes } from "./routes/setup.js";
 loadTemplates(resolve(import.meta.dirname, "../../../templates"));
 
 const db = await initDb();
+
+// If the server restarted mid-setup or mid-install, unlock the state
+if (db.get("setup.global") === "in_progress") {
+	db.set("setup.global", "failed");
+	db.set("setup.error", "Server was restarted during setup");
+}
+
 const app = new Hono();
 
 app.use("*", logger());
@@ -133,6 +141,7 @@ app.route("/settings", settingsRoutes(db));
 app.route("/setup", setupRoutes(db));
 app.route("/docker", dockerRoutes(db));
 app.route("/services", servicesRoutes(db));
+app.route("/install", installRoutes(db));
 
 serve({ fetch: app.fetch, port: 3000 });
 console.log("Stupeflix API running on http://localhost:3000");

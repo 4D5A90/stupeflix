@@ -4,3 +4,4 @@ data/
 assets/
 docker-compose.yml
 storage/
+.DS_Store

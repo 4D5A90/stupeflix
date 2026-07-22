@@ -1,0 +1,30 @@
+id: joal
+name: JOAL
+description: Torrent ratio seeder
+category: seeder
+defaultEnabled: false
+container: joal
+port: 6060
+webUiPath: /{{credentials.path}}/ui/
+
+credentials:
+  - key: path
+    type: text
+    label: UI Path (alphanumeric)
+    default: joalui
+    rules:
+      pattern: "^[a-zA-Z0-9]+$"
+      message: Alphanumeric characters only
+
+  - key: token
+    type: password
+    label: Secret Token
+    rules:
+      minLength: 6
+      message: Must be at least 6 characters
+
+setup:
+  - name: wait_ready
+    label: Wait for JOAL
+    type: wait_ready
+    url: http://localhost:6060/{{credentials.path}}/ui/

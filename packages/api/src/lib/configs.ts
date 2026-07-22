@@ -28,6 +28,10 @@ export function generateConfigs(db: Db): void {
 	if (s["services.mediamanager.enabled"]) {
 		configureMediaManager(db, configPath);
 	}
+
+	if (s["services.joal.enabled"]) {
+		configureJoal(configPath);
+	}
 }
 
 function createMediaDirs(mediaPath: string, libraries: Array<{ name: string }>): void {
@@ -135,6 +139,56 @@ function configureMediaManager(db: Db, configPath: string): void {
 
 	execSync(`sed -i '' '${sedScript}' "${configFile}"`);
 	log("MediaManager configured");
+}
+
+const JOAL_CLIENT = {
+	keyGenerator: {
+		algorithm: { type: "HASH_NO_LEADING_ZERO", length: 8 },
+		refreshOn: "TORRENT_PERSISTENT",
+		keyCase: "upper",
+	},
+	peerIdGenerator: {
+		algorithm: { type: "REGEX", pattern: "-qB4620-[A-Za-z0-9_~\\(\\)\\!\\.\\*-]{12}" },
+		refreshOn: "NEVER",
+		shouldUrlEncode: false,
+	},
+	urlEncoder: { encodingExclusionPattern: "[A-Za-z0-9_~\\(\\)\\!\\.\\*-]", encodedHexCase: "lower" },
+	query: "info_hash={infohash}&peer_id={peerid}&port={port}&uploaded={uploaded}&downloaded={downloaded}&left={left}&corrupt=0&key={key}&event={event}&numwant={numwant}&compact=1&no_peer_id=1&supportcrypto=1&redundant=0",
+	numwant: 200,
+	numwantOnStop: 0,
+	requestHeaders: [
+		{ name: "User-Agent", value: "qBittorrent/4.6.2" },
+		{ name: "Accept-Encoding", value: "gzip" },
+		{ name: "Connection", value: "close" },
+	],
+};
+
+const JOAL_CONFIG = {
+	minUploadRate: 50,
+	maxUploadRate: 200,
+	simultaneousSeed: 5,
+	client: "qbittorrent-4.6.2.client",
+	keepTorrentWithZeroLeechers: true,
+	uploadRatioTarget: -1.0,
+};
+
+export function configureJoal(configPath: string): void {
+	log("Configuring JOAL...");
+	const joalPath = `${configPath}/joal`;
+	mkdirSync(`${joalPath}/torrents`, { recursive: true });
+	mkdirSync(`${joalPath}/clients`, { recursive: true });
+
+	const clientFile = `${joalPath}/clients/qbittorrent-4.6.2.client`;
+	if (!existsSync(clientFile)) {
+		writeFileSync(clientFile, JSON.stringify(JOAL_CLIENT, null, 2));
+	}
+
+	const configFile = `${joalPath}/config.json`;
+	if (!existsSync(configFile)) {
+		writeFileSync(configFile, JSON.stringify(JOAL_CONFIG, null, 2));
+	}
+
+	log("JOAL initialized");
 }
 
 async function waitForMediaManager(maxWait = 60000): Promise<boolean> {

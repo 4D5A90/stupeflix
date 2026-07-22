@@ -2,14 +2,21 @@ import { useState } from "react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { api } from "./api/client";
 import { Dashboard } from "./components/Dashboard";
+import { InstallProgress } from "./components/InstallProgress";
 import { Wizard } from "./components/Wizard";
 
 const queryClient = new QueryClient();
 
 const logo = <img src="/logo.png" alt="Stupeflix" className="h-24 mb-2 logo-spin" />;
 
+interface InstallState {
+  serviceId: string;
+  serviceName: string;
+}
+
 function AppContent() {
   const [forceWizard, setForceWizard] = useState(false);
+  const [installing, setInstalling] = useState<InstallState | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ["app-status"],
     queryFn: api.getAppStatus,
@@ -30,8 +37,21 @@ function AppContent() {
       <div className="w-full max-w-2xl">
         <div className="flex flex-col items-center mb-8">{logo}</div>
         <div className="bg-gray-800 rounded-xl p-6 shadow-xl">
-          {setupCompleted ? (
-            <Dashboard onReconfigure={() => setForceWizard(true)} />
+          {installing ? (
+            <InstallProgress
+              serviceId={installing.serviceId}
+              serviceName={installing.serviceName}
+              onDone={() => {
+                setInstalling(null);
+                queryClient.invalidateQueries({ queryKey: ["services"] });
+                queryClient.invalidateQueries({ queryKey: ["credentials"] });
+              }}
+            />
+          ) : setupCompleted ? (
+            <Dashboard
+              onReconfigure={() => setForceWizard(true)}
+              onInstall={(serviceId, serviceName) => setInstalling({ serviceId, serviceName })}
+            />
           ) : (
             <Wizard onComplete={() => {
               setForceWizard(false);

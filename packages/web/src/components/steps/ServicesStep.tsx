@@ -16,6 +16,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   torrentClient: "Torrent Client",
   mediaServer: "Media Server",
   mediaManager: "Media Manager",
+  seeder: "Seeder",
 };
 
 export function ServicesStep({
@@ -55,7 +56,7 @@ export function ServicesStep({
   };
 
   // Group services by category in display order
-  const CATEGORY_ORDER = ["torrentClient", "mediaServer", "mediaManager"];
+  const CATEGORY_ORDER = ["torrentClient", "mediaServer", "mediaManager", "seeder"];
   const categoryMap = new Map<string, ServiceMeta[]>();
   for (const svc of registry) {
     const list = categoryMap.get(svc.category) ?? [];

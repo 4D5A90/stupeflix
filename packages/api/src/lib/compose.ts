@@ -100,6 +100,25 @@ export function generateCompose(db: Db): string {
 		};
 	}
 
+	if (s["services.joal.enabled"]) {
+		const path = (s["credentials.joal.path"] as string) || "joalui";
+		const token = s["credentials.joal.token"] as string;
+		services.joal = {
+			image: "anthonyraymond/joal:latest",
+			container_name: "joal",
+			volumes: [`${s["paths.config"]}/joal:/data`],
+			ports: ["6060:8080"],
+			command: [
+				"--joal-conf=/data",
+				"--spring.main.web-environment=true",
+				"--server.port=8080",
+				`--joal.ui.path.prefix=${path}`,
+				`--joal.ui.secret-token=${token}`,
+			],
+			restart: "unless-stopped",
+		};
+	}
+
 	if (s["services.mediamanager.enabled"]) {
 		services.db = {
 			image: "postgres:17",

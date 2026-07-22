@@ -30,6 +30,7 @@ export interface ServiceInfo {
   enabled: boolean;
   status: string;
   port: number;
+  webUiPath?: string;
 }
 
 export const api = {
@@ -73,6 +74,12 @@ export const api = {
   scanLibrary: (name: string) =>
     request<{ success: boolean }>(`/services/${name}/scan`, {
       method: "POST",
+    }),
+
+  installService: (name: string, credentials: Record<string, string>) =>
+    request<{ success: boolean }>(`/install/${name}`, {
+      method: "POST",
+      body: JSON.stringify({ credentials }),
     }),
 
   health: () => request<{ status: string }>("/health"),

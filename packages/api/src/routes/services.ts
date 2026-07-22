@@ -18,12 +18,23 @@ export function servicesRoutes(db: Db) {
 
 	app.get("/", (c) => {
 		const s = db.all();
-		const services = getTemplates().map((tpl) => ({
-			name: tpl.id,
-			enabled: s[`services.${tpl.id}.enabled`] ?? false,
-			status: getContainerStatus(tpl.container),
-			port: tpl.port,
-		}));
+		const services = getTemplates().map((tpl) => {
+			let webUiPath = tpl.webUiPath ?? "";
+			if (webUiPath) {
+				webUiPath = webUiPath.replace(/\{\{credentials\.(\w+)\}\}/g, (_m, key: string) => {
+					const stored = s[`credentials.${tpl.id}.${key}`] as string | undefined;
+					if (stored) return stored;
+					return tpl.credentials.find((f) => f.key === key)?.default ?? "";
+				});
+			}
+			return {
+				name: tpl.id,
+				enabled: s[`services.${tpl.id}.enabled`] ?? false,
+				status: getContainerStatus(tpl.container),
+				port: tpl.port,
+				webUiPath: webUiPath || undefined,
+			};
+		});
 		return c.json(services);
 	});
 

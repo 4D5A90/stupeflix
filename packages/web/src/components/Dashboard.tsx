@@ -2,9 +2,11 @@ import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { ServiceIcon } from "./ui/ServiceIcon";
+import type { ServiceMeta, CredentialField } from "../types/setup";
 
 interface DashboardProps {
   onReconfigure: () => void;
+  onInstall: (serviceId: string, serviceName: string) => void;
 }
 
 const SERVICE_LABELS: Record<string, string> = {
@@ -14,27 +16,34 @@ const SERVICE_LABELS: Record<string, string> = {
   emby: "Emby",
   transmission: "Transmission",
   qbittorrent: "qBittorrent",
+  joal: "JOAL",
 };
 
-const statusStyles: Record<string, { dot: string; text: string }> = {
-  running: { dot: "bg-green-500", text: "text-green-400" },
-  exited: { dot: "bg-red-500", text: "text-red-400" },
-  not_found: { dot: "bg-gray-500", text: "text-gray-400" },
+const statusStyles: Record<string, { dot: string }> = {
+  running: { dot: "bg-green-500" },
+  exited: { dot: "bg-red-500" },
+  not_found: { dot: "bg-gray-500" },
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
   torrentClient: "Torrent",
   mediaServer: "Media",
   mediaManager: "Manager",
+  seeder: "Seeder",
 };
 
-export function Dashboard({ onReconfigure }: DashboardProps) {
+export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
   const queryClient = useQueryClient();
 
   const { data: services, isLoading } = useQuery({
     queryKey: ["services"],
     queryFn: api.getServices,
     refetchInterval: 5000,
+  });
+
+  const { data: registry } = useQuery({
+    queryKey: ["registry"],
+    queryFn: api.getRegistry,
   });
 
   const { data: templates } = useQuery({
@@ -50,7 +59,8 @@ export function Dashboard({ onReconfigure }: DashboardProps) {
   const [copied, setCopied] = useState<string | null>(null);
 
   const copyPassword = (serviceId: string) => {
-    const pass = credentials?.[serviceId]?.pass ?? credentials?.[serviceId]?.password;
+    const cred = credentials?.[serviceId];
+    const pass = cred?.pass ?? cred?.password ?? cred?.token;
     if (!pass) return;
     navigator.clipboard.writeText(pass);
     setCopied(serviceId);
@@ -59,7 +69,6 @@ export function Dashboard({ onReconfigure }: DashboardProps) {
 
   const SCANNABLE = ["jellyfin", "plex", "emby"];
   const [scanned, setScanned] = useState<string | null>(null);
-
   const [scanning, setScanning] = useState<string | null>(null);
 
   const scanLibrary = (name: string) => {
@@ -99,15 +108,15 @@ export function Dashboard({ onReconfigure }: DashboardProps) {
   }
 
   const enabledServices = services.filter((s) => s.enabled);
+  const enabledIds = new Set(enabledServices.map((s) => s.name));
+  const uninstalled = (registry ?? []).filter((svc) => !enabledIds.has(svc.id));
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-xl font-semibold mb-2">Services</h2>
-          <p className="text-gray-400 text-sm">
-            Your media stack is running.
-          </p>
+          <p className="text-gray-400 text-sm">Your media stack is running.</p>
         </div>
         <button
           type="button"
@@ -118,15 +127,15 @@ export function Dashboard({ onReconfigure }: DashboardProps) {
         </button>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {enabledServices.map((service) => {
           const style = statusStyles[service.status] ?? statusStyles.not_found;
           const label = SERVICE_LABELS[service.name] ?? service.name;
-          const url = `http://localhost:${service.port}`;
+          const url = `http://localhost:${service.port}${service.webUiPath ?? ""}`;
 
           return (
-            <div key={service.name}>
             <div
+              key={service.name}
               className="flex items-center justify-between px-4 py-3 bg-gray-700 rounded-lg"
             >
               <div className="flex items-center gap-3">
@@ -159,7 +168,7 @@ export function Dashboard({ onReconfigure }: DashboardProps) {
                     )}
                   </button>
                 ) : null}
-                {credentials?.[service.name]?.pass ? (
+                {(credentials?.[service.name]?.pass ?? credentials?.[service.name]?.token) ? (
                   <button
                     type="button"
                     onClick={() => copyPassword(service.name)}
@@ -190,18 +199,19 @@ export function Dashboard({ onReconfigure }: DashboardProps) {
                 </a>
               </div>
             </div>
-            </div>
           );
         })}
+
+        {uninstalled.length > 0 && (
+          <InstallCard services={uninstalled} onInstall={onInstall} />
+        )}
       </div>
 
       <div className="border-t border-gray-700 pt-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-xl font-semibold">Templates</h2>
           <div className="flex items-center gap-2">
-            <label
-              className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors cursor-pointer"
-            >
+            <label className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors cursor-pointer">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
@@ -258,7 +268,114 @@ export function Dashboard({ onReconfigure }: DashboardProps) {
           </p>
         ) : null}
       </div>
+    </div>
+  );
+}
 
+function InstallCard({
+  services,
+  onInstall,
+}: {
+  services: ServiceMeta[];
+  onInstall: (serviceId: string, serviceName: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<ServiceMeta | null>(null);
+  const [creds, setCreds] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  const selectService = (svc: ServiceMeta) => {
+    setSelected(svc);
+    setError(null);
+    setCreds(Object.fromEntries((svc.credentials ?? []).map((f: CredentialField) => [f.key, f.default ?? ""])));
+  };
+
+  const handleInstall = async () => {
+    if (!selected) return;
+    setError(null);
+    try {
+      await api.installService(selected.id, creds);
+      onInstall(selected.id, selected.name);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Installation failed");
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex items-center justify-center w-full px-4 py-2.5 bg-transparent border border-dashed border-gray-700 hover:border-gray-500 rounded-lg transition-colors group"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+      </button>
+    );
+  }
+
+  return (
+    <div className="px-4 py-3 bg-transparent border border-dashed border-gray-600 rounded-lg space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-gray-400 text-sm font-medium">Add service</span>
+        <button
+          type="button"
+          onClick={() => { setOpen(false); setSelected(null); }}
+          className="text-gray-600 hover:text-gray-400 transition-colors"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {services.map((svc) => (
+          <button
+            key={svc.id}
+            type="button"
+            onClick={() => selectService(svc)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-sm transition-colors ${
+              selected?.id === svc.id
+                ? "bg-blue-600/20 border border-blue-500/50 text-blue-300"
+                : "bg-gray-700/50 border border-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+            }`}
+          >
+            <ServiceIcon id={svc.id} />
+            {svc.name}
+          </button>
+        ))}
+      </div>
+
+      {selected && selected.credentials.length > 0 && (
+        <div className="space-y-2 pt-1">
+          {selected.credentials.map((field: CredentialField) => (
+            <div key={field.key} className="flex items-center gap-2">
+              <label className="text-xs text-gray-500 w-20 shrink-0">{field.label}</label>
+              <input
+                type={field.type === "password" ? "password" : "text"}
+                value={creds[field.key] ?? ""}
+                onChange={(e) => setCreds((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                placeholder={field.required === false ? "Optional" : ""}
+                className="flex-1 px-2 py-1 text-sm bg-gray-800 border border-gray-600 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+
+      {selected && (
+        <button
+          type="button"
+          onClick={handleInstall}
+          className="w-full py-1.5 text-sm text-blue-400 border border-blue-400/30 rounded hover:bg-blue-400/10 transition-colors"
+        >
+          Install {selected.name}
+        </button>
+      )}
     </div>
   );
 }

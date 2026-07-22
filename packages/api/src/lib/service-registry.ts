@@ -55,6 +55,7 @@ export interface ServiceTemplate {
 	defaultEnabled: boolean;
 	container: string;
 	port: number;
+	webUiPath?: string;
 	credentials: CredentialField[];
 	setup: SetupStepDef[];
 }
