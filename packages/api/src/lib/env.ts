@@ -13,12 +13,17 @@ export const ROOT = fromEnv("STUPEFLIX_ROOT")?.replace(/\/+$/, "") ?? "";
 /** SQLite database. */
 export const DB_PATH = fromEnv("STUPEFLIX_DB_PATH") ?? "./data/stupeflix.db";
 
-/** Generated compose file — read by the docker CLI, so a container-local path is fine. */
+/** Generated compose file. Kept next to the database so both move together. */
 export const COMPOSE_FILE =
-	fromEnv("STUPEFLIX_COMPOSE_FILE") ?? "./docker-compose.yml";
+	fromEnv("STUPEFLIX_COMPOSE_FILE") ?? "./data/docker-compose.yml";
 
-/** Compose project name. Unset on the host (compose derives it from the cwd). */
-export const COMPOSE_PROJECT = fromEnv("STUPEFLIX_COMPOSE_PROJECT") ?? "";
+/**
+ * Compose project name. Fixed rather than derived from the working directory,
+ * so the same containers are owned whether Stupeflix runs from source or as the
+ * packaged image — otherwise both fight over the same `container_name`.
+ */
+export const COMPOSE_PROJECT =
+	fromEnv("STUPEFLIX_COMPOSE_PROJECT") ?? "stupeflix";
 
 /**
  * Assets bind-mounted into service containers (Flood UI).

@@ -114,8 +114,11 @@ so everything path- or host-related goes through `lib/env.ts`:
   are rewritten to `STUPEFLIX_SERVICE_HOST` by `serviceUrl()`.
 - Never call `docker compose` directly: use `compose()` from `lib/docker-cli.ts`,
   which pins `-f <generated file>` and the project name.
-- Defaults keep host development unchanged (compose file at the repo root, no
-  project name, `127.0.0.1` as service host).
+- The compose project is always `stupeflix`, never derived from the working
+  directory: running from source and running the image must own the same
+  containers, or they collide on `container_name`.
+- The compose file lives next to the database (`data/`), so pointing an image at
+  the dev server's `data/` directory shares the whole state.
 
 ## Key Files
 

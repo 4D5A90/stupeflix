@@ -32,6 +32,26 @@ Open `http://localhost:3000` and follow the setup wizard.
 `host.docker.internal` out of the box. To use another host directory, change both
 sides of the mount and pass `-e STUPEFLIX_ROOT=/your/path`.
 
+### Alternating between the image and `pnpm dev`
+
+Both use the compose project `stupeflix`, so neither steals the other's
+containers. To also share credentials and setup state, point `/data` at the
+directory the dev server uses and match the ownership it generates:
+
+```bash
+docker run -d --name stupeflix \
+  -p 3000:3000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /srv/stupeflix:/srv/stupeflix \
+  -v "$PWD/packages/api/data:/data" \
+  -e STUPEFLIX_ROOT=/srv/stupeflix \
+  -e PUID=$(id -u) -e PGID=$(id -g) \
+  stupeflix
+```
+
+Without matching `PUID`/`PGID`, each switch rewrites the compose file and Docker
+recreates every container.
+
 | Env var | Default (image) | Description |
 |---------|-----------------|-------------|
 | `STUPEFLIX_ROOT` | `/srv/stupeflix` | Host directory mounted at the same path; prefills the wizard |
