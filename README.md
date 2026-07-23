@@ -76,23 +76,47 @@ Open `http://localhost:5173`. In dev the API runs on port 3000 and Vite proxies
 
 ## How it Works
 
-1. **Paths** — Choose where to store config, media, and torrents. Define media libraries (Movies, TvShows, Anime, etc.)
-2. **Services** — Pick a torrent client, one or more media servers, and optional services
+1. **Paths** — Choose where to store config, media, and torrents. Define media libraries (Movies, TvShows, etc.). When a host root is mounted (`STUPEFLIX_ROOT`), these are prefilled under it.
+2. **Services** — Pick a torrent client, one or more media servers, and optional extras (e.g. the JOAL seeder)
 3. **Credentials** — Set usernames and passwords (auto-generate available)
 4. **Setup** — Review and launch. Stupeflix generates `docker-compose.yml`, starts containers, and configures each service automatically
 
+> **Reconfigure is a reset, not an edit.** Re-running the wizard stops the stack
+> and clears each service's *generated* config so setup can run fresh —
+> `jellyfin`/`emby` config dirs are wiped entirely (their startup wizard is
+> replayed), and the generated files for qBittorrent, Transmission, MediaManager
+> and JOAL are removed and regenerated. Your **media files and JOAL torrents are
+> never touched**. To change a single service without a full reset, use the
+> per-service install (`POST /install/:name`).
+
 ## Services
 
-| Service | Port | Category | Multi-select |
-|---------|------|----------|:---:|
-| Jellyfin | 8096 | Media Server | Yes |
-| Plex | 32400 | Media Server | Yes |
-| Emby | 8096 | Media Server | Yes |
-| qBittorrent | 8080 | Torrent Client | No |
-| Transmission | 9091 | Torrent Client | No |
-| MediaManager | 8000 | Media Manager | Yes |
+The wizard offers exactly the services defined in `templates/` — the backend
+builds its registry from those files, so this list is the source of truth:
 
-Media servers can be enabled simultaneously. Torrent client is single-select.
+| Service | Container | Port | Category | Default | Credentials |
+|---------|-----------|------|----------|:---:|-------------|
+| qBittorrent | `qbittorrent` | 8080 | Torrent Client | on | user, pass |
+| Jellyfin | `jellyfin` | 8096 | Media Server | on | user, pass |
+| Plex | `plex` | 32400 | Media Server | off | claim |
+| JOAL | `joal` | 6060 | Seeder | off | path, token |
+
+Only the **Torrent Client** category is single-select; media servers and the
+seeder are independent toggles, so you can enable several at once.
+
+> The compose generator (`lib/compose.ts`) still carries definitions for
+> Transmission, Emby and MediaManager, but they have no template yet, so they do
+> **not** appear in the wizard. Drop a `templates/*.yml` file to surface one.
+
+### JOAL
+
+JOAL's web UI is reached at `/<path>/ui/` (the `path` credential, default
+`joalui`). Its connection settings — **path prefix** and **secret token** — are
+passed as container arguments from your credentials, *not* stored in a config
+file. The JOAL UI then caches them in the browser's `localStorage` (`guiConfig`)
+and never refreshes them on its own: if you reconfigure JOAL, a new token is
+generated and the browser keeps the old one. The live values are always
+`docker inspect joal`.
 
 ## Media Libraries
 
@@ -213,16 +237,22 @@ credentials:
 
 ## API
 
+Every route is served both at the root (for `pnpm dev`, where Vite strips the
+`/api` prefix when proxying) and under `/api` (for the packaged image, where the
+API also serves the built wizard on the same port).
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/health` | Health check |
+| GET | `/runtime` | Mounted host root + service host (wizard prefill) |
 | GET | `/status` | Setup state + container status |
 | GET | `/registry` | Service definitions for the frontend |
 | GET | `/templates` | List loaded template files |
 | POST | `/templates/reload` | Reload templates from disk |
 | POST | `/templates/upload` | Upload a new template |
-| POST | `/setup/complete` | Start setup |
+| POST | `/setup/complete` | Start a full (re)configuration |
 | GET | `/setup/status` | Track setup progress |
+| POST | `/install/:name` | Install a single service (per-service flow) |
 | GET | `/credentials` | Get stored credentials |
 | GET | `/services` | List services with status |
 
