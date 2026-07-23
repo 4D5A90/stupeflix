@@ -8,6 +8,8 @@ export function cleanConfigs(configPath: string): void {
 		"transmission/settings.json",
 		"qbittorrent/qBittorrent/qBittorrent.conf",
 		"mediamanager/config/config.toml",
+		// joal: reset the generated config only — joal/torrents holds seeded user data
+		"joal/config.json",
 	];
 	// Jellyfin and Emby: remove entire config to reset the startup wizard
 	const dirs = [
