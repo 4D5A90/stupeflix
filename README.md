@@ -32,6 +32,30 @@ Open `http://localhost:3000` and follow the setup wizard.
 `host.docker.internal` out of the box. To use another host directory, change both
 sides of the mount and pass `-e STUPEFLIX_ROOT=/your/path`.
 
+### Windows
+
+Run Stupeflix from **inside WSL 2** (Docker Desktop's default backend). Open your
+WSL 2 distro and the Linux Quick Start above works verbatim — same `docker run`,
+same `\` line breaks. Keep `STUPEFLIX_ROOT` on the **WSL 2 filesystem**
+(e.g. `/home/<you>/stupeflix`), **not** under `/mnt/c/...`.
+
+Why WSL 2 rather than PowerShell: Stupeflix mounts your directory at the *same
+path* inside the container, and the host daemon must resolve that path again when
+it creates the service containers. That only holds for Linux paths the WSL 2
+daemon sees natively — a Windows path like `C:\media` cannot be mounted at
+`C:\media` inside a Linux container, and Windows drives (`/mnt/c`, `D:`) are known
+to break daemon-side bind mounts.
+
+If you must drive Docker from **PowerShell** or **Git Bash** instead:
+
+- Mount the socket with a leading double slash so the path isn't mangled:
+  `-v //var/run/docker.sock:/var/run/docker.sock`
+- Put the command on a single line — PowerShell continues lines with a backtick
+  `` ` `` (not `\`), `cmd` uses `^`.
+- Skip `--add-host` (Docker Desktop already provides `host.docker.internal`).
+- The dev-sharing command below uses `$(id -u)` / `$(id -g)`, which are POSIX-only
+  — run that one from inside WSL 2.
+
 ### Alternating between the image and `pnpm dev`
 
 Both use the compose project `stupeflix`, so neither steals the other's
