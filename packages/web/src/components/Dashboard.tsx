@@ -335,7 +335,13 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 						<button
 							type="button"
 							onClick={() => setAdding(true)}
-							className="flex h-full min-h-[5rem] w-full items-center justify-center gap-2 rounded-lg border border-dashed border-white/[0.12] text-sm text-gray-500 transition-colors hover:border-gray-500 hover:text-gray-300"
+							// Two columns: an even count leaves it alone on a new row, where a
+							// half-width box would read as a gap. Odd, and it fills the free cell.
+							className={`flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-white/[0.12] text-sm text-gray-500 transition-colors hover:border-gray-500 hover:text-gray-300 ${
+								enabledServices.length % 2 === 0
+									? "sm:col-span-2 min-h-[3.25rem]"
+									: "h-full min-h-[5rem]"
+							}`}
 						>
 							<svg
 								viewBox="0 0 24 24"
