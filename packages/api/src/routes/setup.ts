@@ -4,41 +4,29 @@ import { promisify } from "node:util";
 import { Hono } from "hono";
 import type { Db } from "../db.js";
 import { writeCompose } from "../lib/compose.js";
-import { generateConfigs } from "../lib/configs.js";
 import { compose } from "../lib/docker-cli.js";
 import { COMPOSE_FILE } from "../lib/env.js";
-import { getTemplates, runSetupStep } from "../lib/service-registry.js";
-import { cleanConfigs, downloadFloodUI } from "../lib/helpers.js";
+import {
+	cleanConfigs,
+	createMediaDirs,
+	createTemplateDirs,
+} from "../lib/helpers.js";
 import { debug, error, log } from "../lib/logger.js";
+import { getEnabledTemplates } from "../lib/service-registry.js";
+import {
+	type StepStatus,
+	runTemplateSteps,
+	setStepStatus,
+	stepKeys,
+} from "../lib/setup-runner.js";
+import type { Library } from "../lib/template-vars.js";
 
 const execAsync = promisify(exec);
 
-type StepStatus = "pending" | "in_progress" | "completed" | "failed";
-
-function setStatus(db: Db, step: string, status: StepStatus) {
-	db.set(`setup.status.${step}`, status);
-}
-
-function getLibraries(db: Db): Array<{ name: string; type: string }> {
-	const raw = db.get("libraries") as string;
-	if (!raw) return [{ name: "Movies", type: "movies" }, { name: "TvShows", type: "tvshows" }];
-	return JSON.parse(raw);
-}
-
 function getSteps(db: Db): string[] {
 	const steps = ["compose", "containers"];
-	const libraries = getLibraries(db);
-	for (const tpl of getTemplates()) {
-		if (!db.get(`services.${tpl.id}.enabled`)) continue;
-		for (const step of tpl.setup) {
-			if (step.foreach === "libraries") {
-				for (const lib of libraries) {
-					steps.push(`${tpl.id}.${step.name}_${lib.name}`);
-				}
-			} else {
-				steps.push(`${tpl.id}.${step.name}`);
-			}
-		}
+	for (const tpl of getEnabledTemplates(db)) {
+		steps.push(...stepKeys(db, tpl));
 	}
 	return steps;
 }
@@ -53,16 +41,13 @@ function getStatus(db: Db): Record<string, StepStatus> {
 
 function resetStatus(db: Db) {
 	for (const step of getSteps(db)) {
-		db.set(`setup.status.${step}`, "pending");
+		setStepStatus(db, step, "pending");
 	}
 	db.set("setup.global", "pending");
 	db.set("setup.error", null);
 }
 
 async function runSetup(db: Db) {
-	const s = db.all();
-	const configPath = s["paths.config"] as string;
-
 	try {
 		db.set("setup.global", "in_progress");
 
@@ -75,69 +60,31 @@ async function runSetup(db: Db) {
 			} catch (e) {
 				debug("docker compose down warning", e);
 			}
-			cleanConfigs(configPath);
+			cleanConfigs(db);
 		}
 
-		// Generate compose
-		setStatus(db, "compose", "in_progress");
+		// Generate compose, then let every template write the files its container
+		// expects to find already there when it boots
+		setStepStatus(db, "compose", "in_progress");
 		log("Generating docker-compose.yml...");
 		writeCompose(db);
-		if (s["services.transmission.enabled"]) {
-			downloadFloodUI();
+		createMediaDirs(db);
+		for (const tpl of getEnabledTemplates(db)) {
+			createTemplateDirs(db, tpl);
+			await runTemplateSteps(db, tpl, "pre_up");
 		}
-		generateConfigs(db);
-		setStatus(db, "compose", "completed");
+		setStepStatus(db, "compose", "completed");
 
 		// Start containers
-		setStatus(db, "containers", "in_progress");
+		setStepStatus(db, "containers", "in_progress");
 		log("Starting containers...");
 		const { stdout, stderr } = await execAsync(compose("up -d"));
 		debug("docker compose up", { stdout, stderr });
-		setStatus(db, "containers", "completed");
+		setStepStatus(db, "containers", "completed");
 
-		// Run per-service setup steps from templates
-		const libraries = getLibraries(db);
-		for (const tpl of getTemplates()) {
-			if (!db.get(`services.${tpl.id}.enabled`)) continue;
-			for (const step of tpl.setup) {
-				if (step.foreach === "libraries") {
-					for (const lib of libraries) {
-						const stepKey = `${tpl.id}.${step.name}_${lib.name}`;
-						setStatus(db, stepKey, "in_progress");
-						log(`Running ${step.label} (${lib.name})...`);
-
-						const libVars: Record<string, string> = {
-							"library.name": lib.name,
-							"library.type": lib.type,
-						};
-						const mapped = step.typeMap?.[lib.type];
-						if (mapped) {
-							for (const [k, v] of Object.entries(mapped)) {
-								libVars[`library.${k}`] = v;
-							}
-						}
-						const err = await runSetupStep(step, db, tpl.id, libVars);
-						if (err) {
-							throw new Error(`${step.label} (${lib.name}): ${err}`);
-						}
-
-						setStatus(db, stepKey, "completed");
-						log(`${step.label} (${lib.name}) completed`);
-					}
-				} else {
-					const stepKey = `${tpl.id}.${step.name}`;
-					setStatus(db, stepKey, "in_progress");
-					log(`Running ${step.label}...`);
-
-					const err = await runSetupStep(step, db, tpl.id);
-					if (err) {
-						throw new Error(`${step.label}: ${err}`);
-					}
-
-					setStatus(db, stepKey, "completed");
-					log(`${step.label} completed`);
-				}
-			}
+		// Then everything that talks to a running service
+		for (const tpl of getEnabledTemplates(db)) {
+			await runTemplateSteps(db, tpl, "post_up");
 		}
 
 		db.set("setup.completed", true);
@@ -159,7 +106,7 @@ function applyPaths(
 	db.set("paths.torrents", paths.torrents);
 }
 
-function applyLibraries(db: Db, libraries: Array<{ name: string; type: string }>) {
+function applyLibraries(db: Db, libraries: Library[]) {
 	db.set("libraries", JSON.stringify(libraries));
 }
 
@@ -207,9 +154,8 @@ export function setupRoutes(db: Db) {
 		if (body.services) applyServices(db, body.services);
 
 		const s = db.all();
-		const configPath = s["paths.config"] as string;
 
-		if (!configPath || !s["paths.media"] || !s["paths.torrents"]) {
+		if (!s["paths.config"] || !s["paths.media"] || !s["paths.torrents"]) {
 			return c.json({ error: "Missing required paths" }, 400);
 		}
 

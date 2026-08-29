@@ -6,9 +6,12 @@ import { getTemplates } from "../lib/service-registry.js";
 
 function getContainerStatus(container: string): string {
 	try {
-		return execSync(`docker inspect -f '{{.State.Status}}' ${container} 2>/dev/null`, {
-			encoding: "utf-8",
-		}).trim();
+		return execSync(
+			`docker inspect -f '{{.State.Status}}' ${container} 2>/dev/null`,
+			{
+				encoding: "utf-8",
+			},
+		).trim();
 	} catch {
 		return "not_found";
 	}
@@ -22,18 +25,28 @@ export function servicesRoutes(db: Db) {
 		const services = getTemplates().map((tpl) => {
 			let webUiPath = tpl.webUiPath ?? "";
 			if (webUiPath) {
-				webUiPath = webUiPath.replace(/\{\{credentials\.(\w+)\}\}/g, (_m, key: string) => {
-					const stored = s[`credentials.${tpl.id}.${key}`] as string | undefined;
-					if (stored) return stored;
-					return tpl.credentials.find((f) => f.key === key)?.default ?? "";
-				});
+				webUiPath = webUiPath.replace(
+					/\{\{credentials\.(\w+)\}\}/g,
+					(_m, key: string) => {
+						const stored = s[`credentials.${tpl.id}.${key}`] as
+							| string
+							| undefined;
+						if (stored) return stored;
+						return tpl.credentials.find((f) => f.key === key)?.default ?? "";
+					},
+				);
 			}
 			return {
 				name: tpl.id,
+				label: tpl.name,
 				enabled: s[`services.${tpl.id}.enabled`] ?? false,
 				status: getContainerStatus(tpl.container),
 				port: tpl.port,
 				webUiPath: webUiPath || undefined,
+				// Lets the dashboard offer a button per declared action without
+				// carrying its own list of which services can do what
+				actions: Object.keys(tpl.actions ?? {}),
+				notes: tpl.notes ?? [],
 			};
 		});
 		return c.json(services);

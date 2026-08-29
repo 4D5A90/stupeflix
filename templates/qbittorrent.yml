@@ -6,6 +6,25 @@ defaultEnabled: true
 container: qbittorrent
 port: 8080
 
+compose:
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID={{env.PUID}}
+      - PGID={{env.PGID}}
+      - TZ={{env.TZ}}
+      - WEBUI_PORT=8080
+    volumes:
+      - "{{paths.config}}/qbittorrent:/config"
+      - "{{paths.torrents}}:/downloads"
+      - "{{paths.media}}:/media"
+    ports:
+      - "8080:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+    restart: unless-stopped
+
 credentials:
   - key: user
     type: text
@@ -22,6 +41,14 @@ setup:
   - name: config
     label: Write config file
     type: config_file
+    file: qbittorrent/qBittorrent/qBittorrent.conf
+    content: |
+      [Preferences]
+      WebUI\Username={{credentials.user}}
+      WebUI\Port=8080
+
+      [BitTorrent]
+      Session\DefaultSavePath=/downloads
 
   - name: wait_ready
     label: Wait for qBittorrent API

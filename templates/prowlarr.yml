@@ -1,0 +1,52 @@
+id: prowlarr
+name: Prowlarr
+description: Indexer manager — add your trackers, MediaManager searches them
+category: indexer
+defaultEnabled: false
+container: prowlarr
+port: 9696
+
+notes:
+  - Add your trackers in Prowlarr's UI — it ships with none, and MediaManager
+    has nothing to search until you do.
+  - No login is needed from this machine, and the API key MediaManager uses is
+    set up for you.
+  - Your indexers survive a reconfigure.
+
+# Minted once and kept: it is injected into Prowlarr itself and read by
+# MediaManager as {{internal.prowlarr.api_key}}, so the two agree without
+# either template knowing how the other is configured.
+generate:
+  - key: api_key
+    type: hex
+    length: 16
+
+compose:
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID={{env.PUID}}
+      - PGID={{env.PGID}}
+      - TZ={{env.TZ}}
+      # Prowlarr reads these ahead of config.xml, so it boots already configured
+      # and never shows the first-run authentication wizard.
+      - PROWLARR__AUTH__APIKEY={{internal.api_key}}
+      - PROWLARR__AUTH__METHOD=External
+      - PROWLARR__AUTH__REQUIRED=DisabledForLocalAddresses
+    volumes:
+      - "{{paths.config}}/prowlarr:/config"
+    ports:
+      - "9696:9696"
+    restart: unless-stopped
+
+# Deliberately no `reset:` — a reconfigure must not throw away the indexers
+# the user added by hand. The API key lives in our DB and is re-injected.
+
+credentials: []
+
+setup:
+  - name: wait_ready
+    label: Wait for Prowlarr API
+    type: wait_ready
+    url: http://localhost:9696/ping

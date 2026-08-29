@@ -2,7 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { stringify } from "yaml";
 import type { Db } from "../db.js";
-import { ASSETS_DIR, COMPOSE_FILE, PGID, PUID } from "./env.js";
+import { COMPOSE_FILE } from "./env.js";
+import { ensureSecrets, getEnabledTemplates } from "./service-registry.js";
+import { buildVars, resolveTemplateVars } from "./template-vars.js";
 
 /** Writes the generated compose file where the docker CLI wrapper expects it. */
 export function writeCompose(db: Db): string {
@@ -11,159 +13,44 @@ export function writeCompose(db: Db): string {
 	return COMPOSE_FILE;
 }
 
+/**
+ * `FOO=` reads as "unset" to every image we ship, so an optional credential that
+ * the user left blank drops out instead of shadowing the image's own default.
+ */
+function pruneEmptyEnv(service: unknown): unknown {
+	if (service === null || typeof service !== "object") return service;
+	const entries = (service as Record<string, unknown>).environment;
+	if (!Array.isArray(entries)) return service;
+	return {
+		...(service as Record<string, unknown>),
+		environment: entries.filter(
+			(e) => typeof e !== "string" || !/^[^=]+=$/.test(e),
+		),
+	};
+}
+
+/**
+ * The compose file is the union of the `compose:` blocks of the enabled templates.
+ * Adding a service is adding a YAML file — this function never learns its name.
+ */
 export function generateCompose(db: Db): string {
-	const s = db.all();
-	const services: Record<string, object> = {};
+	const services: Record<string, unknown> = {};
 
-	if (s["services.transmission.enabled"]) {
-		services.transmission = {
-			image: "linuxserver/transmission:latest",
-			container_name: "transmission",
-			environment: [
-				`PUID=${PUID}`,
-				`PGID=${PGID}`,
-				"TZ=Europe/Paris",
-				`USER=${s["credentials.transmission.user"]}`,
-				`PASS=${s["credentials.transmission.pass"]}`,
-				"TRANSMISSION_WEB_HOME=/ui",
-			],
-			volumes: [
-				`${s["paths.config"]}/transmission:/config`,
-				`${s["paths.torrents"]}:/downloads`,
-				`${s["paths.media"]}:/media`,
-				`${ASSETS_DIR}/flood-for-transmission:/ui`,
-			],
-			ports: ["9091:9091", "49153:49153", "49153:49153/udp"],
-			restart: "unless-stopped",
-		};
+	// Every secret first, then every render: a template may reference another's
+	// generated key, so none of them can be minted lazily mid-loop.
+	for (const tpl of getEnabledTemplates(db)) {
+		ensureSecrets(db, tpl);
 	}
 
-	if (s["services.qbittorrent.enabled"]) {
-		services.qbittorrent = {
-			image: "linuxserver/qbittorrent:latest",
-			container_name: "qbittorrent",
-			environment: [
-				`PUID=${PUID}`,
-				`PGID=${PGID}`,
-				"TZ=Europe/Paris",
-				"WEBUI_PORT=8080",
-			],
-			volumes: [
-				`${s["paths.config"]}/qbittorrent:/config`,
-				`${s["paths.torrents"]}:/downloads`,
-				`${s["paths.media"]}:/media`,
-			],
-			ports: ["8080:8080", "6881:6881", "6881:6881/udp"],
-			restart: "unless-stopped",
-		};
-	}
-
-	if (s["services.jellyfin.enabled"]) {
-		services.jellyfin = {
-			image: "linuxserver/jellyfin:latest",
-			container_name: "jellyfin",
-			environment: [`PUID=${PUID}`, `PGID=${PGID}`, "TZ=Europe/Paris"],
-			volumes: [
-				`${s["paths.config"]}/jellyfin:/config`,
-				`${s["paths.media"]}:/media`,
-			],
-			ports: ["8096:8096"],
-			restart: "unless-stopped",
-		};
-	}
-
-	if (s["services.plex.enabled"]) {
-		const plexClaim = s["credentials.plex.claim"] as string;
-		services.plex = {
-			image: "linuxserver/plex:latest",
-			container_name: "plex",
-			environment: [
-				`PUID=${PUID}`,
-				`PGID=${PGID}`,
-				"TZ=Europe/Paris",
-				"VERSION=docker",
-				...(plexClaim ? [`PLEX_CLAIM=${plexClaim}`] : []),
-			],
-			volumes: [
-				`${s["paths.config"]}/plex:/config`,
-				`${s["paths.media"]}:/media`,
-			],
-			ports: ["32400:32400"],
-			restart: "unless-stopped",
-		};
-	}
-
-	if (s["services.emby.enabled"]) {
-		services.emby = {
-			image: "linuxserver/emby:latest",
-			container_name: "emby",
-			environment: [`PUID=${PUID}`, `PGID=${PGID}`, "TZ=Europe/Paris"],
-			volumes: [
-				`${s["paths.config"]}/emby:/config`,
-				`${s["paths.media"]}:/media`,
-			],
-			ports: ["8096:8096"],
-			restart: "unless-stopped",
-		};
-	}
-
-	if (s["services.joal.enabled"]) {
-		const path = (s["credentials.joal.path"] as string) || "joalui";
-		const token = s["credentials.joal.token"] as string;
-		services.joal = {
-			image: "anthonyraymond/joal:latest",
-			container_name: "joal",
-			volumes: [`${s["paths.config"]}/joal:/data`],
-			ports: ["6060:8080"],
-			command: [
-				"--joal-conf=/data",
-				"--spring.main.web-environment=true",
-				"--server.port=8080",
-				`--joal.ui.path.prefix=${path}`,
-				`--joal.ui.secret-token=${token}`,
-			],
-			restart: "unless-stopped",
-		};
-	}
-
-	if (s["services.mediamanager.enabled"]) {
-		services.db = {
-			image: "postgres:17",
-			container_name: "mediamanager_postgres",
-			environment: [
-				"POSTGRES_USER=MediaManager",
-				"POSTGRES_PASSWORD=MediaManager",
-				"POSTGRES_DB=MediaManager",
-			],
-			volumes: [
-				`${s["paths.config"]}/mediamanager/postgres:/var/lib/postgresql/data`,
-			],
-			restart: "unless-stopped",
-			healthcheck: {
-				test: [
-					"CMD-SHELL",
-					"pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}",
-				],
-				interval: "10s",
-				timeout: "5s",
-				retries: 5,
-			},
-		};
-
-		services.mediamanager = {
-			image: "quay.io/maxdorninger/mediamanager:latest",
-			container_name: "mediamanager_server",
-			environment: ["CONFIG_DIR=/app/config", "TZ=Europe/Paris"],
-			volumes: [
-				`${s["paths.config"]}/mediamanager/config:/app/config`,
-				`${s["paths.media"]}:/data`,
-			],
-			ports: ["8000:8000"],
-			restart: "unless-stopped",
-			depends_on: {
-				db: { condition: "service_healthy" },
-			},
-		};
+	for (const tpl of getEnabledTemplates(db)) {
+		const vars = buildVars(db, tpl.id);
+		const resolved = resolveTemplateVars(tpl.compose ?? {}, vars) as Record<
+			string,
+			unknown
+		>;
+		for (const [name, service] of Object.entries(resolved)) {
+			services[name] = pruneEmptyEnv(service);
+		}
 	}
 
 	return stringify({ services });

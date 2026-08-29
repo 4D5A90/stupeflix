@@ -19,23 +19,16 @@ function resolveWasm(): string | undefined {
 	}
 }
 
+/**
+ * Everything not owned by a service. Per-service defaults (enable flag, credential
+ * defaults) come from the templates and are passed in by the caller, so adding a
+ * service never means editing this file.
+ */
 const DEFAULTS: Record<string, unknown> = {
 	// Prefilled when a host root is mounted, so the wizard has sane defaults
 	"paths.config": ROOT ? `${ROOT}/config` : "",
 	"paths.media": ROOT ? `${ROOT}/media` : "",
 	"paths.torrents": ROOT ? `${ROOT}/torrents` : "",
-	"credentials.transmission.user": "admin",
-	"credentials.transmission.pass": "",
-	"credentials.mediamanager.email": "",
-	"credentials.mediamanager.pass": "",
-	"credentials.qbittorrent.user": "admin",
-	"credentials.qbittorrent.pass": "",
-	"services.mediamanager.enabled": true,
-	"services.jellyfin.enabled": true,
-	"services.plex.enabled": false,
-	"services.emby.enabled": false,
-	"services.transmission.enabled": true,
-	"services.qbittorrent.enabled": false,
 	"setup.completed": false,
 };
 
@@ -46,9 +39,14 @@ export interface Db {
 	delete: (key: string) => void;
 }
 
-export async function initDb(dbPath = DB_PATH): Promise<Db> {
+export async function initDb(
+	templateDefaults: Record<string, unknown> = {},
+	dbPath = DB_PATH,
+): Promise<Db> {
 	const wasmPath = resolveWasm();
-	const SQL = await initSqlJs(wasmPath ? { locateFile: () => wasmPath } : undefined);
+	const SQL = await initSqlJs(
+		wasmPath ? { locateFile: () => wasmPath } : undefined,
+	);
 
 	mkdirSync(dirname(dbPath), { recursive: true });
 
@@ -69,7 +67,10 @@ export async function initDb(dbPath = DB_PATH): Promise<Db> {
 		),
 	);
 
-	for (const [key, value] of Object.entries(DEFAULTS)) {
+	for (const [key, value] of Object.entries({
+		...templateDefaults,
+		...DEFAULTS,
+	})) {
 		db.run("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", [
 			key,
 			JSON.stringify(value),

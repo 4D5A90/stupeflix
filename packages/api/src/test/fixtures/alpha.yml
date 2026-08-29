@@ -1,0 +1,71 @@
+id: alpha
+name: Alpha
+description: Fixture service with a generated secret
+category: indexer
+defaultEnabled: true
+container: alpha
+port: 1111
+
+notes:
+  - Needs a manual step in its own UI.
+
+generate:
+  - key: api_key
+    type: hex
+    length: 8
+
+compose:
+  alpha:
+    image: example/alpha:latest
+    container_name: alpha
+    environment:
+      - PUID={{env.PUID}}
+      - ALPHA__APIKEY={{internal.api_key}}
+      # Zeta's template loads after this one, so this only resolves if secrets
+      # are minted for every template before any of them is rendered
+      - ALPHA__ZETA_TOKEN={{internal.zeta.token}}
+    volumes:
+      - "{{paths.config}}/alpha:/config"
+    ports:
+      - "1111:1111"
+
+dirs:
+  - alpha/cache
+
+reset:
+  dirs:
+    - alpha
+
+credentials:
+  - key: user
+    type: text
+    label: Username
+    default: admin
+
+setup:
+  - name: config
+    label: Write config file
+    type: config_file
+    file: alpha/alpha.conf
+    content: |
+      user={{credentials.user}}
+
+  - name: wait_ready
+    label: Wait for Alpha
+    type: wait_ready
+    url: http://localhost:1111/ping
+
+  - name: add_library
+    label: Add library
+    type: api_call
+    foreach: libraries
+    url: http://localhost:1111/library?name={{library.name}}
+    method: POST
+
+actions:
+  scan:
+    name: scan
+    label: Scan
+    type: api_call
+    url: http://localhost:1111/refresh
+    method: POST

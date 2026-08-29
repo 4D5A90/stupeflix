@@ -1,52 +1,54 @@
-import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { ASSETS_DIR } from "./env.js";
+import { join } from "node:path";
+import type { Db } from "../db.js";
 import { debug, log } from "./logger.js";
+import type { ServiceTemplate } from "./service-registry.js";
+import { getGeneratedConfigFiles, getResetDirs } from "./service-registry.js";
+import { getLibraries } from "./template-vars.js";
 
-export function cleanConfigs(configPath: string): void {
-	const files = [
-		"transmission/settings.json",
-		"qbittorrent/qBittorrent/qBittorrent.conf",
-		"mediamanager/config/config.toml",
-		// joal: reset the generated config only — joal/torrents holds seeded user data
-		"joal/config.json",
-	];
-	// Jellyfin and Emby: remove entire config to reset the startup wizard
-	const dirs = [
-		"jellyfin",
-		"emby",
-	];
-	log("Cleaning config files...");
-
-	for (const file of files) {
-		const path = `${configPath}/${file}`;
-		if (existsSync(path)) {
-			debug(`Removing ${path}`);
-			rmSync(path, { force: true });
-		}
+export function createMediaDirs(db: Db): void {
+	const mediaPath = db.get("paths.media") as string;
+	for (const lib of getLibraries(db)) {
+		mkdirSync(join(mediaPath, lib.name), { recursive: true });
 	}
+	log("Media directories created");
+}
 
-	for (const dir of dirs) {
-		const path = `${configPath}/${dir}`;
-		if (existsSync(path)) {
-			debug(`Removing ${path}`);
-			rmSync(path, { recursive: true, force: true });
-			mkdirSync(path, { recursive: true });
-		}
+/** Directories a template needs present before its container boots (`dirs:`). */
+export function createTemplateDirs(db: Db, tpl: ServiceTemplate): void {
+	const configPath = db.get("paths.config") as string;
+	if (!configPath) return;
+	for (const dir of tpl.dirs ?? []) {
+		mkdirSync(join(configPath, dir), { recursive: true });
 	}
 }
 
-export function downloadFloodUI(): void {
-	mkdirSync(ASSETS_DIR, { recursive: true });
+/**
+ * Reconfigure is a reset: drop what setup generated so it can run again.
+ *
+ * The list is not written here — a template's `config_file` steps declare the files
+ * it owns, and `reset.dirs` the directories whose startup wizard must be replayed.
+ * Anything a template does not claim (JOAL's seeded torrents, Prowlarr's indexers)
+ * is user data and survives untouched.
+ */
+export function cleanConfigs(db: Db): void {
+	const configPath = db.get("paths.config") as string;
+	if (!configPath) return;
 
-	if (existsSync(`${ASSETS_DIR}/flood-for-transmission`)) {
-		debug("Flood UI already downloaded");
-		return;
+	log("Cleaning config files...");
+
+	for (const file of getGeneratedConfigFiles(db)) {
+		const path = join(configPath, file);
+		if (!existsSync(path)) continue;
+		debug(`Removing ${path}`);
+		rmSync(path, { force: true });
 	}
 
-	log("Downloading Flood UI...");
-	execSync(
-		`curl -sL https://github.com/johman10/flood-for-transmission/releases/latest/download/flood-for-transmission.tar.gz | tar xz -C "${ASSETS_DIR}"`,
-	);
-	log("Flood UI downloaded");
+	for (const dir of getResetDirs()) {
+		const path = join(configPath, dir);
+		if (!existsSync(path)) continue;
+		debug(`Removing ${path}`);
+		rmSync(path, { recursive: true, force: true });
+		mkdirSync(path, { recursive: true });
+	}
 }

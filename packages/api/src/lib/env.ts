@@ -25,13 +25,6 @@ export const COMPOSE_FILE =
 export const COMPOSE_PROJECT =
 	fromEnv("STUPEFLIX_COMPOSE_PROJECT") ?? "stupeflix";
 
-/**
- * Assets bind-mounted into service containers (Flood UI).
- * Must be a path the Docker daemon can see, hence ROOT rather than a container-only dir.
- */
-export const ASSETS_DIR =
-	fromEnv("STUPEFLIX_ASSETS_DIR") ?? (ROOT ? `${ROOT}/assets` : "./assets");
-
 /** Service templates. */
 export const TEMPLATES_DIR = fromEnv("STUPEFLIX_TEMPLATES_DIR");
 
@@ -50,6 +43,9 @@ export const SERVICE_HOST = fromEnv("STUPEFLIX_SERVICE_HOST") ?? "127.0.0.1";
 /** Ownership applied to service containers — process uid/gid is meaningless in a container. */
 export const PUID = fromEnv("PUID") ?? String(process.getuid?.() ?? 1000);
 export const PGID = fromEnv("PGID") ?? String(process.getgid?.() ?? 1000);
+
+/** Timezone handed to service containers via `{{env.TZ}}`. */
+export const TZ = fromEnv("TZ") ?? "Europe/Paris";
 
 export const PORT = Number(fromEnv("PORT") ?? 3000);
 

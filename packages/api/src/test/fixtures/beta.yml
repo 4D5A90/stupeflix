@@ -1,0 +1,42 @@
+id: beta
+name: Beta
+description: Fixture service that wires itself to Alpha
+category: mediaManager
+defaultEnabled: false
+container: beta
+port: 2222
+
+compose:
+  beta-db:
+    image: postgres:17
+    container_name: beta-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB}"]
+
+  beta:
+    image: example/beta:latest
+    container_name: beta
+    environment:
+      - BETA__ALPHA__ENABLED={{services.alpha.enabled}}
+      - BETA__ALPHA__APIKEY={{internal.alpha.api_key}}
+      - BETA__ALPHA__USER={{credentials.alpha.user}}
+      - BETA__MOVIES={{libraries.movies_json}}
+      # Left blank by default, so it must not reach the compose file
+      - BETA__OPTIONAL={{credentials.optional}}
+    volumes:
+      - "{{paths.media}}:/media"
+    depends_on:
+      beta-db:
+        condition: service_healthy
+
+credentials:
+  - key: optional
+    type: text
+    label: Optional
+    required: false
+
+setup:
+  - name: wait_ready
+    label: Wait for Beta
+    type: wait_ready
+    url: http://localhost:2222/health

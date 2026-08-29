@@ -7,6 +7,7 @@
     "dev": "pnpm --parallel --filter api --filter web dev",
     "dev:api": "pnpm --filter api dev",
     "dev:web": "pnpm --filter web dev",
-    "build": "pnpm --filter api --filter web build"
+    "build": "pnpm --filter api --filter web build",
+    "test": "pnpm --filter api test"
   }
 }

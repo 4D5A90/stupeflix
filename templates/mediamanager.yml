@@ -1,0 +1,173 @@
+id: mediamanager
+name: MediaManager
+description: Automatic movie and TV show downloads
+category: mediaManager
+defaultEnabled: false
+container: mediamanager
+port: 8000
+
+notes:
+  - Needs qBittorrent and Prowlarr enabled to be useful — one downloads, the
+    other searches. Both are wired automatically.
+  - Log in with the admin email and password you set here.
+  - Its downloads land in a dedicated MediaManager category in qBittorrent,
+    separate from your per-library ones.
+
+generate:
+  - key: token_secret
+    type: hex
+    length: 32
+
+# MediaManager reads environment variables ahead of its config.toml (pydantic-settings
+# puts env_settings before the TOML source) and every field has a default, so the whole
+# service is configured here — no config file is written or patched.
+#
+# Its settings models reject unknown keys, so an MEDIAMANAGER_* variable the running
+# image does not define is a hard startup failure, not a warning. When bumping the
+# image, check the field names against /app/media_manager/*/config.py inside it.
+compose:
+  mediamanager-db:
+    image: postgres:17
+    container_name: mediamanager-db
+    environment:
+      - POSTGRES_USER=MediaManager
+      - POSTGRES_PASSWORD=MediaManager
+      - POSTGRES_DB=MediaManager
+    volumes:
+      - "{{paths.config}}/mediamanager/postgres:/var/lib/postgresql/data"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mediamanager:
+    image: quay.io/maxdorninger/mediamanager:latest
+    container_name: mediamanager
+    environment:
+      - TZ={{env.TZ}}
+      - CONFIG_DIR=/app/config
+
+      - MEDIAMANAGER_DATABASE__HOST=mediamanager-db
+      - MEDIAMANAGER_DATABASE__PORT=5432
+      - MEDIAMANAGER_DATABASE__USER=MediaManager
+      - MEDIAMANAGER_DATABASE__PASSWORD=MediaManager
+      - MEDIAMANAGER_DATABASE__DBNAME=MediaManager
+
+      - MEDIAMANAGER_AUTH__TOKEN_SECRET={{internal.token_secret}}
+      - MEDIAMANAGER_AUTH__ADMIN_EMAILS=["{{credentials.email}}"]
+
+      - MEDIAMANAGER_MISC__FRONTEND_URL=http://localhost:8000
+      - MEDIAMANAGER_MISC__CORS_URLS=["http://localhost:8000"]
+      - MEDIAMANAGER_MISC__IMAGE_DIRECTORY=/app/config/images
+      # The media root is mounted at /media in every container, so the path
+      # MediaManager reads back from qBittorrent's API resolves to the same file.
+      - MEDIAMANAGER_MISC__TV_DIRECTORY=/media
+      - MEDIAMANAGER_MISC__MOVIE_DIRECTORY=/media
+      - MEDIAMANAGER_MISC__TORRENT_DIRECTORY=/media/downloads
+      - MEDIAMANAGER_MISC__TV_LIBRARIES={{libraries.tvshows_json}}
+      - MEDIAMANAGER_MISC__MOVIE_LIBRARIES={{libraries.movies_json}}
+
+      - MEDIAMANAGER_TORRENTS__QBITTORRENT__ENABLED={{services.qbittorrent.enabled}}
+      - MEDIAMANAGER_TORRENTS__QBITTORRENT__HOST=http://qbittorrent
+      - MEDIAMANAGER_TORRENTS__QBITTORRENT__PORT=8080
+      - MEDIAMANAGER_TORRENTS__QBITTORRENT__USERNAME={{credentials.qbittorrent.user}}
+      - MEDIAMANAGER_TORRENTS__QBITTORRENT__PASSWORD={{credentials.qbittorrent.pass}}
+      # Its own category, so it never fights the wizard's per-library ones.
+      # Same mount as the libraries, so importing is a rename and not a copy.
+      - MEDIAMANAGER_TORRENTS__QBITTORRENT__CATEGORY_NAME=MediaManager
+      - MEDIAMANAGER_TORRENTS__QBITTORRENT__CATEGORY_SAVE_PATH=/media/downloads
+
+      - MEDIAMANAGER_INDEXERS__PROWLARR__ENABLED={{services.prowlarr.enabled}}
+      - MEDIAMANAGER_INDEXERS__PROWLARR__URL=http://prowlarr:9696
+      - MEDIAMANAGER_INDEXERS__PROWLARR__API_KEY={{internal.prowlarr.api_key}}
+    volumes:
+      - "{{paths.config}}/mediamanager/config:/app/config"
+      - "{{paths.media}}:/media"
+      - "{{paths.torrents}}:/downloads"
+    ports:
+      - "8000:8000"
+    depends_on:
+      mediamanager-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+dirs:
+  - mediamanager/config
+
+credentials:
+  - key: email
+    type: email
+    label: Admin Email
+  - key: pass
+    type: password
+    label: Admin Password
+    rules:
+      minLength: 8
+      message: Must be at least 8 characters
+
+setup:
+  - name: wait_ready
+    label: Wait for MediaManager API
+    type: wait_ready
+    url: http://localhost:8000/api/v1/health
+
+  # MediaManager bootstraps its own admin on an empty database, using admin_emails[0]
+  # and the hardcoded password "admin". So the account usually exists before we get
+  # here, and claiming it means logging in with that default and changing the password
+  # — registering only covers the case where other users already existed.
+  #
+  # The three steps below each tolerate the status the other path produces, so the
+  # final login is what actually proves the user's password was applied.
+  - name: register_admin
+    label: Register admin user
+    type: api_call
+    url: http://localhost:8000/api/v1/auth/register
+    method: POST
+    # 400 = REGISTER_USER_ALREADY_EXISTS, i.e. MediaManager bootstrapped it first
+    ignoreStatus: [400]
+    body:
+      email: "{{credentials.email}}"
+      password: "{{credentials.pass}}"
+      is_active: null
+      is_superuser: null
+      is_verified: null
+
+  - name: login_default
+    label: Claim the bootstrapped admin
+    type: api_call
+    url: http://localhost:8000/api/v1/auth/jwt/login
+    method: POST
+    contentType: form
+    storeToken: access_token
+    # 400 = the default password no longer works, which is the normal case on a
+    # reconfigure: the account already carries the password we are about to verify
+    ignoreStatus: [400]
+    body:
+      username: "{{credentials.email}}"
+      password: admin
+
+  - name: set_password
+    label: Apply the chosen password
+    type: api_call
+    url: http://localhost:8000/api/v1/users/me
+    method: PATCH
+    headers:
+      Authorization: Bearer {{internal.token}}
+    # 401 = no usable token from the previous step, same reconfigure case
+    ignoreStatus: [401]
+    body:
+      password: "{{credentials.pass}}"
+
+  - name: verify_login
+    label: Verify admin credentials
+    type: api_call
+    url: http://localhost:8000/api/v1/auth/jwt/login
+    method: POST
+    contentType: form
+    # Deliberately strict: the steps above tolerate failure, this one is the proof
+    # that the account really answers to the password shown in the wizard
+    body:
+      username: "{{credentials.email}}"
+      password: "{{credentials.pass}}"

@@ -7,6 +7,36 @@ container: joal
 port: 6060
 webUiPath: /{{credentials.path}}/ui/
 
+notes:
+  - The secret token is passed as a container argument, not stored in a config
+    file, and JOAL's UI caches it in your browser. After a reconfigure the cached
+    one is stale.
+  - To reconnect, copy the token with the key icon here, then paste it into
+    JOAL's connection settings.
+  - Drop .torrent files in the joal/torrents config folder — a reconfigure
+    never touches them.
+
+compose:
+  joal:
+    image: anthonyraymond/joal:latest
+    container_name: joal
+    volumes:
+      - "{{paths.config}}/joal:/data"
+    ports:
+      - "6060:8080"
+    command:
+      - "--joal-conf=/data"
+      - "--spring.main.web-environment=true"
+      - "--server.port=8080"
+      - "--joal.ui.path.prefix={{credentials.path}}"
+      - "--joal.ui.secret-token={{credentials.token}}"
+    restart: unless-stopped
+
+# joal/torrents holds seeded user data — created, never reset
+dirs:
+  - joal/torrents
+  - joal/clients
+
 credentials:
   - key: path
     type: text
@@ -24,6 +54,56 @@ credentials:
       message: Must be at least 6 characters
 
 setup:
+  - name: client_profile
+    label: Write client profile
+    type: config_file
+    file: joal/clients/qbittorrent-4.6.2.client
+    content: |
+      {
+        "keyGenerator": {
+          "algorithm": {
+            "type": "HASH_NO_LEADING_ZERO",
+            "length": 8
+          },
+          "refreshOn": "TORRENT_PERSISTENT",
+          "keyCase": "upper"
+        },
+        "peerIdGenerator": {
+          "algorithm": {
+            "type": "REGEX",
+            "pattern": "-qB4620-[A-Za-z0-9_~\\(\\)\\!\\.\\*-]{12}"
+          },
+          "refreshOn": "NEVER",
+          "shouldUrlEncode": false
+        },
+        "urlEncoder": {
+          "encodingExclusionPattern": "[A-Za-z0-9_~\\(\\)\\!\\.\\*-]",
+          "encodedHexCase": "lower"
+        },
+        "query": "info_hash={infohash}&peer_id={peerid}&port={port}&uploaded={uploaded}&downloaded={downloaded}&left={left}&corrupt=0&key={key}&event={event}&numwant={numwant}&compact=1&no_peer_id=1&supportcrypto=1&redundant=0",
+        "numwant": 200,
+        "numwantOnStop": 0,
+        "requestHeaders": [
+          { "name": "User-Agent", "value": "qBittorrent/4.6.2" },
+          { "name": "Accept-Encoding", "value": "gzip" },
+          { "name": "Connection", "value": "close" }
+        ]
+      }
+
+  - name: config
+    label: Write config file
+    type: config_file
+    file: joal/config.json
+    content: |
+      {
+        "minUploadRate": 50,
+        "maxUploadRate": 200,
+        "simultaneousSeed": 5,
+        "client": "qbittorrent-4.6.2.client",
+        "keepTorrentWithZeroLeechers": true,
+        "uploadRatioTarget": -1
+      }
+
   - name: wait_ready
     label: Wait for JOAL
     type: wait_ready

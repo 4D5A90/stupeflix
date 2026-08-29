@@ -6,6 +6,26 @@ defaultEnabled: true
 container: jellyfin
 port: 8096
 
+compose:
+  jellyfin:
+    image: linuxserver/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - PUID={{env.PUID}}
+      - PGID={{env.PGID}}
+      - TZ={{env.TZ}}
+    volumes:
+      - "{{paths.config}}/jellyfin:/config"
+      - "{{paths.media}}:/media"
+    ports:
+      - "8096:8096"
+    restart: unless-stopped
+
+# Wiped on reconfigure so the startup wizard replays from scratch
+reset:
+  dirs:
+    - jellyfin
+
 credentials:
   - key: user
     type: text
@@ -80,3 +100,13 @@ setup:
     url: http://localhost:8096/Library/Refresh
     method: POST
     useToken: true
+
+actions:
+  scan:
+    name: scan
+    label: Scan libraries
+    type: api_call
+    url: http://localhost:8096/Library/Refresh
+    method: POST
+    useToken: true
+    maxRetries: 0

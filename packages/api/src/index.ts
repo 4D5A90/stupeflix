@@ -6,14 +6,17 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { initDb } from "./db.js";
-import { PORT, ROOT, SERVICE_HOST, TEMPLATES_DIR, WEB_DIR, serviceUrl } from "./lib/env.js";
+import { PORT, ROOT, SERVICE_HOST, TEMPLATES_DIR, WEB_DIR } from "./lib/env.js";
 import {
-	loadTemplates,
-	getTemplates,
 	getServiceMetas,
-	getTemplatesDir,
-	reloadTemplates,
+	getTemplate,
+	getTemplateDefaults,
 	getTemplateFiles,
+	getTemplates,
+	getTemplatesDir,
+	loadTemplates,
+	reloadTemplates,
+	runSetupStep,
 } from "./lib/service-registry.js";
 import { dockerRoutes } from "./routes/docker.js";
 import { installRoutes } from "./routes/install.js";
@@ -21,9 +24,11 @@ import { servicesRoutes } from "./routes/services.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { setupRoutes } from "./routes/setup.js";
 
-loadTemplates(TEMPLATES_DIR ?? resolve(import.meta.dirname, "../../../templates"));
+loadTemplates(
+	TEMPLATES_DIR ?? resolve(import.meta.dirname, "../../../templates"),
+);
 
-const db = await initDb();
+const db = await initDb(getTemplateDefaults());
 
 // If the server restarted mid-setup or mid-install, unlock the state
 if (db.get("setup.global") === "in_progress") {
@@ -46,7 +51,8 @@ api.get("/templates", (c) => {
 		id: t.id,
 		name: t.name,
 		category: t.category,
-		file: files.find((f) => f.replace(/\.ya?ml$/, "") === t.id) ?? `${t.id}.yml`,
+		file:
+			files.find((f) => f.replace(/\.ya?ml$/, "") === t.id) ?? `${t.id}.yml`,
 	}));
 	return c.json(templates);
 });
@@ -104,41 +110,21 @@ api.get("/credentials", (c) => {
 	return c.json(result);
 });
 
-api.post("/services/:name/scan", async (c) => {
-	const name = c.req.param("name");
-	const tpl = getTemplates().find((t) => t.id === name);
+/**
+ * Runs a template-declared action (`actions.<name>`) — no service is named here.
+ * The `/actions/` segment keeps these clear of the fixed container verbs
+ * (`start`, `stop`, `restart`, `logs`) served under /services.
+ */
+api.post("/services/:name/actions/:action", async (c) => {
+	const tpl = getTemplate(c.req.param("name"));
 	if (!tpl) return c.json({ error: "Service not found" }, 404);
 
-	if (name === "jellyfin") {
-		const token = db.get("internal.jellyfin.token") as string;
-		if (!token) return c.json({ error: "No auth token, reconfigure Jellyfin" }, 400);
-		const res = await fetch(serviceUrl("http://127.0.0.1:8096/Library/Refresh"), {
-			method: "POST",
-			headers: { Authorization: `MediaBrowser Token="${token}"` },
-		});
-		return c.json({ success: res.ok });
-	}
+	const step = tpl.actions?.[c.req.param("action")];
+	if (!step)
+		return c.json({ error: "Action not supported for this service" }, 400);
 
-	if (name === "plex") {
-		const token = db.get("internal.plex.token") as string;
-		if (!token) return c.json({ error: "No auth token, reconfigure Plex" }, 400);
-		const res = await fetch(serviceUrl("http://127.0.0.1:32400/library/sections/all/refresh"), {
-			headers: { "X-Plex-Token": token },
-		});
-		return c.json({ success: res.ok });
-	}
-
-	if (name === "emby") {
-		const token = db.get("internal.emby.token") as string;
-		if (!token) return c.json({ error: "No auth token, reconfigure Emby" }, 400);
-		const res = await fetch(serviceUrl("http://127.0.0.1:8096/Library/Refresh"), {
-			method: "POST",
-			headers: { "X-Emby-Token": token },
-		});
-		return c.json({ success: res.ok });
-	}
-
-	return c.json({ error: "Scan not supported for this service" }, 400);
+	const err = await runSetupStep(step, db, tpl.id);
+	return err ? c.json({ error: err }, 400) : c.json({ success: true });
 });
 
 api.route("/settings", settingsRoutes(db));

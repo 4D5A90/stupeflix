@@ -1,11 +1,19 @@
 import { execSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { randomBytes, randomUUID } from "node:crypto";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import type { Db } from "../db.js";
 import { compose } from "./docker-cli.js";
 import { serviceUrl } from "./env.js";
-import { log, debug, error as logError } from "./logger.js";
+import { debug, log, error as logError } from "./logger.js";
+import { buildVars, resolveTemplateVars } from "./template-vars.js";
 
 // ── YAML schema types ──
 
@@ -25,10 +33,23 @@ export interface CredentialField {
 	rules?: FieldRules;
 }
 
+/** A secret minted once and kept in `internal.<service>.<key>` for later runs. */
+export interface SecretDef {
+	key: string;
+	type?: "hex" | "uuid";
+	/** Bytes of entropy for `hex` (default 32, so a 64-char string). */
+	length?: number;
+}
+
 export interface SetupStepDef {
 	name: string;
 	label: string;
-	type: "config_file" | "api_call" | "wait_ready" | "extract_from_logs" | "extract_from_config";
+	type:
+		| "config_file"
+		| "api_call"
+		| "wait_ready"
+		| "extract_from_logs"
+		| "extract_from_config";
 	url?: string;
 	method?: string;
 	headers?: Record<string, string>;
@@ -43,8 +64,21 @@ export interface SetupStepDef {
 	retryOn?: number[];
 	maxRetries?: number;
 	ignoreStatus?: number[];
+	/** `wait_ready` only: poll until the response body matches this regex. */
+	match?: string;
+	/**
+	 * Probe run before the step: when the response body matches, the step is a
+	 * no-op. For APIs with no "create if absent", which answer a duplicate with
+	 * a second copy instead of a conflict.
+	 */
+	skipIf?: { url: string; match: string };
 	container?: string;
+	/** Path under `paths.config`, for `config_file` and `extract_from_config`. */
 	file?: string;
+	/** File body for `config_file`. Template variables are resolved. */
+	content?: string;
+	/** `config_file` only: leave an existing file alone (default true). */
+	skipIfExists?: boolean;
 	regex?: string;
 	storeAs?: string;
 }
@@ -58,8 +92,22 @@ export interface ServiceTemplate {
 	container: string;
 	port: number;
 	webUiPath?: string;
+	/**
+	 * What setup cannot do for the user: a step they must take by hand, or a
+	 * quirk of the service worth warning about. Surfaced as a tooltip.
+	 */
+	notes?: string[];
+	/** Compose services this template owns, verbatim, with template variables. */
+	compose: Record<string, unknown>;
+	generate?: SecretDef[];
+	/** Directories under `paths.config` created before the container starts. */
+	dirs?: string[];
+	/** Directories under `paths.config` wiped on reconfigure, to replay a startup wizard. */
+	reset?: { dirs?: string[] };
 	credentials: CredentialField[];
 	setup: SetupStepDef[];
+	/** On-demand steps the dashboard can trigger after setup, e.g. `scan`. */
+	actions?: Record<string, SetupStepDef>;
 }
 
 // ── Public API sent to frontend ──
@@ -70,6 +118,7 @@ export interface ServiceMeta {
 	description: string;
 	category: string;
 	defaultEnabled: boolean;
+	notes: string[];
 	credentials: CredentialField[];
 }
 
@@ -81,7 +130,9 @@ let templatesDir = "";
 export function loadTemplates(dir: string): void {
 	templatesDir = dir;
 	templates = [];
-	const files = readdirSync(dir).filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"));
+	const files = readdirSync(dir).filter(
+		(f) => f.endsWith(".yml") || f.endsWith(".yaml"),
+	);
 	for (const file of files) {
 		const raw = readFileSync(join(dir, file), "utf-8");
 		const tpl = parse(raw) as ServiceTemplate;
@@ -101,7 +152,9 @@ export function getTemplatesDir(): string {
 
 export function getTemplateFiles(): string[] {
 	if (!templatesDir) return [];
-	return readdirSync(templatesDir).filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"));
+	return readdirSync(templatesDir).filter(
+		(f) => f.endsWith(".yml") || f.endsWith(".yaml"),
+	);
 }
 
 export function getTemplates(): ServiceTemplate[] {
@@ -112,68 +165,141 @@ export function getTemplate(id: string): ServiceTemplate | undefined {
 	return templates.find((t) => t.id === id);
 }
 
+export function getEnabledTemplates(db: Db): ServiceTemplate[] {
+	return templates.filter((t) => db.get(`services.${t.id}.enabled`));
+}
+
+/** The DB defaults a template implies: its enable flag and each credential's default. */
+export function getTemplateDefaults(): Record<string, unknown> {
+	const defaults: Record<string, unknown> = {};
+	for (const tpl of templates) {
+		defaults[`services.${tpl.id}.enabled`] = tpl.defaultEnabled;
+		for (const field of tpl.credentials ?? []) {
+			defaults[`credentials.${tpl.id}.${field.key}`] = field.default ?? "";
+		}
+	}
+	return defaults;
+}
+
 export function getServiceMetas(): ServiceMeta[] {
-	return templates.map(({ id, name, description, category, defaultEnabled, credentials }) => ({
-		id,
-		name,
-		description,
-		category,
-		defaultEnabled,
-		credentials,
-	}));
+	return templates.map(
+		({
+			id,
+			name,
+			description,
+			category,
+			defaultEnabled,
+			notes,
+			credentials,
+		}) => ({
+			id,
+			name,
+			description,
+			category,
+			defaultEnabled,
+			notes: notes ?? [],
+			credentials,
+		}),
+	);
+}
+
+// ── Generated secrets ──
+
+/**
+ * Mints this template's declared secrets on first use and keeps them afterwards,
+ * so an API key survives a reconfigure — and so a template can hand it to another
+ * service through `{{internal.<id>.<key>}}` without any code knowing about either.
+ */
+export function ensureSecrets(db: Db, tpl: ServiceTemplate): void {
+	for (const secret of tpl.generate ?? []) {
+		const dbKey = `internal.${tpl.id}.${secret.key}`;
+		if (db.get(dbKey)) continue;
+		const value =
+			secret.type === "uuid"
+				? randomUUID()
+				: randomBytes(secret.length ?? 32).toString("hex");
+		db.set(dbKey, value);
+		debug(`Generated ${dbKey}`);
+	}
+}
+
+// ── Reconfigure surface ──
+
+/**
+ * Files a reconfigure regenerates: exactly what the templates declare writing.
+ * Every template, not just the enabled ones — a service the user just turned off
+ * must not leave a stale config behind for the day it is turned back on.
+ */
+export function getGeneratedConfigFiles(db: Db): string[] {
+	const files: string[] = [];
+	for (const tpl of templates) {
+		const vars = buildVars(db, tpl.id);
+		for (const step of tpl.setup) {
+			if (step.type !== "config_file" || !step.file) continue;
+			files.push(resolveTemplateVars(step.file, vars) as string);
+		}
+	}
+	return files;
+}
+
+export function getResetDirs(): string[] {
+	return templates.flatMap((tpl) => tpl.reset?.dirs ?? []);
 }
 
 // ── Setup step runner ──
 
-function resolveTemplateVars(
-	value: unknown,
-	vars: Record<string, string>,
-): unknown {
-	if (typeof value === "string") {
-		return value.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (_match, key: string) => vars[key] ?? "");
-	}
-	if (Array.isArray(value)) {
-		return value.map((v) => resolveTemplateVars(v, vars));
-	}
-	if (value !== null && typeof value === "object") {
-		const result: Record<string, unknown> = {};
-		for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-			result[k] = resolveTemplateVars(v, vars);
-		}
-		return result;
-	}
-	return value;
-}
-
-function buildVars(db: Db, serviceId: string): Record<string, string> {
-	const vars: Record<string, string> = {};
-	const all = db.all();
-	const credPrefix = `credentials.${serviceId}.`;
-	const intPrefix = `internal.${serviceId}.`;
-	for (const [key, value] of Object.entries(all)) {
-		if (typeof value !== "string") continue;
-		if (key.startsWith(credPrefix)) {
-			vars[`credentials.${key.slice(credPrefix.length)}`] = value;
-		} else if (key.startsWith(intPrefix)) {
-			vars[`internal.${key.slice(intPrefix.length)}`] = value;
-		}
-	}
-	return vars;
-}
-
-async function waitForService(url: string, maxWait = 120000): Promise<boolean> {
+/**
+ * Polls until the service answers. With `match`, answering is not enough — the
+ * body has to match too, which is how a template waits for a service to reach a
+ * state instead of merely accepting connections.
+ */
+async function waitForService(
+	url: string,
+	match?: string,
+	maxWait = 120000,
+): Promise<boolean> {
 	const start = Date.now();
+	const pattern = match ? new RegExp(match) : null;
 	while (Date.now() - start < maxWait) {
 		try {
 			const res = await fetch(url);
 			// Any HTTP response means the service is up (even 401/403)
-			if (res.status > 0) return true;
+			if (res.status > 0) {
+				if (!pattern) return true;
+				if (pattern.test(await res.text())) return true;
+			}
 		} catch {
 			// connection refused = not ready yet
 		}
 		await new Promise((r) => setTimeout(r, 2000));
 	}
 	return false;
+}
+
+/** A step's declared headers, plus the stored cookie/token it opts into. */
+function stepHeaders(
+	step: SetupStepDef,
+	db: Db,
+	serviceId: string,
+	vars: Record<string, string>,
+): Record<string, string> {
+	const headers: Record<string, string> = step.headers
+		? Object.fromEntries(
+				Object.entries(step.headers).map(([k, v]) => [
+					k,
+					resolveTemplateVars(v, vars) as string,
+				]),
+			)
+		: {};
+	if (step.useCookie) {
+		const cookie = db.get(`internal.${serviceId}.cookie`) as string;
+		if (cookie) headers.Cookie = cookie;
+	}
+	if (step.useToken) {
+		const token = db.get(`internal.${serviceId}.token`) as string;
+		if (token) headers.Authorization = `MediaBrowser Token="${token}"`;
+	}
+	return headers;
 }
 
 export async function runSetupStep(
@@ -183,26 +309,53 @@ export async function runSetupStep(
 	extraVars?: Record<string, string>,
 ): Promise<string | null> {
 	const vars = { ...buildVars(db, serviceId), ...extraVars };
-	const url = serviceUrl(resolveTemplateVars(step.url ?? "", vars) as string) || undefined;
+	const url =
+		serviceUrl(resolveTemplateVars(step.url ?? "", vars) as string) ||
+		undefined;
+
+	if (step.skipIf) {
+		const probe = serviceUrl(
+			resolveTemplateVars(step.skipIf.url, vars) as string,
+		);
+		const pattern = resolveTemplateVars(step.skipIf.match, vars) as string;
+		try {
+			const res = await fetch(probe, {
+				headers: stepHeaders(step, db, serviceId, vars),
+			});
+			if (res.ok && new RegExp(pattern).test(await res.text())) {
+				debug(`Skipping ${step.name}: ${probe} already matches /${pattern}/`);
+				return null;
+			}
+		} catch {
+			// Probe unreachable: run the step and let it report its own failure
+		}
+	}
 
 	switch (step.type) {
 		case "wait_ready": {
 			if (!url) return "No URL configured";
-			const ready = await waitForService(url);
-			return ready ? null : `Timeout waiting for ${url}`;
+			const ready = await waitForService(url, step.match);
+			if (ready) return null;
+			return step.match
+				? `Timeout waiting for ${url} to match /${step.match}/`
+				: `Timeout waiting for ${url}`;
 		}
 
 		case "api_call": {
 			if (!url) return "No URL configured";
 			const method = step.method ?? "POST";
-			const resolved = step.body ? resolveTemplateVars(step.body, vars) : undefined;
+			const resolved = step.body
+				? resolveTemplateVars(step.body, vars)
+				: undefined;
 			const isForm = step.contentType === "form";
 			let body: string | undefined;
 			let contentType: string | undefined;
 			if (resolved) {
 				if (isForm) {
 					const params = new URLSearchParams();
-					for (const [k, v] of Object.entries(resolved as Record<string, string>)) {
+					for (const [k, v] of Object.entries(
+						resolved as Record<string, string>,
+					)) {
 						params.set(k, String(v));
 					}
 					body = params.toString();
@@ -216,20 +369,8 @@ export async function runSetupStep(
 			const maxRetries = step.maxRetries ?? 10;
 			for (let attempt = 0; attempt <= maxRetries; attempt++) {
 				try {
-					const headers: Record<string, string> = step.headers
-						? Object.fromEntries(
-								Object.entries(step.headers).map(([k, v]) => [k, resolveTemplateVars(v, vars) as string]),
-							)
-						: {};
+					const headers = stepHeaders(step, db, serviceId, vars);
 					if (contentType) headers["Content-Type"] = contentType;
-					if (step.useCookie) {
-						const cookie = db.get(`internal.${serviceId}.cookie`) as string;
-						if (cookie) headers.Cookie = cookie;
-					}
-					if (step.useToken) {
-						const token = db.get(`internal.${serviceId}.token`) as string;
-						if (token) headers.Authorization = `MediaBrowser Token="${token}"`;
-					}
 					debug(`${method} ${url}`, { headers, hasBody: !!body });
 					const res = await fetch(url, { method, headers, body });
 					if (step.storeCookie) {
@@ -255,13 +396,15 @@ export async function runSetupStep(
 					if (res.ok || res.status === 204) return null;
 					if (step.ignoreStatus?.includes(res.status)) return null;
 					if (retryOn.includes(res.status) && attempt < maxRetries) {
-						debug(`${url} returned ${res.status}, retrying (${attempt + 1}/${maxRetries})...`);
+						debug(
+							`${url} returned ${res.status}, retrying (${attempt + 1}/${maxRetries})...`,
+						);
 						await new Promise((r) => setTimeout(r, 3000));
 						continue;
 					}
 					const resBody = await res.text().catch(() => "");
 					const detail = `${method} ${url} returned ${res.status}: ${resBody}`;
-					logError(`API call failed`, detail);
+					logError("API call failed", detail);
 					return detail;
 				} catch (e) {
 					if (attempt < maxRetries) {
@@ -278,7 +421,28 @@ export async function runSetupStep(
 		}
 
 		case "config_file": {
-			return null;
+			if (!step.file) return "config_file requires file";
+			const configPath = db.get("paths.config") as string;
+			if (!configPath) return "paths.config is not set";
+			const target = join(
+				configPath,
+				resolveTemplateVars(step.file, vars) as string,
+			);
+			if (step.skipIfExists !== false && existsSync(target)) {
+				debug(`${step.file} already exists, skipping`);
+				return null;
+			}
+			try {
+				mkdirSync(dirname(target), { recursive: true });
+				writeFileSync(
+					target,
+					resolveTemplateVars(step.content ?? "", vars) as string,
+				);
+				debug(`Wrote ${step.file}`);
+				return null;
+			} catch (e) {
+				return `Failed to write ${step.file}: ${e instanceof Error ? e.message : e}`;
+			}
 		}
 
 		case "extract_from_logs": {

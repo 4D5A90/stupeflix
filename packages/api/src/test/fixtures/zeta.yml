@@ -1,0 +1,25 @@
+# Loads last (templates load in filename order) but Alpha reads its secret.
+# Rendering Alpha therefore requires every secret to be minted before any
+# template is rendered — this fixture is what makes that regression visible.
+id: zeta
+name: Zeta
+description: Fixture producer that loads after its consumer
+category: seeder
+defaultEnabled: false
+container: zeta
+port: 3333
+
+generate:
+  - key: token
+    type: uuid
+
+compose:
+  zeta:
+    image: example/zeta:latest
+    container_name: zeta
+    environment:
+      - ZETA__TOKEN={{internal.token}}
+
+credentials: []
+
+setup: []

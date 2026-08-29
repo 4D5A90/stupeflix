@@ -98,6 +98,43 @@ pnpm dev
 Open `http://localhost:5173`. In dev the API runs on port 3000 and Vite proxies
 `/api` to it; in the image the API serves the built wizard on the same port.
 
+### Tests
+
+```bash
+pnpm test          # vitest, api package
+```
+
+They cover the template engine — variable resolution, compose generation, secret
+minting, `config_file` writing, step phases — and, in `src/templates.test.ts`,
+the real `templates/` directory: every `{{...}}` must resolve, `container_name`
+must match `container`, and compose names and host ports must not collide. Adding
+a service means keeping that suite green.
+
+What they deliberately do **not** cover is anything that shells out to Docker or
+talks to a live service. To check those, run the stack for real — but **do not
+point it at your own setup**: a reconfigure deletes generated configs, and
+`container_name` is a global Docker namespace. Run it isolated instead:
+
+```bash
+# Copy the templates and suffix their container_name, so nothing collides
+mkdir -p /tmp/sfx/{config,media,torrents,data,templates}
+for f in templates/*.yml; do
+  sed -E 's/^([[:space:]]*container_name:[[:space:]]*)([A-Za-z0-9_-]+)$/\1\2-e2e/' \
+    "$f" > "/tmp/sfx/templates/$(basename "$f")"
+done
+
+STUPEFLIX_TEMPLATES_DIR=/tmp/sfx/templates \
+STUPEFLIX_DB_PATH=/tmp/sfx/data/stupeflix.db \
+STUPEFLIX_COMPOSE_FILE=/tmp/sfx/data/docker-compose.yml \
+STUPEFLIX_COMPOSE_PROJECT=stupeflix-e2e \
+PORT=3999 pnpm --filter api dev
+```
+
+Then drive it with `POST /setup/complete` and poll `GET /setup/status`. Keep the
+**published ports unchanged** — setup steps address services as `localhost:<port>`
+— and only rename `container_name`: the compose service key is what containers
+resolve each other by on the network.
+
 ## How it Works
 
 1. **Paths** — Choose where to store config, media, and torrents. Define media libraries (Movies, TvShows, etc.). When a host root is mounted (`STUPEFLIX_ROOT`), these are prefilled under it.
@@ -106,12 +143,14 @@ Open `http://localhost:5173`. In dev the API runs on port 3000 and Vite proxies
 4. **Setup** — Review and launch. Stupeflix generates `docker-compose.yml`, starts containers, and configures each service automatically
 
 > **Reconfigure is a reset, not an edit.** Re-running the wizard stops the stack
-> and clears each service's *generated* config so setup can run fresh —
-> `jellyfin`/`emby` config dirs are wiped entirely (their startup wizard is
-> replayed), and the generated files for qBittorrent, Transmission, MediaManager
-> and JOAL are removed and regenerated. Your **media files and JOAL torrents are
-> never touched**. To change a single service without a full reset, use the
-> per-service install (`POST /install/:name`).
+> and clears each service's *generated* config so setup can run fresh. What gets
+> cleared is not a list in the code: it is exactly the files the templates declare
+> writing (`config_file` steps) plus the directories they list under `reset.dirs`
+> — Jellyfin's config dir, for instance, so its startup wizard replays. Anything
+> no template claims is user data and survives: your **media files, JOAL's seeded
+> torrents, the indexers you added in Prowlarr, and MediaManager's database**.
+> To change a single service without a full reset, use the per-service install
+> (`POST /install/:name`).
 
 ## Services
 
@@ -121,16 +160,39 @@ builds its registry from those files, so this list is the source of truth:
 | Service | Container | Port | Category | Default | Credentials |
 |---------|-----------|------|----------|:---:|-------------|
 | qBittorrent | `qbittorrent` | 8080 | Torrent Client | on | user, pass |
+| Prowlarr | `prowlarr` | 9696 | Indexer | off | — |
+| MediaManager | `mediamanager` | 8000 | Media Manager | off | email, pass |
 | Jellyfin | `jellyfin` | 8096 | Media Server | on | user, pass |
 | Plex | `plex` | 32400 | Media Server | off | claim |
 | JOAL | `joal` | 6060 | Seeder | off | path, token |
 
-Only the **Torrent Client** category is single-select; media servers and the
-seeder are independent toggles, so you can enable several at once.
+Only the **Torrent Client** category is single-select; the others are independent
+toggles, so you can enable several at once.
 
-> The compose generator (`lib/compose.ts`) still carries definitions for
-> Transmission, Emby and MediaManager, but they have no template yet, so they do
-> **not** appear in the wizard. Drop a `templates/*.yml` file to surface one.
+### MediaManager
+
+MediaManager searches for movies and shows and hands the results to a torrent
+client. It only earns its keep with both of its neighbours enabled:
+
+- **qBittorrent** does the downloading. MediaManager gets its own category
+  (`MediaManager`, saving to `/media/downloads`) so it never fights the
+  per-library categories the wizard creates. The media root is mounted at
+  `/media` in every container, so a path MediaManager reads back from
+  qBittorrent's API points at the same file on both sides, and importing into a
+  library is a rename rather than a copy.
+- **Prowlarr** does the searching. Stupeflix generates its API key, injects it
+  into Prowlarr via `PROWLARR__AUTH__APIKEY` and hands the same value to
+  MediaManager — so neither needs configuring by hand. **You still have to add
+  your own trackers** in Prowlarr's UI; without them there is nothing to search.
+
+Both are wired entirely through environment variables in the templates. Note that
+MediaManager's settings models **reject unknown keys**: a `MEDIAMANAGER_*`
+variable its image does not define is a startup failure, so check the field names
+against `/app/media_manager/*/config.py` in the image when bumping the tag.
+
+On an empty database MediaManager creates its own admin from `admin_emails` with
+the hardcoded password `admin`. Setup claims that account and replaces the
+password with the one you chose, then logs in again to prove it took.
 
 ### JOAL
 
@@ -153,7 +215,10 @@ During setup, Stupeflix automatically:
 
 ## Service Templates
 
-Services are defined as YAML files in `templates/`. Add new services by dropping a `.yml` file — no code changes needed.
+Services are defined as YAML files in `templates/`. A template owns **everything**
+about its service — the container, the files it needs on disk, its setup pipeline
+and its dashboard actions. No file under `packages/api/src` names a service, so
+adding one is dropping a `.yml` and nothing else.
 
 ```yaml
 id: myservice
@@ -161,8 +226,44 @@ name: My Service
 description: What it does
 category: mediaServer
 defaultEnabled: false
-container: myservice
+container: myservice        # compose service name, and the container_name below
 port: 8080
+
+# Merged verbatim into the generated docker-compose.yml when enabled.
+# A service may declare several containers (a sidecar database, say).
+compose:
+  myservice:
+    image: example/myservice:latest
+    container_name: myservice
+    environment:
+      - PUID={{env.PUID}}
+      - TZ={{env.TZ}}
+      - API_KEY={{internal.api_key}}
+    volumes:
+      - "{{paths.config}}/myservice:/config"
+      - "{{paths.media}}:/media"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+# Secrets minted once and kept in internal.<id>.<key> across reconfigures
+generate:
+  - key: api_key
+    type: hex        # or uuid
+    length: 16       # bytes
+
+# Shown as a tooltip on the dashboard, and inline in the wizard once the
+# service is enabled. Use it for what setup cannot do for the user.
+# Plain sentences only — they are rendered as text, not markdown.
+notes:
+  - Finish the last step in the service's own UI.
+
+dirs:                # created under paths.config before the container boots
+  - myservice/cache
+
+reset:               # wiped on reconfigure, to replay a startup wizard
+  dirs:
+    - myservice
 
 credentials:
   - key: user
@@ -189,6 +290,16 @@ setup:
     body:
       username: "{{credentials.user}}"
       password: "{{credentials.pass}}"
+
+# Buttons the dashboard offers after setup, POSTed to
+# /services/:name/actions/:action. Declaring one is what makes it appear.
+actions:
+  scan:
+    name: scan
+    label: Scan libraries
+    type: api_call
+    url: http://localhost:8080/api/refresh
+    method: POST
 ```
 
 ### Step types
@@ -197,18 +308,37 @@ setup:
 |------|-------------|
 | `wait_ready` | Poll a URL until the service responds |
 | `api_call` | HTTP request with retry, cookies, tokens, custom headers |
-| `config_file` | Handled by imperative code in `configs.ts` |
+| `config_file` | Write `content` to `file` under `paths.config` (`skipIfExists`, default true) |
 | `extract_from_logs` | Extract a value from container logs via regex |
 | `extract_from_config` | Extract a value from a config file via regex |
+
+`config_file` steps run **before** `docker compose up`, since a container reads
+its config at boot; every other step runs after. That ordering is derived from
+the step type, not declared.
 
 ### Template variables
 
 | Variable | Source |
 |----------|--------|
 | `{{credentials.key}}` | Credential values from the wizard |
-| `{{internal.key}}` | Values stored by previous steps (tokens, passwords) |
+| `{{internal.key}}` | Generated secrets, and values stored by previous steps (tokens, passwords) |
+| `{{paths.config}}` `{{paths.media}}` `{{paths.torrents}}` | Host paths from the wizard |
+| `{{env.PUID}}` `{{env.PGID}}` `{{env.TZ}}` | Host wiring |
 | `{{library.name}}` | Library folder name (in `foreach: libraries` steps) |
 | `{{library.type}}` | Library type: `movies`, `tvshows`, `music` |
+| `{{libraries.<type>_json}}` | All libraries of a type as `[{"name":…,"path":"/media/…"}]` |
+| `{{internal.<service>.<key>}}` | **Another** service's secret |
+| `{{credentials.<service>.<key>}}` | **Another** service's credential |
+| `{{services.<service>.enabled}}` | `"true"` / `"false"` |
+
+The last three are how two services connect without either the code or the other
+template being changed: MediaManager reads
+`{{internal.prowlarr.api_key}}` and switches itself on with
+`{{services.prowlarr.enabled}}`.
+
+An environment entry that resolves to an empty value (`FOO=`) is dropped from the
+generated compose file, so an optional credential left blank falls back to the
+image's own default instead of shadowing it.
 
 ### `foreach: libraries`
 

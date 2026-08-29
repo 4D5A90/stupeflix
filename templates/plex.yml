@@ -6,6 +6,29 @@ defaultEnabled: false
 container: plex
 port: 32400
 
+notes:
+  - The claim token from plex.tv/claim is only valid for a few minutes, and only
+    for a first setup. Leave it blank to link the server by hand instead.
+  - Without a claim token, finish the setup at localhost:32400/web.
+
+compose:
+  plex:
+    image: linuxserver/plex:latest
+    container_name: plex
+    environment:
+      - PUID={{env.PUID}}
+      - PGID={{env.PGID}}
+      - TZ={{env.TZ}}
+      - VERSION=docker
+      # Dropped from the compose file when the user leaves the claim token blank
+      - PLEX_CLAIM={{credentials.claim}}
+    volumes:
+      - "{{paths.config}}/plex:/config"
+      - "{{paths.media}}:/media"
+    ports:
+      - "32400:32400"
+    restart: unless-stopped
+
 credentials:
   - key: claim
     type: text
@@ -13,10 +36,15 @@ credentials:
     required: false
 
 setup:
+  # /identity answers about a second after boot, but the server only learns which
+  # account owns it once it has registered with plex.tv. In that window every
+  # privileged call comes back 403 ("Signed-in Token ()" in the Plex log), so
+  # waiting on the claim is what makes add_library deterministic.
   - name: wait_ready
-    label: Wait for Plex API
+    label: Wait for Plex to be claimed
     type: wait_ready
     url: http://localhost:32400/identity
+    match: 'claimed="1"'
 
   - name: extract_token
     label: Extract server token
@@ -45,7 +73,13 @@ setup:
         scanner: Plex%20Music
     url: http://localhost:32400/library/sections?name={{library.name}}&type={{library.content_type}}&agent={{library.agent}}&scanner={{library.scanner}}&language=en-US&location=/media/{{library.name}}
     method: POST
-    ignoreStatus: [409]
+    # Plex has no "create if absent": posting a name that already exists answers
+    # 201 and makes a second section, so a re-run would duplicate every library.
+    # The probe is what keeps this step idempotent — there is no status to ignore.
+    # The probe carries this step's Accept header, so it is matched against JSON
+    skipIf:
+      url: http://localhost:32400/library/sections
+      match: '"title":\s*"{{library.name}}"'
     headers:
       X-Plex-Token: "{{internal.token}}"
       X-Plex-Client-Identifier: stupeflix
@@ -57,6 +91,18 @@ setup:
     type: api_call
     url: http://localhost:32400/library/sections/all/refresh
     method: GET
+    headers:
+      X-Plex-Token: "{{internal.token}}"
+      X-Plex-Client-Identifier: stupeflix
+
+actions:
+  scan:
+    name: scan
+    label: Scan libraries
+    type: api_call
+    url: http://localhost:32400/library/sections/all/refresh
+    method: GET
+    maxRetries: 0
     headers:
       X-Plex-Token: "{{internal.token}}"
       X-Plex-Client-Identifier: stupeflix
