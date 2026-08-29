@@ -1,44 +1,8 @@
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import { Hono } from "hono";
 import type { Db } from "../db.js";
-import { writeCompose } from "../lib/compose.js";
-import { compose } from "../lib/docker-cli.js";
-import { createTemplateDirs } from "../lib/helpers.js";
-import { log, error as logError } from "../lib/logger.js";
-import type { ServiceTemplate } from "../lib/service-registry.js";
+import { runServiceInstall } from "../lib/service-install.js";
 import { getTemplate } from "../lib/service-registry.js";
-import {
-	runTemplateSteps,
-	setStepStatus,
-	stepKeys,
-} from "../lib/setup-runner.js";
-
-const execAsync = promisify(exec);
-
-async function runServiceInstall(db: Db, tpl: ServiceTemplate): Promise<void> {
-	try {
-		db.set("setup.global", "in_progress");
-
-		writeCompose(db);
-		createTemplateDirs(db, tpl);
-		await runTemplateSteps(db, tpl, "pre_up");
-		await execAsync(compose(`up -d ${tpl.container}`));
-		await runTemplateSteps(db, tpl, "post_up");
-
-		db.set("setup.global", "completed");
-		db.set("setup.error", null);
-		log(`[install] ${tpl.id} installed`);
-	} catch (e) {
-		logError(`[install:${tpl.id}] failed`, e);
-		db.set(`services.${tpl.id}.enabled`, false);
-		db.set("setup.global", "failed");
-		db.set("setup.error", e instanceof Error ? e.message : String(e));
-		try {
-			await execAsync(compose(`stop ${tpl.container}`));
-		} catch {}
-	}
-}
+import { setStepStatus, stepKeys } from "../lib/setup-runner.js";
 
 export function installRoutes(db: Db) {
 	const app = new Hono();

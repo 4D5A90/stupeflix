@@ -2,7 +2,9 @@ import { execSync } from "node:child_process";
 import { Hono } from "hono";
 import type { Db } from "../db.js";
 import { compose } from "../lib/docker-cli.js";
-import { getTemplates } from "../lib/service-registry.js";
+import { removeService, runServiceInstall } from "../lib/service-install.js";
+import { getTemplate, getTemplates } from "../lib/service-registry.js";
+import { setStepStatus, stepKeys } from "../lib/setup-runner.js";
 
 function getContainerStatus(container: string): string {
 	try {
@@ -72,6 +74,43 @@ export function servicesRoutes(db: Db) {
 	app.post("/:name/restart", (c) => {
 		const name = c.req.param("name");
 		execSync(compose(`restart ${name}`), { stdio: "inherit" });
+		return c.json({ success: true });
+	});
+
+	/**
+	 * Replays one service's template: same pipeline as an install, with its own
+	 * generated config dropped first. Scoped to this service — reconfiguring
+	 * Jellyfin leaves Plex's startup wizard alone.
+	 */
+	app.post("/:name/reconfigure", async (c) => {
+		const name = c.req.param("name");
+		const tpl = getTemplate(name);
+		if (!tpl) return c.json({ error: "Template not found" }, 404);
+		if (!db.get(`services.${name}.enabled`))
+			return c.json({ error: "Not installed" }, 409);
+		if (db.get("setup.global") === "in_progress")
+			return c.json({ error: "Setup already in progress" }, 409);
+
+		const body = await c.req.json().catch(() => ({}));
+		const credentials: Record<string, string> = body.credentials ?? {};
+		for (const [key, value] of Object.entries(credentials)) {
+			db.set(`credentials.${name}.${key}`, value);
+		}
+		db.set("setup.error", null);
+		for (const key of stepKeys(db, tpl)) setStepStatus(db, key, "pending");
+
+		runServiceInstall(db, tpl, { reset: true });
+		return c.json({ success: true });
+	});
+
+	app.delete("/:name", async (c) => {
+		const name = c.req.param("name");
+		const tpl = getTemplate(name);
+		if (!tpl) return c.json({ error: "Template not found" }, 404);
+		if (db.get("setup.global") === "in_progress")
+			return c.json({ error: "Setup in progress" }, 409);
+
+		await removeService(db, tpl);
 		return c.json({ success: true });
 	});
 

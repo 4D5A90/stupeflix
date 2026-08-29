@@ -237,19 +237,26 @@ export function ensureSecrets(db: Db, tpl: ServiceTemplate): void {
  * must not leave a stale config behind for the day it is turned back on.
  */
 export function getGeneratedConfigFiles(db: Db): string[] {
+	return templates.flatMap((tpl) => getTemplateConfigFiles(db, tpl));
+}
+
+/** The same, for one template — what reconfiguring a single service must drop. */
+export function getTemplateConfigFiles(db: Db, tpl: ServiceTemplate): string[] {
+	const vars = buildVars(db, tpl.id);
 	const files: string[] = [];
-	for (const tpl of templates) {
-		const vars = buildVars(db, tpl.id);
-		for (const step of tpl.setup) {
-			if (step.type !== "config_file" || !step.file) continue;
-			files.push(resolveTemplateVars(step.file, vars) as string);
-		}
+	for (const step of tpl.setup) {
+		if (step.type !== "config_file" || !step.file) continue;
+		files.push(resolveTemplateVars(step.file, vars) as string);
 	}
 	return files;
 }
 
 export function getResetDirs(): string[] {
-	return templates.flatMap((tpl) => tpl.reset?.dirs ?? []);
+	return templates.flatMap(getTemplateResetDirs);
+}
+
+export function getTemplateResetDirs(tpl: ServiceTemplate): string[] {
+	return tpl.reset?.dirs ?? [];
 }
 
 // ── Setup step runner ──

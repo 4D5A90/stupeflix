@@ -117,6 +117,20 @@ export const api = {
 
   getLibraryStats: () => request<LibraryStats>("/library/stats"),
 
+  restartService: (name: string) =>
+    request<{ success: boolean }>(`/services/${name}/restart`, { method: "POST" }),
+
+  /** Replays this service's template, dropping the config it declares owning. */
+  reconfigureService: (name: string, credentials: Record<string, string>) =>
+    request<{ success: boolean }>(`/services/${name}/reconfigure`, {
+      method: "POST",
+      body: JSON.stringify({ credentials }),
+    }),
+
+  /** Removes the container(s); the service's config directory is left on disk. */
+  deleteService: (name: string) =>
+    request<{ success: boolean }>(`/services/${name}`, { method: "DELETE" }),
+
   runAction: (name: string, action: string) =>
     request<{ success: boolean }>(`/services/${name}/actions/${action}`, {
       method: "POST",

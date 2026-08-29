@@ -338,7 +338,7 @@ than breaking the button, so a typo is invisible in the UI.
 | `key` | Key — credentials |
 | `open` | Arrow leaving a frame — open the service |
 | `check` | Tick |
-| `wrench` | Wrench |
+| `cog` | Gear — settings, reconfigure |
 
 The list lives in `packages/web/src/components/ui/ActionIcon.tsx`, and
 `src/templates.test.ts` reads it back to fail on a name no template can draw —
