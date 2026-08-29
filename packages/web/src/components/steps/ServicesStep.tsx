@@ -94,7 +94,7 @@ export function ServicesStep({
                         enabledServices.map((s) => (
                           <span
                             key={s.id}
-                            className="px-2 py-0.5 text-xs bg-blue-600/20 text-blue-300 border border-blue-500/30 rounded"
+                            className="px-2 py-0.5 text-xs bg-brand-600/20 text-brand-300 border border-brand-500/30 rounded"
                           >
                             {s.name}
                           </span>
@@ -133,9 +133,9 @@ export function ServicesStep({
                           key={svc.id}
                           type="button"
                           onClick={() => toggleService(svc.id, !enabled)}
-                          className={`flex items-center justify-between w-full px-4 py-3 rounded-lg text-left transition-colors ${
+                          className={`flex items-center justify-between w-full px-4 py-3 rounded-md text-left transition-colors ${
                             enabled
-                              ? "bg-blue-600/20 border border-blue-500"
+                              ? "bg-brand-600/20 border border-brand-500"
                               : "bg-gray-700 border border-transparent hover:bg-gray-700/70"
                           }`}
                         >
@@ -145,7 +145,7 @@ export function ServicesStep({
                             {/* Only once picked: the caveats matter when the
                                 service is actually going to be installed */}
                             {enabled && svc.notes?.length > 0 && (
-                              <ul className="mt-2 space-y-1 text-xs leading-relaxed text-blue-300/80">
+                              <ul className="mt-2 space-y-1 text-xs leading-relaxed text-brand-300/80">
                                 {svc.notes.map((note) => (
                                   <li key={note} className="flex gap-1.5">
                                     <span aria-hidden="true">•</span>
@@ -157,7 +157,7 @@ export function ServicesStep({
                           </div>
                           <div
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              enabled ? "bg-blue-600" : "bg-gray-600"
+                              enabled ? "bg-brand-600" : "bg-gray-600"
                             }`}
                           >
                             <span
@@ -204,7 +204,7 @@ function CategorySection({
     <div
       className={`p-4 rounded-xl border transition-colors ${
         hasSelection
-          ? "bg-gray-800/50 border-blue-500/30"
+          ? "bg-gray-800/50 border-brand-500/30"
           : "bg-gray-800/30 border-gray-700"
       } ${!open ? "cursor-pointer" : ""}`}
       onClick={!open ? () => setOpen(true) : undefined}
@@ -217,7 +217,7 @@ function CategorySection({
         <span className="flex items-center gap-2">
           <span className="text-gray-200 font-medium">{label}</span>
           {hasSelection ? (
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+            <span className="w-1.5 h-1.5 rounded-full bg-brand-500 shrink-0" />
           ) : null}
         </span>
         <svg

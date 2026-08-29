@@ -31,6 +31,30 @@ export interface AppStatus {
   containers: Record<string, string>;
 }
 
+/** One configured library, counted from the filesystem rather than a media server. */
+export interface LibraryStat {
+  name: string;
+  type: string;
+  /** Series / albums / movie titles — the thing you browse. */
+  primary: number;
+  /** Episodes / tracks / files — what those contain. */
+  secondary: number;
+  primaryUnit: string;
+  secondaryUnit: string;
+}
+
+export interface DiskStat {
+  total: number;
+  free: number;
+  used: number;
+}
+
+export interface LibraryStats {
+  libraries: LibraryStat[];
+  /** Null when the media path is unset or unreadable. */
+  disk: DiskStat | null;
+}
+
 export interface ServiceAction {
   id: string;
   label: string;
@@ -90,6 +114,8 @@ export const api = {
       return res.json() as Promise<{ success: boolean; count: number }>;
     });
   },
+
+  getLibraryStats: () => request<LibraryStats>("/library/stats"),
 
   runAction: (name: string, action: string) =>
     request<{ success: boolean }>(`/services/${name}/actions/${action}`, {

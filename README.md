@@ -335,6 +335,8 @@ than breaking the button, so a typo is invisible in the UI.
 | `upload` | Arrow out of a tray |
 | `trash` | Bin |
 | `search` | Magnifier |
+| `key` | Key — credentials |
+| `open` | Arrow leaving a frame — open the service |
 | `check` | Tick |
 | `wrench` | Wrench |
 

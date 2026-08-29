@@ -16,7 +16,7 @@ function renderLabel(label: string): ReactNode {
         href={`https://${part}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-blue-400 hover:underline"
+        className="text-brand-400 hover:underline"
         onClick={(e) => e.stopPropagation()}
       >
         {part}
@@ -32,7 +32,7 @@ export function Input({ label, className = "", ...props }: InputProps) {
     <label className="block">
       <span className="text-sm text-gray-400">{renderLabel(label)}</span>
       <input
-        className={`mt-1 block w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${className}`}
+        className={`mt-1 block w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent ${className}`}
         {...props}
       />
     </label>

@@ -7,6 +7,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { initDb } from "./db.js";
 import { PORT, ROOT, SERVICE_HOST, TEMPLATES_DIR, WEB_DIR } from "./lib/env.js";
+import { getLibraryStats } from "./lib/library-stats.js";
 import {
 	getServiceMetas,
 	getTemplate,
@@ -44,6 +45,13 @@ api.get("/health", (c) => c.json({ status: "ok" }));
 api.get("/runtime", (c) => c.json({ root: ROOT, serviceHost: SERVICE_HOST }));
 
 api.get("/registry", (c) => c.json(getServiceMetas()));
+
+/**
+ * Filesystem view of the libraries, so the dashboard can lead with what the user
+ * has rather than with which containers happen to run. Read from disk on purpose:
+ * it stays true with every media server stopped, and picks no canonical one.
+ */
+api.get("/library/stats", (c) => c.json(getLibraryStats(db)));
 
 api.get("/templates", (c) => {
 	const files = getTemplateFiles();

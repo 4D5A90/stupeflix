@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-900 text-gray-100 antialiased;
+  @apply bg-ink-950 text-gray-100 antialiased;
 }
 
 @keyframes logo-spin {

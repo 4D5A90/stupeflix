@@ -59,8 +59,8 @@ export function InfoTooltip({ notes, label }: InfoTooltipProps) {
         onBlur={() => !pinned && setOpen(false)}
         className={`flex items-center justify-center w-4 h-4 rounded-full border text-[10px] font-semibold transition-colors ${
           open
-            ? "border-blue-400 text-blue-300"
-            : "border-gray-500 text-gray-400 hover:border-blue-400 hover:text-blue-300"
+            ? "border-brand-400 text-brand-300"
+            : "border-gray-500 text-gray-400 hover:border-brand-400 hover:text-brand-300"
         }`}
       >
         i
@@ -70,7 +70,7 @@ export function InfoTooltip({ notes, label }: InfoTooltipProps) {
         <span
           id={panelId}
           role="tooltip"
-          className="absolute left-1/2 top-6 z-20 w-72 -translate-x-1/2 rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-left text-xs leading-relaxed text-gray-300 shadow-xl"
+          className="absolute left-1/2 top-6 z-20 w-72 -translate-x-1/2 rounded-lg border border-white/[0.12] bg-ink-950 px-3 py-2 text-left text-xs leading-relaxed text-gray-300 shadow-xl"
         >
           {notes.length === 1 ? (
             <span className="block">{notes[0]}</span>

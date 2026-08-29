@@ -141,7 +141,7 @@ export function PathsStep({ config, onChange, onNext }: PathsStepProps) {
             aria-checked={useBasePath}
             onClick={() => toggleBasePath(!useBasePath)}
             className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-              useBasePath ? "bg-blue-600" : "bg-gray-700"
+              useBasePath ? "bg-brand-600" : "bg-gray-700"
             }`}
           >
             <span
@@ -157,7 +157,7 @@ export function PathsStep({ config, onChange, onNext }: PathsStepProps) {
           value={basePath}
           onChange={(e) => updateBasePath(e.target.value)}
           disabled={!useBasePath}
-          className="block w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+          className="block w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent disabled:opacity-50"
         />
         {mountedRoot && (
           <p className="text-xs text-gray-500">
@@ -196,12 +196,12 @@ export function PathsStep({ config, onChange, onNext }: PathsStepProps) {
                     placeholder="Folder name"
                     value={lib.name}
                     onChange={(e) => updateLibrary(i, "name", e.target.value)}
-                    className="flex-1 px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                    className="flex-1 px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-transparent"
                   />
                   <select
                     value={lib.type}
                     onChange={(e) => updateLibrary(i, "type", e.target.value)}
-                    className="px-1.5 py-1 text-xs bg-gray-800 border border-gray-700 rounded text-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="px-1.5 py-1 text-xs bg-gray-800 border border-gray-700 rounded text-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
                   >
                     {LIBRARY_TYPES.map((t) => (
                       <option key={t.value} value={t.value}>{t.label}</option>
@@ -222,7 +222,7 @@ export function PathsStep({ config, onChange, onNext }: PathsStepProps) {
               <button
                 type="button"
                 onClick={addLibrary}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-400 transition-colors"
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-brand-400 transition-colors"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-3 h-3">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />

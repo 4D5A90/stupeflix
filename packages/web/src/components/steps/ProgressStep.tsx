@@ -83,7 +83,7 @@ function groupSteps(
 
 const loadingSpinner = (
 	<div className="flex items-center justify-center py-12">
-		<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+		<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
 	</div>
 );
 
@@ -142,7 +142,7 @@ function Recap({ registry, config }: { registry: ServiceMeta[]; config: SetupCon
 					{enabledServices.map((svc) => (
 						<span
 							key={svc.id}
-							className="px-2 py-1 text-sm bg-blue-600/20 text-blue-300 border border-blue-500/30 rounded"
+							className="px-2 py-1 text-sm bg-brand-600/20 text-brand-300 border border-brand-500/30 rounded"
 						>
 							{svc.name}
 						</span>

@@ -104,7 +104,7 @@ setup:
 actions:
   scan:
     name: scan
-    label: Scan libraries
+    label: Scan
     icon: refresh
     type: api_call
     url: http://localhost:8096/Library/Refresh

@@ -23,19 +23,19 @@ export function RadioGroup({ label, options, value, onChange }: RadioGroupProps)
               key={option.value}
               type="button"
               onClick={() => onChange(option.value)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-md text-left transition-colors ${
                 selected
-                  ? "bg-blue-600/20 border border-blue-500"
+                  ? "bg-brand-600/20 border border-brand-500"
                   : "bg-gray-700 border border-transparent hover:bg-gray-600"
               }`}
             >
               <div
                 className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                  selected ? "border-blue-500" : "border-gray-500"
+                  selected ? "border-brand-500" : "border-gray-500"
                 }`}
               >
                 {selected ? (
-                  <div className="w-2 h-2 rounded-full bg-blue-500" />
+                  <div className="w-2 h-2 rounded-full bg-brand-500" />
                 ) : null}
               </div>
               <div>

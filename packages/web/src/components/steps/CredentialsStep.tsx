@@ -125,7 +125,7 @@ export function CredentialsStep({
                             const minLen = field.rules?.minLength ?? 8;
                             updateCredential(svc.id, field.key, generatePassword(Math.max(minLen, 8)));
                           }}
-                          className="mb-0.5 p-2 text-gray-400 hover:text-blue-400 transition-colors"
+                          className="mb-0.5 p-2 text-gray-400 hover:text-brand-400 transition-colors"
                           title="Generate password"
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-5 h-5">

@@ -27,7 +27,7 @@ export function StatusBadge({ status, label, small }: StatusBadgeProps) {
 
   return (
     <div
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg ${style.bg}`}
+      className={`flex items-center gap-2 px-3 py-2 rounded-md ${style.bg}`}
     >
       <span className={`${style.text} text-lg`}>{style.icon}</span>
       <span className={style.text}>{label}</span>
