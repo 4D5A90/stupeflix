@@ -79,7 +79,10 @@ Each template defines:
     already done — for APIs that answer a duplicate with a second copy, not a 409
   - `config_file` — writes `content` to `file` under `paths.config`
   - `extract_from_logs` / `extract_from_config` — pull a value out via regex
-- `actions`: on-demand steps the dashboard exposes at `/services/:name/actions/:action`
+- `actions`: on-demand steps the dashboard exposes at `/services/:name/actions/:action`.
+  `label` is the button's text, and optional `icon` picks its glyph from
+  `web/src/components/ui/ActionIcon.tsx` — names are case-sensitive and listed in
+  the README; an unknown one silently falls back to the default
 
 **No file under `src/` names a service.** Adding one is dropping a `.yml` in
 `templates/` and nothing else — that invariant is the point of the design, so
@@ -106,18 +109,33 @@ src/
 │   ├── service-registry.ts # Loads YAML templates, mints secrets, runs setup steps
 │   ├── setup-runner.ts   # Phases (pre_up/post_up), foreach expansion, step statuses
 │   ├── compose.ts        # Merges the enabled templates' `compose:` blocks
-│   ├── helpers.ts        # Media/template dirs, template-driven reconfigure reset
+│   ├── service-install.ts # Install / reconfigure / remove one service
+│   ├── library-stats.ts  # Counts each library off the filesystem, plus disk
+│   ├── helpers.ts        # Media/template dirs, reconfigure reset (global + scoped)
 │   └── logger.ts         # Logging utility
 └── routes/
     ├── setup.ts          # /setup/* routes (async setup, status)
     ├── install.ts        # /install/:name — one service, same runner
     ├── settings.ts       # /settings/* routes
     ├── docker.ts         # /docker/* routes
-    └── services.ts       # /services/* routes
+    └── services.ts       # /services/* routes, incl. reconfigure and DELETE
 ```
 
-`setup.ts` and `install.ts` both drive `setup-runner.ts` — keep the step loop
-there rather than duplicating it into a route.
+`setup.ts` drives `setup-runner.ts` directly; installing, reconfiguring and
+removing **one** service all go through `lib/service-install.ts`. Keep that
+orchestration there rather than duplicating it into a route — a first install and
+a reconfigure must never drift apart, which is why they are one function with a
+`reset` flag.
+
+Two invariants that are easy to break:
+
+- **A reset is scoped.** `cleanConfigs` clears every template, `cleanServiceConfig`
+  clears one. Reconfiguring Jellyfin must not replay Plex's startup wizard, so use
+  the per-template lists (`getTemplateConfigFiles`, `getTemplateResetDirs`).
+- **Removal never names a container.** A template may own several (MediaManager
+  has a Postgres sidecar), so it disables the service, rewrites the compose file
+  and lets `up -d --remove-orphans` collect what is no longer declared. The
+  service's directory under `paths.config` is deliberately kept.
 
 ### Tests (`pnpm test`)
 
@@ -131,8 +149,10 @@ compose service names and host ports do not collide, and that MediaManager only
 ever sets `MEDIAMANAGER_*` variables. **A new service template must keep it
 green** — that suite is what replaces the per-service code that used to exist.
 
-There is no test for the docker-facing paths (`compose up`, live service APIs).
-Changes there need a real run: see the isolated recipe in the README.
+There is no test for the docker-facing paths (`compose up`, `rm --remove-orphans`,
+live service APIs) — which now includes reconfiguring and removing a service.
+Changes there need a real run: see the isolated recipe in the README, and never
+against a live stack.
 
 ### Web (`packages/web/`)
 
@@ -144,9 +164,10 @@ src/
 ├── hooks/            # React Query hooks
 ├── components/
 │   ├── Wizard.tsx    # Main wizard container
+│   ├── Dashboard.tsx # Library tiles, service cards, add/reconfigure screens
 │   ├── StepIndicator.tsx
 │   ├── steps/        # PathsStep, CredentialsStep, ServicesStep, ProgressStep
-│   └── ui/           # Button, Input, Toggle, StatusBadge
+│   └── ui/           # Button, Input, Toggle, StatusBadge, ActionIcon, InfoTooltip
 └── types/setup.ts    # TypeScript interfaces
 ```
 
@@ -178,7 +199,17 @@ so everything path- or host-related goes through `lib/env.ts`:
 ## UI Conventions
 
 - All user-facing text must be in English
-- UI components: Button, Input, Toggle, StatusBadge, RadioGroup, Accordion (`packages/web/src/components/ui/`)
+- UI components: Button, Input, Toggle, StatusBadge, RadioGroup, Accordion,
+  ActionIcon, InfoTooltip (`packages/web/src/components/ui/`)
+- **Colours come from `tailwind.config.js`, never Tailwind's stock greys.**
+  `brand` is the logo's neon rose; `ink` is three grounds — `950` page, `900`
+  panel, `800` card, `700` icon tile. Edges are white-alpha hairlines
+  (`border-white/[0.07]`, `/[0.12]`), not solid greys: a grey line on a dark
+  ground muddies everything.
+- Changing `tailwind.config.js` needs a dev-server restart — Vite does not pick it
+  up hot, and `@apply` with a new token fails the PostCSS build until it does.
+- New icons come from Heroicons outline paths. Hand-drawn SVG reads as noise at
+  the 14px these render at.
 
 ## Linting Rules
 
