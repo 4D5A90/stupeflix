@@ -31,6 +31,13 @@ export interface AppStatus {
   containers: Record<string, string>;
 }
 
+export interface ServiceAction {
+  id: string;
+  label: string;
+  /** Icon name from the README's list; an unknown one falls back to the default */
+  icon?: string;
+}
+
 export interface ServiceInfo {
   name: string;
   label: string;
@@ -38,8 +45,8 @@ export interface ServiceInfo {
   status: string;
   port: number;
   webUiPath?: string;
-  /** Action names the service's template declares, e.g. "scan" */
-  actions: string[];
+  /** Actions the service's template declares, one button each */
+  actions: ServiceAction[];
   /** Manual steps or quirks the template wants surfaced, shown as a tooltip */
   notes: string[];
 }
@@ -84,8 +91,8 @@ export const api = {
     });
   },
 
-  scanLibrary: (name: string) =>
-    request<{ success: boolean }>(`/services/${name}/actions/scan`, {
+  runAction: (name: string, action: string) =>
+    request<{ success: boolean }>(`/services/${name}/actions/${action}`, {
       method: "POST",
     }),
 

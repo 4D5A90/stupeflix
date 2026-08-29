@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { ActionIcon } from "./ui/ActionIcon";
 import { InfoTooltip } from "./ui/InfoTooltip";
 import { ServiceIcon } from "./ui/ServiceIcon";
 import type { ServiceMeta, CredentialField } from "../types/setup";
@@ -59,17 +60,19 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const [scanned, setScanned] = useState<string | null>(null);
-  const [scanning, setScanning] = useState<string | null>(null);
+  // Keyed by `service:action`, so two services can run their own action at once
+  const [ranAction, setRanAction] = useState<string | null>(null);
+  const [runningAction, setRunningAction] = useState<string | null>(null);
 
-  const scanLibrary = (name: string) => {
-    setScanning(name);
+  const runAction = (service: string, action: string) => {
+    const key = `${service}:${action}`;
+    setRunningAction(key);
     const minSpin = new Promise((r) => setTimeout(r, 1000));
-    Promise.all([api.scanLibrary(name), minSpin]).then(() => {
-      setScanning(null);
-      setScanned(name);
-      setTimeout(() => setScanned(null), 3000);
-    }).catch(() => setScanning(null));
+    Promise.all([api.runAction(service, action), minSpin]).then(() => {
+      setRunningAction(null);
+      setRanAction(key);
+      setTimeout(() => setRanAction(null), 3000);
+    }).catch(() => setRunningAction(null));
   };
 
   const invalidateTemplates = () => {
@@ -138,28 +141,32 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
                 <InfoTooltip notes={service.notes ?? []} label={label} />
               </div>
               <div className="flex items-center gap-1">
-                {service.actions?.includes("scan") ? (
-                  <button
-                    type="button"
-                    onClick={() => scanLibrary(service.name)}
-                    disabled={scanning === service.name}
-                    className="flex items-center gap-1.5 p-2 text-gray-400 hover:text-blue-400 transition-colors disabled:opacity-50"
-                    title="Refresh libraries"
-                  >
-                    {scanned === service.name ? (
-                      <>
-                        <span className="text-xs text-green-400">Library refreshed</span>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4 text-green-400">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      </>
-                    ) : (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={`w-4 h-4 ${scanning === service.name ? "animate-spin" : ""}`}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M21.015 4.357v4.992" />
-                      </svg>
-                    )}
-                  </button>
-                ) : null}
+                {service.actions?.map((action) => {
+                  const key = `${service.name}:${action.id}`;
+                  const running = runningAction === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => runAction(service.name, action.id)}
+                      disabled={running}
+                      className="flex items-center gap-1.5 p-2 text-gray-400 hover:text-blue-400 transition-colors disabled:opacity-50"
+                      title={action.label}
+                    >
+                      {ranAction === key ? (
+                        <>
+                          <span className="text-xs text-green-400">Done</span>
+                          <ActionIcon name="check" className="w-4 h-4 text-green-400" />
+                        </>
+                      ) : (
+                        <ActionIcon
+                          name={action.icon}
+                          className={`w-4 h-4 ${running ? (action.icon === "refresh" ? "animate-spin" : "animate-pulse") : ""}`}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
                 {(credentials?.[service.name]?.pass ?? credentials?.[service.name]?.token) ? (
                   <button
                     type="button"

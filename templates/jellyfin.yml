@@ -105,6 +105,7 @@ actions:
   scan:
     name: scan
     label: Scan libraries
+    icon: refresh
     type: api_call
     url: http://localhost:8096/Library/Refresh
     method: POST

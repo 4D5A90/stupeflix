@@ -292,11 +292,13 @@ setup:
       password: "{{credentials.pass}}"
 
 # Buttons the dashboard offers after setup, POSTed to
-# /services/:name/actions/:action. Declaring one is what makes it appear.
+# /services/:name/actions/:action. Declaring one is what makes it appear —
+# `label` becomes the button's tooltip, `icon` picks the glyph.
 actions:
   scan:
     name: scan
     label: Scan libraries
+    icon: refresh          # optional, see "Action icons" below
     type: api_call
     url: http://localhost:8080/api/refresh
     method: POST
@@ -306,8 +308,8 @@ actions:
 
 | Type | Description |
 |------|-------------|
-| `wait_ready` | Poll a URL until the service responds |
-| `api_call` | HTTP request with retry, cookies, tokens, custom headers |
+| `wait_ready` | Poll a URL until the service responds. `match`: keep polling until the body matches a regex, for a service that answers before it is usable |
+| `api_call` | HTTP request with retry, cookies, tokens, custom headers. `skipIf: {url, match}`: probe first and skip the call when the work is already done |
 | `config_file` | Write `content` to `file` under `paths.config` (`skipIfExists`, default true) |
 | `extract_from_logs` | Extract a value from container logs via regex |
 | `extract_from_config` | Extract a value from a config file via regex |
@@ -315,6 +317,30 @@ actions:
 `config_file` steps run **before** `docker compose up`, since a container reads
 its config at boot; every other step runs after. That ordering is derived from
 the step type, not declared.
+
+### Action icons
+
+An action's `icon` is optional. Left out, the button gets a generic action glyph;
+naming one of the below swaps it. Names are **case-sensitive** — `Refresh` is not
+`refresh`, and an unrecognised name silently falls back to the default rather
+than breaking the button, so a typo is invisible in the UI.
+
+| Name | Drawn as |
+|------|----------|
+| `refresh` | Circular arrows — also the only icon that spins while the action runs |
+| `play` | Triangle |
+| `stop` | Square |
+| `power` | Power symbol |
+| `download` | Arrow into a tray |
+| `upload` | Arrow out of a tray |
+| `trash` | Bin |
+| `search` | Magnifier |
+| `check` | Tick |
+| `wrench` | Wrench |
+
+The list lives in `packages/web/src/components/ui/ActionIcon.tsx`, and
+`src/templates.test.ts` reads it back to fail on a name no template can draw —
+which is what catches the casing trap above.
 
 ### Template variables
 

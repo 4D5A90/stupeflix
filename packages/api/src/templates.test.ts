@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Db } from "./db.js";
@@ -140,6 +142,43 @@ describe("every template", () => {
 		for (const tpl of templates) {
 			const names = tpl.setup.map((s) => s.name);
 			expect(new Set(names).size, `${tpl.id}`).toBe(names.length);
+		}
+	});
+
+	it("labels every action, since the dashboard shows it as the tooltip", () => {
+		for (const tpl of templates) {
+			for (const [id, action] of Object.entries(tpl.actions ?? {})) {
+				expect(action.label, `${tpl.id} action "${id}"`).toBeTruthy();
+			}
+		}
+	});
+
+	/**
+	 * Icon names are case-sensitive and an unknown one silently falls back to the
+	 * default, so a typo is invisible at runtime. The list lives in the web
+	 * package's ActionIcon.tsx and is documented in the README.
+	 */
+	it("only names action icons the dashboard actually draws", () => {
+		const source = readFileSync(
+			resolve(
+				import.meta.dirname,
+				"../../web/src/components/ui/ActionIcon.tsx",
+			),
+			"utf-8",
+		);
+		const registry = source.slice(
+			source.indexOf("const icons"),
+			source.indexOf("const defaultIcon"),
+		);
+		const known = new Set(
+			[...registry.matchAll(/^ {2}(\w+):/gm)].map((m) => m[1]),
+		);
+		expect(known.size).toBeGreaterThan(0);
+		for (const tpl of templates) {
+			for (const [id, action] of Object.entries(tpl.actions ?? {})) {
+				if (!action.icon) continue;
+				expect(known, `${tpl.id} action "${id}"`).toContain(action.icon);
+			}
 		}
 	});
 

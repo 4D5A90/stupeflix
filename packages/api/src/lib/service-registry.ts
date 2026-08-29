@@ -81,6 +81,12 @@ export interface SetupStepDef {
 	skipIfExists?: boolean;
 	regex?: string;
 	storeAs?: string;
+	/**
+	 * `actions` only: which icon the dashboard draws on the button. Names are
+	 * case-sensitive and listed in the README; an unknown one falls back to the
+	 * default action icon rather than breaking the button.
+	 */
+	icon?: string;
 }
 
 export interface ServiceTemplate {

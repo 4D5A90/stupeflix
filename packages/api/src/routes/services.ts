@@ -44,8 +44,13 @@ export function servicesRoutes(db: Db) {
 				port: tpl.port,
 				webUiPath: webUiPath || undefined,
 				// Lets the dashboard offer a button per declared action without
-				// carrying its own list of which services can do what
-				actions: Object.keys(tpl.actions ?? {}),
+				// carrying its own list of which services can do what — the label
+				// and icon travel with it so adding an action stays a template edit
+				actions: Object.entries(tpl.actions ?? {}).map(([id, action]) => ({
+					id,
+					label: action.label,
+					icon: action.icon,
+				})),
 				notes: tpl.notes ?? [],
 			};
 		});
