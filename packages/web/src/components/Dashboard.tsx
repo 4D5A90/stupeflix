@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { InfoTooltip } from "./ui/InfoTooltip";
 import { ServiceIcon } from "./ui/ServiceIcon";
 import type { ServiceMeta, CredentialField } from "../types/setup";
 
@@ -8,16 +9,6 @@ interface DashboardProps {
   onReconfigure: () => void;
   onInstall: (serviceId: string, serviceName: string) => void;
 }
-
-const SERVICE_LABELS: Record<string, string> = {
-  mediamanager: "MediaManager",
-  jellyfin: "Jellyfin",
-  plex: "Plex",
-  emby: "Emby",
-  transmission: "Transmission",
-  qbittorrent: "qBittorrent",
-  joal: "JOAL",
-};
 
 const statusStyles: Record<string, { dot: string }> = {
   running: { dot: "bg-green-500" },
@@ -27,6 +18,7 @@ const statusStyles: Record<string, { dot: string }> = {
 
 const CATEGORY_LABELS: Record<string, string> = {
   torrentClient: "Torrent",
+  indexer: "Indexer",
   mediaServer: "Media",
   mediaManager: "Manager",
   seeder: "Seeder",
@@ -67,7 +59,6 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const SCANNABLE = ["jellyfin", "plex", "emby"];
   const [scanned, setScanned] = useState<string | null>(null);
   const [scanning, setScanning] = useState<string | null>(null);
 
@@ -130,7 +121,7 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
       <div className="space-y-2">
         {enabledServices.map((service) => {
           const style = statusStyles[service.status] ?? statusStyles.not_found;
-          const label = SERVICE_LABELS[service.name] ?? service.name;
+          const label = service.label ?? service.name;
           const url = `http://localhost:${service.port}${service.webUiPath ?? ""}`;
 
           return (
@@ -144,9 +135,10 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
                   <ServiceIcon id={service.name} />
                 </span>
                 <span className="text-white font-medium">{label}</span>
+                <InfoTooltip notes={service.notes ?? []} label={label} />
               </div>
               <div className="flex items-center gap-1">
-                {SCANNABLE.includes(service.name) ? (
+                {service.actions?.includes("scan") ? (
                   <button
                     type="button"
                     onClick={() => scanLibrary(service.name)}
@@ -347,6 +339,17 @@ function InstallCard({
           </button>
         ))}
       </div>
+
+      {selected && selected.notes?.length > 0 && (
+        <ul className="space-y-1 rounded border border-gray-700 bg-gray-800/60 px-3 py-2 text-xs leading-relaxed text-gray-400">
+          {selected.notes.map((note) => (
+            <li key={note} className="flex gap-2">
+              <span className="text-gray-600">•</span>
+              <span>{note}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {selected && selected.credentials.length > 0 && (
         <div className="space-y-2 pt-1">

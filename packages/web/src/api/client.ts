@@ -33,10 +33,15 @@ export interface AppStatus {
 
 export interface ServiceInfo {
   name: string;
+  label: string;
   enabled: boolean;
   status: string;
   port: number;
   webUiPath?: string;
+  /** Action names the service's template declares, e.g. "scan" */
+  actions: string[];
+  /** Manual steps or quirks the template wants surfaced, shown as a tooltip */
+  notes: string[];
 }
 
 export const api = {
@@ -80,7 +85,7 @@ export const api = {
   },
 
   scanLibrary: (name: string) =>
-    request<{ success: boolean }>(`/services/${name}/scan`, {
+    request<{ success: boolean }>(`/services/${name}/actions/scan`, {
       method: "POST",
     }),
 

@@ -14,6 +14,7 @@ interface ServicesStepProps {
 
 const CATEGORY_LABELS: Record<string, string> = {
   torrentClient: "Torrent Client",
+  indexer: "Indexer",
   mediaServer: "Media Server",
   mediaManager: "Media Manager",
   seeder: "Seeder",
@@ -56,7 +57,7 @@ export function ServicesStep({
   };
 
   // Group services by category in display order
-  const CATEGORY_ORDER = ["torrentClient", "mediaServer", "mediaManager", "seeder"];
+  const CATEGORY_ORDER = ["torrentClient", "indexer", "mediaManager", "mediaServer", "seeder"];
   const categoryMap = new Map<string, ServiceMeta[]>();
   for (const svc of registry) {
     const list = categoryMap.get(svc.category) ?? [];
@@ -141,6 +142,18 @@ export function ServicesStep({
                           <div>
                             <span className="text-gray-100">{svc.name}</span>
                             <p className="text-gray-400 text-sm">{svc.description}</p>
+                            {/* Only once picked: the caveats matter when the
+                                service is actually going to be installed */}
+                            {enabled && svc.notes?.length > 0 && (
+                              <ul className="mt-2 space-y-1 text-xs leading-relaxed text-blue-300/80">
+                                {svc.notes.map((note) => (
+                                  <li key={note} className="flex gap-1.5">
+                                    <span aria-hidden="true">•</span>
+                                    <span>{note}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
                           </div>
                           <div
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${

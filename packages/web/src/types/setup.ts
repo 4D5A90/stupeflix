@@ -20,6 +20,7 @@ export interface ServiceMeta {
   description: string;
   category: string;
   defaultEnabled: boolean;
+  notes: string[];
   credentials: CredentialField[];
 }
 
