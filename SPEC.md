@@ -43,7 +43,7 @@ stupeflix/
 │           │   ├── Wizard.tsx, Dashboard.tsx, InstallProgress.tsx
 │           │   ├── steps/      # PathsStep, CredentialsStep, ServicesStep, ProgressStep
 │           │   └── ui/         # Button, Input, Toggle, StatusBadge, RadioGroup,
-│           │                   # Accordion, ActionIcon, ServiceIcon, InfoTooltip
+│           │                   # Accordion, ActionIcon, ServiceIcon, Select
 │           └── types/setup.ts
 ├── pnpm-workspace.yaml
 └── data/                       # SQLite DB + generated docker-compose.yml

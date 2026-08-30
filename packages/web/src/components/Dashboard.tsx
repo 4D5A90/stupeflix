@@ -4,8 +4,7 @@ import { api } from "../api/client";
 import type { DiskStat, LibraryStats, ServiceInfo } from "../api/client";
 import type { CredentialField, ServiceMeta } from "../types/setup";
 import { ActionIcon } from "./ui/ActionIcon";
-import { InfoTooltip } from "./ui/InfoTooltip";
-import { ServiceIcon } from "./ui/ServiceIcon";
+import { ServiceIcon, serviceTint } from "./ui/ServiceIcon";
 
 interface DashboardProps {
 	onReconfigure: () => void;
@@ -235,14 +234,16 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 								className="flex flex-col bg-ink-800 border border-white/[0.07] rounded-lg"
 							>
 								<div className="flex items-center gap-3 px-3.5 py-3">
-									<div className="w-9 h-9 shrink-0 grid place-items-center rounded-md bg-ink-700 text-gray-400">
+									<div
+										className="w-9 h-9 shrink-0 grid place-items-center rounded-md"
+										style={serviceTint(service.name)}
+									>
 										<ServiceIcon id={service.name} />
 									</div>
-									<div className="flex-1 min-w-0 flex items-center gap-1.5">
+									<div className="flex-1 min-w-0">
 										<span className="text-white font-semibold truncate">
 											{label}
 										</span>
-										<InfoTooltip notes={service.notes ?? []} label={label} />
 									</div>
 									<div className="flex items-center gap-2.5">
 										<span
@@ -808,7 +809,10 @@ function ServiceSetupScreen({
 									: "border-white/[0.07] bg-ink-800 hover:border-gray-500"
 							}`}
 						>
-							<span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-ink-700 text-gray-400">
+							<span
+								className="grid h-9 w-9 shrink-0 place-items-center rounded-md"
+								style={serviceTint(svc.id)}
+							>
 								<ServiceIcon id={svc.id} />
 							</span>
 							<span className="min-w-0">

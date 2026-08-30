@@ -252,7 +252,7 @@ generate:
     type: hex        # or uuid
     length: 16       # bytes
 
-# Shown as a tooltip on the dashboard, and inline in the wizard once the
+# Shown inline in the wizard, and on the install screen, once the
 # service is enabled. Use it for what setup cannot do for the user.
 # Plain sentences only — they are rendered as text, not markdown.
 notes:

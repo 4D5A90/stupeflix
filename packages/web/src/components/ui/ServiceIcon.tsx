@@ -49,3 +49,36 @@ const defaultIcon = (
 export function ServiceIcon({ id }: { id: string }) {
   return icons[id] ?? defaultIcon;
 }
+
+/**
+ * Ten slots around the whole wheel, 36° apart. A continuous hue was the wrong
+ * shape: hashing cannot guarantee separation, and two services landing 6° apart
+ * look like a mistake. Quantised, two ids either share a colour outright —
+ * which reads as a coincidence — or differ by at least 36°, which reads.
+ *
+ * No hue is reserved. State is a labelled badge on the other side of the card,
+ * so a red or green square behind an icon is not mistaken for it.
+ */
+const HUE_SLOTS = 10;
+
+function hueOf(id: string): number {
+  let hash = 0;
+  // Math.imul, not `*`: the multiplier overflows double precision, so a plain
+  // multiply silently returns a different hash than the arithmetic implies.
+  for (let i = 0; i < id.length; i++)
+    hash = (Math.imul(hash, 2654435761) + id.charCodeAt(i)) >>> 0;
+  return (hash % HUE_SLOTS) * (360 / HUE_SLOTS);
+}
+
+export function serviceTint(id: string): {
+  backgroundColor: string;
+  color: string;
+} {
+  const hue = hueOf(id);
+  // The glyph carries most of the identity; the square behind it only has to
+  // separate the tile from the card, so it stays well below the text contrast.
+  return {
+    backgroundColor: `hsl(${hue} 65% 58% / 0.15)`,
+    color: `hsl(${hue} 40% 70%)`,
+  };
+}

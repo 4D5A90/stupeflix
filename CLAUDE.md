@@ -70,8 +70,9 @@ Each template defines:
 - `compose`: the compose service(s) it owns, merged verbatim into the generated file
 - `generate`: secrets minted once and kept in `internal.<id>.<key>`
 - `dirs` / `reset.dirs`: directories to create before boot / wipe on reconfigure
-- `notes`: manual steps or quirks, shown as a dashboard tooltip and inline in the
-  wizard. Plain text — rendered as-is, no markdown
+- `notes`: manual steps or quirks, shown inline in the wizard and on the
+  install/reconfigure screen — where the user is configuring, not on the
+  dashboard card. Plain text, rendered as-is, no markdown
 - `network`: `{ provides }` lends this service's network namespace, `{ join }`
   asks for one. Neither side names the other, and an unmatched `join` is inert —
   see `lib/network.ts`
@@ -198,7 +199,7 @@ src/
 │   ├── Dashboard.tsx # Library tiles, service cards, add/reconfigure screens
 │   ├── StepIndicator.tsx
 │   ├── steps/        # PathsStep, CredentialsStep, ServicesStep, ProgressStep
-│   └── ui/           # Button, Input, Toggle, StatusBadge, ActionIcon, InfoTooltip
+│   └── ui/           # Button, Input, Select, Toggle, StatusBadge, ActionIcon
 └── types/setup.ts    # TypeScript interfaces
 ```
 
@@ -230,8 +231,8 @@ so everything path- or host-related goes through `lib/env.ts`:
 ## UI Conventions
 
 - All user-facing text must be in English
-- UI components: Button, Input, Toggle, StatusBadge, RadioGroup, Accordion,
-  ActionIcon, InfoTooltip (`packages/web/src/components/ui/`)
+- UI components: Button, Input, Select, Toggle, StatusBadge, RadioGroup,
+  Accordion, ActionIcon, ServiceIcon (`packages/web/src/components/ui/`)
 - **Colours come from `tailwind.config.js`, never Tailwind's stock greys.**
   `brand` is the logo's neon rose; `ink` is three grounds — `950` page, `900`
   panel, `800` card, `700` icon tile. Edges are white-alpha hairlines
