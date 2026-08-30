@@ -1,7 +1,5 @@
 # Stupeflix
 
-![stupeflix](https://github.com/user-attachments/assets/c85b1227-8c29-4b24-aba0-d9df7f94dd1c)
-
 - [Quick Start](#quick-start-docker)
   - [Windows](#windows)
   - [Alternating between the image and `pnpm dev`](#alternating-between-the-image-and-pnpm-dev)
