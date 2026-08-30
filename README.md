@@ -2,7 +2,25 @@
 
 ![stupeflix](https://github.com/user-attachments/assets/c85b1227-8c29-4b24-aba0-d9df7f94dd1c)
 
-Self-hosted media stack orchestrator with a web-based setup wizard.
+- [Quick Start](#quick-start-docker)
+  - [Windows](#windows)
+  - [Alternating between the image and `pnpm dev`](#alternating-between-the-image-and-pnpm-dev)
+- [Development](#development)
+  - [Tests](#tests)
+- [How it Works](#how-it-works)
+- [Services](#services)
+- [Media Libraries](#media-libraries)
+- [Service Templates](#service-templates)
+  - [Step types](#step-types)
+  - [Actions and readouts](#actions-and-readouts)
+  - [Networking](#networking)
+  - [Action icons](#action-icons)
+  - [Template variables](#template-variables)
+  - [`foreach: libraries`](#foreach-libraries)
+  - [`api_call` options](#api_call-options)
+  - [Credential field rules](#credential-field-rules)
+- [API](#api)
+- [Stack](#stack)
 
 ## Quick Start (Docker)
 
