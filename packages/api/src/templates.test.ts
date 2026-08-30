@@ -176,8 +176,10 @@ describe("every template", () => {
 			source.indexOf("const icons"),
 			source.indexOf("const defaultIcon"),
 		);
+		// Indentation-agnostic on purpose: this reads the web source as data, and a
+		// formatter run must not be able to turn the assertion into a no-op.
 		const known = new Set(
-			[...registry.matchAll(/^ {2}(\w+):/gm)].map((m) => m[1]),
+			[...registry.matchAll(/^[\t ]+(\w+):/gm)].map((m) => m[1]),
 		);
 		expect(known.size).toBeGreaterThan(0);
 		for (const tpl of templates) {

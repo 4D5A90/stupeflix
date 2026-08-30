@@ -132,9 +132,13 @@ export function applyNetworkTopology(
 				...((owner.ports as unknown[] | undefined) ?? []),
 				...joiner.ports,
 			];
+			// The key has to be gone, not undefined: a joiner is checked by key
+			// presence, and the compose file is rewritten from these objects.
+			// biome-ignore lint/performance/noDelete: presence is the meaning here
 			delete joiner.ports;
 		}
 		// Refused by the daemon, and a no-op annotation, so dropping it costs nothing
+		// biome-ignore lint/performance/noDelete: presence is the meaning here
 		delete joiner.expose;
 
 		joiner.network_mode = `service:${provider}`;

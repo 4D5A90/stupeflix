@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
-import { StatusBadge } from "../ui/StatusBadge";
+import type { ServiceMeta, SetupConfig, StepStatus } from "../../types/setup";
 import { Button } from "../ui/Button";
-import type { SetupConfig, ServiceMeta, StepStatus } from "../../types/setup";
+import { StatusBadge } from "../ui/StatusBadge";
 
 interface ProgressStepProps {
 	registry: ServiceMeta[];
@@ -19,9 +19,7 @@ const GLOBAL_STEP_LABELS: Record<string, string> = {
 };
 
 function formatSubStep(name: string): string {
-	return name
-		.replace(/_/g, " ")
-		.replace(/\b\w/g, (c) => c.toUpperCase());
+	return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 interface StepGroup {
@@ -36,7 +34,10 @@ function groupSteps(
 	registry: ServiceMeta[],
 ): StepGroup[] {
 	const groups: StepGroup[] = [];
-	const serviceSteps: Record<string, { key: string; label: string; status: StepStatus }[]> = {};
+	const serviceSteps: Record<
+		string,
+		{ key: string; label: string; status: StepStatus }[]
+	> = {};
 
 	for (const [key, status] of Object.entries(steps)) {
 		if (!key.includes(".")) {
@@ -92,7 +93,8 @@ function SuccessMessage({ onComplete }: { onComplete?: () => void }) {
 		<div className="space-y-4">
 			<div className="p-4 bg-green-900/50 border border-green-700 rounded-lg">
 				<p className="text-green-300">
-					Your media stack is ready! Access your services at their respective ports.
+					Your media stack is ready! Access your services at their respective
+					ports.
 				</p>
 			</div>
 			{onComplete ? (
@@ -104,13 +106,16 @@ function SuccessMessage({ onComplete }: { onComplete?: () => void }) {
 	);
 }
 
-function Recap({ registry, config }: { registry: ServiceMeta[]; config: SetupConfig }) {
+function Recap({
+	registry,
+	config,
+}: { registry: ServiceMeta[]; config: SetupConfig }) {
 	const enabledServices = registry.filter(
-		(svc) => config.services[svc.id]?.enabled
+		(svc) => config.services[svc.id]?.enabled,
 	);
 
 	const enabledWithCreds = enabledServices.filter(
-		(svc) => svc.credentials.length > 0
+		(svc) => svc.credentials.length > 0,
 	);
 
 	return (
@@ -131,7 +136,8 @@ function Recap({ registry, config }: { registry: ServiceMeta[]; config: SetupCon
 						</p>
 					))}
 					<p className="text-gray-400">
-						Torrents: <span className="text-gray-100">{config.paths.torrents}</span>
+						Torrents:{" "}
+						<span className="text-gray-100">{config.paths.torrents}</span>
 					</p>
 				</div>
 			</div>
@@ -156,14 +162,15 @@ function Recap({ registry, config }: { registry: ServiceMeta[]; config: SetupCon
 					<div className="text-sm space-y-1">
 						{enabledWithCreds.map((svc) => {
 							const displayField = svc.credentials.find(
-								(f) => f.type === "email" || f.type === "text"
+								(f) => f.type === "email" || f.type === "text",
 							);
 							const displayValue = displayField
 								? config.credentials[svc.id]?.[displayField.key]
 								: undefined;
 							return displayValue ? (
 								<p key={svc.id} className="text-gray-400">
-									{svc.name}: <span className="text-gray-100">{displayValue}</span>
+									{svc.name}:{" "}
+									<span className="text-gray-100">{displayValue}</span>
 								</p>
 							) : null;
 						})}
@@ -174,7 +181,14 @@ function Recap({ registry, config }: { registry: ServiceMeta[]; config: SetupCon
 	);
 }
 
-export function ProgressStep({ registry, config, onStart, onBack, onRestart, onComplete }: ProgressStepProps) {
+export function ProgressStep({
+	registry,
+	config,
+	onStart,
+	onBack,
+	onRestart,
+	onComplete,
+}: ProgressStepProps) {
 	const [started, setStarted] = useState(false);
 	const { data: status, isLoading } = useSetupStatus(started);
 
@@ -213,8 +227,13 @@ export function ProgressStep({ registry, config, onStart, onBack, onRestart, onC
 
 	const stepValues = Object.values(status.steps);
 	const hasFailed = stepValues.some((s) => s === "failed");
-	const allCompleted = stepValues.length > 0 && stepValues.every((s) => s === "completed");
-	const realStatus = hasFailed ? "failed" : allCompleted ? "completed" : "in_progress";
+	const allCompleted =
+		stepValues.length > 0 && stepValues.every((s) => s === "completed");
+	const realStatus = hasFailed
+		? "failed"
+		: allCompleted
+			? "completed"
+			: "in_progress";
 
 	const statusMessage =
 		realStatus === "in_progress"
@@ -256,7 +275,9 @@ export function ProgressStep({ registry, config, onStart, onBack, onRestart, onC
 				</div>
 			) : null}
 
-			{realStatus === "completed" ? <SuccessMessage onComplete={onComplete} /> : null}
+			{realStatus === "completed" ? (
+				<SuccessMessage onComplete={onComplete} />
+			) : null}
 
 			{realStatus === "failed" ? (
 				<div className="flex justify-center">

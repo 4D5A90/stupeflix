@@ -3,29 +3,39 @@
 @tailwind utilities;
 
 body {
-  @apply bg-ink-950 text-gray-100 antialiased;
+	@apply bg-ink-950 text-gray-100 antialiased;
 }
 
 @keyframes logo-spin {
-  0% { transform: rotate(0deg); }
-  55% { transform: rotate(1080deg); }
-  72% { transform: rotate(1088deg); }
-  88% { transform: rotate(1078deg); }
-  100% { transform: rotate(1080deg); }
+	0% {
+		transform: rotate(0deg);
+	}
+	55% {
+		transform: rotate(1080deg);
+	}
+	72% {
+		transform: rotate(1088deg);
+	}
+	88% {
+		transform: rotate(1078deg);
+	}
+	100% {
+		transform: rotate(1080deg);
+	}
 }
 
 .logo-spin {
-  cursor: pointer;
+	cursor: pointer;
 }
 
 /* Held for three seconds before it fires: an easter egg should reward staying,
    not go off every time the cursor crosses the logo. Leaving cancels it. */
 .logo-spin:hover {
-  animation: logo-spin 1.4s cubic-bezier(0.1, 0, 0.2, 1) 3s forwards;
+	animation: logo-spin 1.4s cubic-bezier(0.1, 0, 0.2, 1) 3s forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .logo-spin:hover {
-    animation: none;
-  }
+	.logo-spin:hover {
+		animation: none;
+	}
 }

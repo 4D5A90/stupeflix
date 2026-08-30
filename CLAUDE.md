@@ -30,6 +30,7 @@ pnpm dev:api          # Run API only
 pnpm dev:web          # Run web only
 pnpm build            # Build all packages
 pnpm test             # Vitest (api package)
+pnpm lint             # Biome: lint + format + import sorting, both packages
 ```
 
 Package-specific test commands:
@@ -243,9 +244,30 @@ so everything path- or host-related goes through `lib/env.ts`:
 - New icons come from Heroicons outline paths. Hand-drawn SVG reads as noise at
   the 14px these render at.
 
-## Linting Rules
+## Linting Rules (`pnpm lint`)
 
-Biome enforces strict TypeScript rules:
-- `noExplicitAny`: error
-- `noUnusedVariables`, `noUnusedImports`: error
-- `useConst`, `noVar`: error
+Biome, configured once at the root in `biome.json` and covering both packages —
+lint, formatter and import sorting in a single pass:
+
+```bash
+pnpm lint       # biome check .   — the gate; must be green before "done"
+pnpm lint:fix   # biome check --write .
+```
+
+On top of `recommended`, five rules are named explicitly because they are the
+contract this codebase is written to: `noExplicitAny`, `noUnusedVariables`,
+`noUnusedImports`, `useConst`, `noVar` — all errors.
+
+Formatting is Biome's default (tabs, double quotes, 80 columns). The whole repo
+conforms; there is no second style.
+
+**When the gate refuses something the code means on purpose, suppress it at the
+site, never in `biome.json`.** A `biome-ignore` carries a reason and stays next
+to the thing it excuses; a rule switched off in the config silently excuses code
+nobody has read yet. The directive must be the *last* comment line before the
+offending line — explanation above it, one-line reason on the directive. There
+are five today (`lib/network.ts`, `PathsStep.tsx`, `ServicesStep.tsx`).
+
+`src/templates.test.ts` reads `web/src/components/ui/ActionIcon.tsx` as data to
+check every `icon:` a template names. Its regex is indentation-agnostic on
+purpose — a formatter run must not be able to turn that assertion into a no-op.

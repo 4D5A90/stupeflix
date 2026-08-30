@@ -1,13 +1,17 @@
-import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useRegistry } from "../hooks/useRegistry";
+import {
+	type SetupConfig,
+	type StepId,
+	buildDefaultConfig,
+} from "../types/setup";
 import { StepIndicator } from "./StepIndicator";
-import { PathsStep } from "./steps/PathsStep";
 import { CredentialsStep } from "./steps/CredentialsStep";
-import { ServicesStep } from "./steps/ServicesStep";
+import { PathsStep } from "./steps/PathsStep";
 import { ProgressStep } from "./steps/ProgressStep";
-import { buildDefaultConfig, type SetupConfig, type StepId } from "../types/setup";
+import { ServicesStep } from "./steps/ServicesStep";
 
 interface WizardProps {
 	onComplete?: () => void;
