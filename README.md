@@ -6,7 +6,7 @@ Self-hosted media stack orchestrator with a web-based setup wizard.
 
 ## Quick Start (Docker)
 
-Only Docker is required — the image builds the API and the wizard itself.
+Only Docker is required. The image builds the API and the wizard itself.
 
 ```bash
 docker build -t stupeflix .
@@ -28,31 +28,25 @@ Open `http://localhost:3000` and follow the setup wizard.
 | `/srv/stupeflix` | Config, media and torrents. **Mounted at the same path inside**, so the bind mounts Stupeflix generates resolve on the host. Every path set in the wizard must live under it |
 | `stupeflix-data:/data` | SQLite database and generated `docker-compose.yml` |
 
-`--add-host` is only needed on Linux; Docker Desktop and OrbStack provide
-`host.docker.internal` out of the box. To use another host directory, change both
-sides of the mount and pass `-e STUPEFLIX_ROOT=/your/path`.
+`--add-host` is Linux-only. Docker Desktop and OrbStack provide
+`host.docker.internal`. For another host directory, change both sides of the mount
+and pass `-e STUPEFLIX_ROOT=/your/path`.
 
 ### Windows
 
-Run Stupeflix from **inside WSL 2** — the Linux Quick Start above then works
-verbatim. Keep `STUPEFLIX_ROOT` on the WSL 2 filesystem (`/home/<you>/stupeflix`),
-**not** under `/mnt/c/...`.
+Run it from **inside WSL 2** the Linux Quick Start then works verbatim. Keep
+`STUPEFLIX_ROOT` on the WSL 2 filesystem, **not** under `/mnt/c/...`: the daemon
+resolves that path a second time when creating the service containers, which only
+works for Linux paths it sees natively.
 
-The reason is the same-path mount: the host daemon has to resolve `STUPEFLIX_ROOT`
-again when it creates the service containers, which only works for Linux paths it
-sees natively. `C:\media` cannot be mounted at `C:\media` inside a Linux
-container, and Windows drives break daemon-side bind mounts.
-
-From **PowerShell** or **Git Bash** instead: double the socket's leading slash
-(`-v //var/run/docker.sock:...`), put it on one line (PowerShell continues with
-`` ` ``, `cmd` with `^`), drop `--add-host`, and run the dev-sharing command below
-from WSL 2 — it uses `$(id -u)`.
+From **PowerShell** or **Git Bash**: double the socket's leading slash
+(`-v //var/run/docker.sock:...`), one line only (`` ` `` continues in PowerShell,
+`^` in cmd), drop `--add-host`, and run the dev-sharing command from WSL 2.
 
 ### Alternating between the image and `pnpm dev`
 
-Both use the compose project `stupeflix`, so neither steals the other's
-containers. To also share credentials and setup state, point `/data` at the
-directory the dev server uses and match the ownership it generates:
+Both use the project `stupeflix`, so neither steals the other's containers. To
+share credentials and setup state too, point `/data` at the dev server's:
 
 ```bash
 docker run -d --name stupeflix \
@@ -65,8 +59,8 @@ docker run -d --name stupeflix \
   stupeflix
 ```
 
-Without matching `PUID`/`PGID`, each switch rewrites the compose file and Docker
-recreates every container.
+Mismatched `PUID`/`PGID` rewrites the compose file on every switch, recreating
+every container.
 
 | Env var | Default (image) | Description |
 |---------|-----------------|-------------|
@@ -87,8 +81,8 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:5173`. In dev the API runs on port 3000 and Vite proxies
-`/api` to it; in the image the API serves the built wizard on the same port.
+Open `http://localhost:5173`. Vite proxies `/api` to the API on 3000. In the
+image, the API serves the built wizard on the same port.
 
 ### Tests
 
@@ -96,16 +90,16 @@ Open `http://localhost:5173`. In dev the API runs on port 3000 and Vite proxies
 pnpm test          # vitest, api package
 ```
 
-They cover the engine, and in `src/templates.test.ts` the real `templates/`
-directory — every `{{...}}` resolves, `container_name` matches `container`, ports
-and names do not collide. A new service must keep that suite green.
-
-Nothing that shells out to Docker is covered. Check those by running the stack
-for real, **never against your own setup** — a reconfigure deletes generated
-configs, and `container_name` is a global Docker namespace:
+They cover the engine and, in `src/templates.test.ts`, the real `templates/`
+directory: variables resolve, `container_name` matches `container`, ports do not
+collide. A new service must keep that green. Nothing that shells out to Docker is
+covered, so check `compose up`, reconfigure and remove by running a throwaway
+copy of the stack, **never your own**: a reconfigure deletes generated
+configs and `container_name` is a global Docker namespace:
 
 ```bash
-# Copy the templates and suffix their container_name, so nothing collides
+# container_name only: ports are how setup steps reach services, and compose
+# keys how containers reach each other
 mkdir -p /tmp/sfx/{config,media,torrents,data,templates}
 for f in templates/*.yml; do
   sed -E 's/^([[:space:]]*container_name:[[:space:]]*)([A-Za-z0-9_-]+)$/\1\2-e2e/' \
@@ -119,45 +113,33 @@ STUPEFLIX_COMPOSE_PROJECT=stupeflix-e2e \
 PORT=3999 pnpm --filter api dev
 ```
 
-Drive it with `POST /setup/complete`, poll `GET /setup/status`. Rename only
-`container_name`: published ports must stay (setup addresses services as
-`localhost:<port>`) and the compose key is how containers resolve each other.
+This starts the API alone, so drive it with `POST /setup/complete` and poll
+`GET /setup/status`.
 
 ## How it Works
 
-1. **Paths** — Choose where to store config, media, and torrents. Define media libraries (Movies, TvShows, etc.). When a host root is mounted (`STUPEFLIX_ROOT`), these are prefilled under it.
-2. **Services** — Pick a torrent client, one or more media servers, and optional extras (e.g. the JOAL seeder)
-3. **Credentials** — Set usernames and passwords (auto-generate available)
-4. **Setup** — Review and launch. Stupeflix generates `docker-compose.yml`, starts containers, and configures each service automatically
-
-> **Reconfigure is a reset, not an edit.** It clears exactly what the templates
-> declare writing — `config_file` files plus `reset.dirs` directories — so their
-> startup wizards replay. Never a list in the code. Anything no template claims is
-> user data and survives: **media, JOAL's torrents, Prowlarr's indexers,
-> MediaManager's database**. For one service alone, use
-> `POST /services/:name/reconfigure`.
+1. **Paths**: config, media, torrents, and your libraries. Prefilled under
+   `STUPEFLIX_ROOT` when a host root is mounted.
+2. **Services**: a torrent client, media servers, optional extras.
+3. **Credentials**: usernames and passwords, auto-generate available.
+4. **Setup**: generates `docker-compose.yml`, starts the containers, configures
+   each service.
 
 ## Services
 
-The wizard offers exactly the services defined in `templates/` — the backend
+The wizard offers exactly the services defined in `templates/`. The backend
 builds its registry from those files, so this list is the source of truth:
 
 | Service | Container | Port | Category | Default | Credentials |
 |---------|-----------|------|----------|:---:|-------------|
-| Gluetun | `gluetun` | — | VPN | off | provider, key, address, countries |
+| Gluetun | `gluetun` | none | VPN | off | provider, key, address, countries |
 | qBittorrent | `qbittorrent` | 8080 | Torrent Client | on | user, pass |
-| Prowlarr | `prowlarr` | 9696 | Indexer | off | — |
+| Prowlarr | `prowlarr` | 9696 | Indexer | off | none |
 | MediaManager | `mediamanager` | 8000 | Media Manager | off | email, pass |
 | Jellyfin | `jellyfin` | 8096 | Media Server | on | user, pass |
 | Plex | `plex` | 32400 | Media Server | off | claim |
 | JOAL | `joal` | 6060 | Seeder | off | path, token |
 
-**Torrent Client** and **VPN** are single-select; the others are independent
-toggles. Gluetun has no port because it has no web UI — see `port` above.
-
-A service's quirks live in its template: `notes:` for what the user must know,
-which the wizard shows inline, and comments for what a maintainer must know when
-bumping the image. Neither is repeated here.
 
 ## Media Libraries
 
@@ -170,10 +152,9 @@ During setup, Stupeflix automatically:
 
 ## Service Templates
 
-Services are defined as YAML files in `templates/`. A template owns **everything**
-about its service — the container, the files it needs on disk, its setup pipeline
-and its dashboard actions. No file under `packages/api/src` names a service, so
-adding one is dropping a `.yml` and nothing else.
+A template owns **everything** about its service: container, files, setup
+pipeline, dashboard actions. No file under `packages/api/src` names a service, so
+adding one is dropping a `.yml` in `templates/` and nothing else.
 
 ```yaml
 id: myservice
@@ -182,7 +163,7 @@ description: What it does
 category: mediaServer
 defaultEnabled: false
 container: myservice        # compose service name, and the container_name below
-port: 8080                  # its web UI — omit it entirely for a headless service
+port: 8080                  # its web UI; omit it for a headless service
 
 # Merged verbatim into the generated compose file. A template may declare
 # several containers (a sidecar database, say).
@@ -208,12 +189,12 @@ generate:
     length: 16       # bytes
 
 # Shown inline in the wizard and on the install screen. For what setup cannot
-# do for the user. Plain sentences — rendered as text, not markdown.
+# do for the user. Plain sentences, rendered as text, not markdown.
 notes:
   - Finish the last step in the service's own UI.
 
 # A capability rather than a peer's name. Both optional, inert when
-# unmatched — see "Networking" below.
+# unmatched. See "Networking" below.
 network:
   join: vpn
 
@@ -299,8 +280,8 @@ the step type, not declared.
 
 ### Actions and readouts
 
-`actions:` **does** something and returns nothing — a button. `info:` **is**
-something and does nothing — a label and a value, polled on a timer. An action
+`actions:` **does** something and returns nothing: a button. `info:` **is**
+something and does nothing: a label and a value, polled on a timer. An action
 that needs to show you a result belongs in `info:`, and the reverse.
 
 ### Networking
@@ -314,7 +295,7 @@ network: { provides: vpn }     network: { join: vpn }
 ```
 
 Both enabled, the joiner loses its own network stack and cannot reach the
-internet except through the provider — a kill switch, not a setting:
+internet except through the provider. A kill switch, not a setting:
 
 ```yaml
 gluetun:
@@ -327,7 +308,7 @@ qbittorrent:
 
 With no provider enabled, a `join` is inert and the block renders verbatim.
 
-- **Host ports are unchanged**, only their owner — URLs, Open and `wait_ready` on
+- **Host ports are unchanged**, only their owner, so URLs, Open and `wait_ready` on
   `localhost:<port>` keep working.
 - **A joined container loses its DNS name.** Address it with `{{host.<service>}}`,
   which follows it to the provider. Hence `http://{{host.qbittorrent}}` in
@@ -341,14 +322,14 @@ With no provider enabled, a `join` is inert and the block renders verbatim.
 
 ### Action icons
 
-`icon` is optional and **case-sensitive** — an unknown name falls back to a
+`icon` is optional and **case-sensitive**. An unknown name falls back to a
 generic glyph rather than breaking the button, so a typo is invisible in the UI.
 `src/templates.test.ts` reads the list back out of
 `packages/web/src/components/ui/ActionIcon.tsx` to catch it.
 
 | Name | Drawn as |
 |------|----------|
-| `refresh` | Circular arrows — the only one that spins while the action runs |
+| `refresh` | Circular arrows; the only one that spins while the action runs |
 | `play` | Triangle |
 | `stop` | Square |
 | `power` | Power symbol |
@@ -356,10 +337,10 @@ generic glyph rather than breaking the button, so a typo is invisible in the UI.
 | `upload` | Arrow out of a tray |
 | `trash` | Bin |
 | `search` | Magnifier |
-| `key` | Key — credentials |
+| `key` | Key, for credentials |
 | `open` | Arrow leaving a frame |
 | `check` | Tick |
-| `cog` | Gear — settings, reconfigure |
+| `cog` | Gear, for settings and reconfigure |
 
 ### Template variables
 
@@ -369,7 +350,7 @@ generic glyph rather than breaking the button, so a typo is invisible in the UI.
 | `{{internal.key}}` | Generated secrets, and values stored by previous steps (tokens, passwords) |
 | `{{paths.config}}` `{{paths.media}}` `{{paths.torrents}}` | Host paths from the wizard |
 | `{{env.PUID}}` `{{env.PGID}}` `{{env.TZ}}` | Host wiring |
-| `{{host.<service>}}` | The container another service must be addressed by — see Networking |
+| `{{host.<service>}}` | The container another service must be addressed by; see Networking |
 | `{{library.name}}` | Library folder name (in `foreach: libraries` steps) |
 | `{{library.type}}` | Library type: `movies`, `tvshows`, `music` |
 | `{{libraries.<type>_json}}` | All libraries of a type as `[{"name":…,"path":"/media/…"}]` |
@@ -377,18 +358,15 @@ generic glyph rather than breaking the button, so a typo is invisible in the UI.
 | `{{credentials.<service>.<key>}}` | **Another** service's credential |
 | `{{services.<service>.enabled}}` | `"true"` / `"false"` |
 
-The last three are how two services connect without either the code or the other
-template being changed: MediaManager reads
-`{{internal.prowlarr.api_key}}` and switches itself on with
-`{{services.prowlarr.enabled}}`.
-
-An environment entry that resolves to an empty value (`FOO=`) is dropped from the
-generated compose file, so an optional credential left blank falls back to the
-image's own default instead of shadowing it.
+The last three connect two services without touching either's code. MediaManager
+reads `{{internal.prowlarr.api_key}}`. An entry resolving to empty (`FOO=`) is
+dropped from the compose file, so a blank optional credential falls back to the
+image's default instead of shadowing it.
 
 ### `foreach: libraries`
 
-Steps with `foreach: libraries` are expanded once per media library. Use `typeMap` to map standard library types to service-specific values:
+Expanded once per media library. `typeMap` maps library types to
+service-specific values, injected as `{{library.key}}`:
 
 ```yaml
 - name: add_library
@@ -404,8 +382,6 @@ Steps with `foreach: libraries` are expanded once per media library. Use `typeMa
   url: http://localhost:32400/library/sections?type={{library.content_type}}&agent={{library.agent}}
   method: POST
 ```
-
-Mapped values are injected as `{{library.key}}`.
 
 ### `api_call` options
 
