@@ -159,6 +159,7 @@ builds its registry from those files, so this list is the source of truth:
 
 | Service | Container | Port | Category | Default | Credentials |
 |---------|-----------|------|----------|:---:|-------------|
+| Gluetun | `gluetun` | — | VPN | off | provider, key, address, countries |
 | qBittorrent | `qbittorrent` | 8080 | Torrent Client | on | user, pass |
 | Prowlarr | `prowlarr` | 9696 | Indexer | off | — |
 | MediaManager | `mediamanager` | 8000 | Media Manager | off | email, pass |
@@ -166,43 +167,36 @@ builds its registry from those files, so this list is the source of truth:
 | Plex | `plex` | 32400 | Media Server | off | claim |
 | JOAL | `joal` | 6060 | Seeder | off | path, token |
 
-Only the **Torrent Client** category is single-select; the others are independent
-toggles, so you can enable several at once.
+**Torrent Client** and **VPN** are single-select; the others are independent
+toggles. Gluetun has no port because it has no web UI — see `port` above.
 
 ### MediaManager
 
-MediaManager searches for movies and shows and hands the results to a torrent
-client. It only earns its keep with both of its neighbours enabled:
+Searches for movies and shows, hands the results to a torrent client. It needs
+both neighbours to earn its keep:
 
-- **qBittorrent** does the downloading. MediaManager gets its own category
-  (`MediaManager`, saving to `/media/downloads`) so it never fights the
-  per-library categories the wizard creates. The media root is mounted at
-  `/media` in every container, so a path MediaManager reads back from
-  qBittorrent's API points at the same file on both sides, and importing into a
-  library is a rename rather than a copy.
-- **Prowlarr** does the searching. Stupeflix generates its API key, injects it
-  into Prowlarr via `PROWLARR__AUTH__APIKEY` and hands the same value to
-  MediaManager — so neither needs configuring by hand. **You still have to add
-  your own trackers** in Prowlarr's UI; without them there is nothing to search.
+- **qBittorrent** downloads. MediaManager gets its own category saving to
+  `/media/downloads`, so it never fights the per-library ones. The media root is
+  mounted at `/media` in every container, so a path read back from qBittorrent's
+  API points at the same file and importing is a rename, not a copy.
+- **Prowlarr** searches. Stupeflix generates the API key, injects it via
+  `PROWLARR__AUTH__APIKEY` and hands the same value to MediaManager. **You still
+  have to add your own trackers** — without them there is nothing to search.
 
-Both are wired entirely through environment variables in the templates. Note that
-MediaManager's settings models **reject unknown keys**: a `MEDIAMANAGER_*`
-variable its image does not define is a startup failure, so check the field names
-against `/app/media_manager/*/config.py` in the image when bumping the tag.
-
-On an empty database MediaManager creates its own admin from `admin_emails` with
-the hardcoded password `admin`. Setup claims that account and replaces the
-password with the one you chose, then logs in again to prove it took.
+Two gotchas: its settings models **reject unknown keys**, so a `MEDIAMANAGER_*`
+variable its image does not define is a startup failure — check the names against
+`/app/media_manager/*/config.py` when bumping the tag. And on an empty database it
+creates its own admin with the password `admin`; setup claims that account,
+replaces the password, and logs in again to prove it took.
 
 ### JOAL
 
-JOAL's web UI is reached at `/<path>/ui/` (the `path` credential, default
-`joalui`). Its connection settings — **path prefix** and **secret token** — are
-passed as container arguments from your credentials, *not* stored in a config
-file. The JOAL UI then caches them in the browser's `localStorage` (`guiConfig`)
-and never refreshes them on its own: if you reconfigure JOAL, a new token is
-generated and the browser keeps the old one. The live values are always
-`docker inspect joal`.
+Its UI lives at `/<path>/ui/` (the `path` credential, default `joalui`). Path
+prefix and secret token are passed as **container arguments**, not written to a
+config file — and the UI caches them in `localStorage` (`guiConfig`) without ever
+refreshing them. So after a reconfigure the browser keeps the old token — the
+live values are always `docker inspect joal`, or the dashboard's key icon.
+Torrents dropped in `joal/torrents` survive a reconfigure.
 
 ## Media Libraries
 
@@ -229,8 +223,8 @@ defaultEnabled: false
 container: myservice        # compose service name, and the container_name below
 port: 8080                  # its web UI — omit it entirely for a headless service
 
-# Merged verbatim into the generated docker-compose.yml when enabled.
-# A service may declare several containers (a sidecar database, say).
+# Merged verbatim into the generated compose file. A template may declare
+# several containers (a sidecar database, say).
 compose:
   myservice:
     image: example/myservice:latest
@@ -252,15 +246,13 @@ generate:
     type: hex        # or uuid
     length: 16       # bytes
 
-# Shown inline in the wizard, and on the install screen, once the
-# service is enabled. Use it for what setup cannot do for the user.
-# Plain sentences only — they are rendered as text, not markdown.
+# Shown inline in the wizard and on the install screen. For what setup cannot
+# do for the user. Plain sentences — rendered as text, not markdown.
 notes:
   - Finish the last step in the service's own UI.
 
-# Network topology, declared as a capability rather than by naming a peer.
-# `provides` lends this service's network namespace; `join` asks for one.
-# Both sides are optional and inert when unmatched — see "Networking" below.
+# A capability rather than a peer's name. Both optional, inert when
+# unmatched — see "Networking" below.
 network:
   join: vpn
 
@@ -309,9 +301,8 @@ setup:
       username: "{{credentials.user}}"
       password: "{{credentials.pass}}"
 
-# Values the dashboard polls and shows on the card, beyond "running".
-# Read server-side, so the URL never reaches the browser. Anything that fails —
-# service down, wrong path — shows as a dash rather than as an error.
+# Polled and shown on the card, beyond "running". Read server-side, so the URL
+# never reaches the browser; anything that fails shows as a dash.
 info:
   - name: exit_ip
     label: Exit IP
@@ -320,8 +311,7 @@ info:
     refresh: 300            # seconds, default 60
 
 # Buttons the dashboard offers after setup, POSTed to
-# /services/:name/actions/:action. Declaring one is what makes it appear —
-# `label` becomes the button's tooltip, `icon` picks the glyph.
+# /services/:name/actions/:action. Declaring one is what makes it appear.
 actions:
   scan:
     name: scan
@@ -348,35 +338,22 @@ the step type, not declared.
 
 ### Actions and readouts
 
-Two things a card can carry, and they are not the same:
-
-| | `actions:` | `info:` |
-|---|---|---|
-| Does | something | nothing |
-| Returns | nothing | a value |
-| Rendered as | a button | a label and a value |
-| Triggered | on click | on a timer |
-
-An action that needs to *show* you something belongs in `info:`; a readout that
-changes the world belongs in `actions:`. Keeping them apart is why neither has
-to grow the other's features.
+`actions:` **does** something and returns nothing — a button. `info:` **is**
+something and does nothing — a label and a value, polled on a timer. An action
+that needs to show you a result belongs in `info:`, and the reverse.
 
 ### Networking
 
-A service can route its traffic through another's tunnel. Neither template names
-the other: one declares a capability, the other asks for it.
+A service routes its traffic through another's tunnel by declaring a capability,
+never by naming a peer:
 
 ```yaml
-# gluetun.yml
-network: { provides: vpn }
-
-# qbittorrent.yml
-network: { join: vpn }
+# gluetun.yml                  # qbittorrent.yml
+network: { provides: vpn }     network: { join: vpn }
 ```
 
-With both enabled, the generated compose file is rewritten so the joiner has **no
-network of its own** — it lives inside the provider's namespace and cannot reach
-the internet by any other route. That is a kill switch, not a setting:
+Both enabled, the joiner loses its own network stack and cannot reach the
+internet except through the provider — a kill switch, not a setting:
 
 ```yaml
 gluetun:
@@ -384,39 +361,33 @@ gluetun:
 qbittorrent:
   network_mode: "service:gluetun"
   depends_on: { gluetun: { condition: service_healthy } }
-  # no ports of its own: a shared namespace cannot publish
+  # none of its own: a shared namespace cannot publish
 ```
 
-**With no provider enabled, nothing happens** and the joiner's block is generated
-verbatim. There is no second variant of a template to maintain.
+With no provider enabled, a `join` is inert and the block renders verbatim.
 
-Three consequences worth knowing before writing one:
-
-- **Ports move to the provider.** Host port numbers are unchanged, so URLs, the
-  dashboard's Open button and `wait_ready` on `localhost:<port>` keep working.
-- **A joined container loses its DNS name.** Anything addressing it must use
-  `{{host.<service>}}`, which resolves to the provider once it has joined. This
-  is why `mediamanager.yml` writes `http://{{host.qbittorrent}}` and not
-  `http://qbittorrent`.
-- **A provider must declare a `healthcheck`**, because the joiner waits on
-  `service_healthy` — starting before the tunnel is up would leak in the clear.
-
-These keys are **refused** on a service that joins, because each is a property of
-the shared namespace and moving it would silently change behaviour for the
-provider and every other joiner: `networks`, `hostname`, `links`, `dns`,
-`dns_search`, `extra_hosts`. Only `networks` is caught by `docker compose
-config`; the rest fail at `up`, so `src/templates.test.ts` rejects them first.
+- **Host ports are unchanged**, only their owner — URLs, Open and `wait_ready` on
+  `localhost:<port>` keep working.
+- **A joined container loses its DNS name.** Address it with `{{host.<service>}}`,
+  which follows it to the provider. Hence `http://{{host.qbittorrent}}` in
+  `mediamanager.yml`.
+- **A provider needs a `healthcheck`**: the joiner waits on `service_healthy`, and
+  starting before the tunnel is up would leak in the clear.
+- **Refused on a joiner**: `networks`, `hostname`, `links`, `dns`, `dns_search`,
+  `extra_hosts`. Each belongs to the shared namespace, so moving it would change
+  behaviour for the provider and every other joiner. Only `networks` is caught by
+  `docker compose config`, so `src/templates.test.ts` rejects them first.
 
 ### Action icons
 
-An action's `icon` is optional. Left out, the button gets a generic action glyph;
-naming one of the below swaps it. Names are **case-sensitive** — `Refresh` is not
-`refresh`, and an unrecognised name silently falls back to the default rather
-than breaking the button, so a typo is invisible in the UI.
+`icon` is optional and **case-sensitive** — an unknown name falls back to a
+generic glyph rather than breaking the button, so a typo is invisible in the UI.
+`src/templates.test.ts` reads the list back out of
+`packages/web/src/components/ui/ActionIcon.tsx` to catch it.
 
 | Name | Drawn as |
 |------|----------|
-| `refresh` | Circular arrows — also the only icon that spins while the action runs |
+| `refresh` | Circular arrows — the only one that spins while the action runs |
 | `play` | Triangle |
 | `stop` | Square |
 | `power` | Power symbol |
@@ -425,13 +396,9 @@ than breaking the button, so a typo is invisible in the UI.
 | `trash` | Bin |
 | `search` | Magnifier |
 | `key` | Key — credentials |
-| `open` | Arrow leaving a frame — open the service |
+| `open` | Arrow leaving a frame |
 | `check` | Tick |
 | `cog` | Gear — settings, reconfigure |
-
-The list lives in `packages/web/src/components/ui/ActionIcon.tsx`, and
-`src/templates.test.ts` reads it back to fail on a name no template can draw —
-which is what catches the casing trap above.
 
 ### Template variables
 
