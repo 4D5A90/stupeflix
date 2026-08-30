@@ -34,27 +34,19 @@ sides of the mount and pass `-e STUPEFLIX_ROOT=/your/path`.
 
 ### Windows
 
-Run Stupeflix from **inside WSL 2** (Docker Desktop's default backend). Open your
-WSL 2 distro and the Linux Quick Start above works verbatim — same `docker run`,
-same `\` line breaks. Keep `STUPEFLIX_ROOT` on the **WSL 2 filesystem**
-(e.g. `/home/<you>/stupeflix`), **not** under `/mnt/c/...`.
+Run Stupeflix from **inside WSL 2** — the Linux Quick Start above then works
+verbatim. Keep `STUPEFLIX_ROOT` on the WSL 2 filesystem (`/home/<you>/stupeflix`),
+**not** under `/mnt/c/...`.
 
-Why WSL 2 rather than PowerShell: Stupeflix mounts your directory at the *same
-path* inside the container, and the host daemon must resolve that path again when
-it creates the service containers. That only holds for Linux paths the WSL 2
-daemon sees natively — a Windows path like `C:\media` cannot be mounted at
-`C:\media` inside a Linux container, and Windows drives (`/mnt/c`, `D:`) are known
-to break daemon-side bind mounts.
+The reason is the same-path mount: the host daemon has to resolve `STUPEFLIX_ROOT`
+again when it creates the service containers, which only works for Linux paths it
+sees natively. `C:\media` cannot be mounted at `C:\media` inside a Linux
+container, and Windows drives break daemon-side bind mounts.
 
-If you must drive Docker from **PowerShell** or **Git Bash** instead:
-
-- Mount the socket with a leading double slash so the path isn't mangled:
-  `-v //var/run/docker.sock:/var/run/docker.sock`
-- Put the command on a single line — PowerShell continues lines with a backtick
-  `` ` `` (not `\`), `cmd` uses `^`.
-- Skip `--add-host` (Docker Desktop already provides `host.docker.internal`).
-- The dev-sharing command below uses `$(id -u)` / `$(id -g)`, which are POSIX-only
-  — run that one from inside WSL 2.
+From **PowerShell** or **Git Bash** instead: double the socket's leading slash
+(`-v //var/run/docker.sock:...`), put it on one line (PowerShell continues with
+`` ` ``, `cmd` with `^`), drop `--add-host`, and run the dev-sharing command below
+from WSL 2 — it uses `$(id -u)`.
 
 ### Alternating between the image and `pnpm dev`
 
@@ -104,16 +96,13 @@ Open `http://localhost:5173`. In dev the API runs on port 3000 and Vite proxies
 pnpm test          # vitest, api package
 ```
 
-They cover the template engine — variable resolution, compose generation, secret
-minting, `config_file` writing, step phases — and, in `src/templates.test.ts`,
-the real `templates/` directory: every `{{...}}` must resolve, `container_name`
-must match `container`, and compose names and host ports must not collide. Adding
-a service means keeping that suite green.
+They cover the engine, and in `src/templates.test.ts` the real `templates/`
+directory — every `{{...}}` resolves, `container_name` matches `container`, ports
+and names do not collide. A new service must keep that suite green.
 
-What they deliberately do **not** cover is anything that shells out to Docker or
-talks to a live service. To check those, run the stack for real — but **do not
-point it at your own setup**: a reconfigure deletes generated configs, and
-`container_name` is a global Docker namespace. Run it isolated instead:
+Nothing that shells out to Docker is covered. Check those by running the stack
+for real, **never against your own setup** — a reconfigure deletes generated
+configs, and `container_name` is a global Docker namespace:
 
 ```bash
 # Copy the templates and suffix their container_name, so nothing collides
@@ -130,10 +119,9 @@ STUPEFLIX_COMPOSE_PROJECT=stupeflix-e2e \
 PORT=3999 pnpm --filter api dev
 ```
 
-Then drive it with `POST /setup/complete` and poll `GET /setup/status`. Keep the
-**published ports unchanged** — setup steps address services as `localhost:<port>`
-— and only rename `container_name`: the compose service key is what containers
-resolve each other by on the network.
+Drive it with `POST /setup/complete`, poll `GET /setup/status`. Rename only
+`container_name`: published ports must stay (setup addresses services as
+`localhost:<port>`) and the compose key is how containers resolve each other.
 
 ## How it Works
 
@@ -142,15 +130,12 @@ resolve each other by on the network.
 3. **Credentials** — Set usernames and passwords (auto-generate available)
 4. **Setup** — Review and launch. Stupeflix generates `docker-compose.yml`, starts containers, and configures each service automatically
 
-> **Reconfigure is a reset, not an edit.** Re-running the wizard stops the stack
-> and clears each service's *generated* config so setup can run fresh. What gets
-> cleared is not a list in the code: it is exactly the files the templates declare
-> writing (`config_file` steps) plus the directories they list under `reset.dirs`
-> — Jellyfin's config dir, for instance, so its startup wizard replays. Anything
-> no template claims is user data and survives: your **media files, JOAL's seeded
-> torrents, the indexers you added in Prowlarr, and MediaManager's database**.
-> To change a single service without a full reset, use the per-service install
-> (`POST /install/:name`).
+> **Reconfigure is a reset, not an edit.** It clears exactly what the templates
+> declare writing — `config_file` files plus `reset.dirs` directories — so their
+> startup wizards replay. Never a list in the code. Anything no template claims is
+> user data and survives: **media, JOAL's torrents, Prowlarr's indexers,
+> MediaManager's database**. For one service alone, use
+> `POST /services/:name/reconfigure`.
 
 ## Services
 
@@ -170,33 +155,9 @@ builds its registry from those files, so this list is the source of truth:
 **Torrent Client** and **VPN** are single-select; the others are independent
 toggles. Gluetun has no port because it has no web UI — see `port` above.
 
-### MediaManager
-
-Searches for movies and shows, hands the results to a torrent client. It needs
-both neighbours to earn its keep:
-
-- **qBittorrent** downloads. MediaManager gets its own category saving to
-  `/media/downloads`, so it never fights the per-library ones. The media root is
-  mounted at `/media` in every container, so a path read back from qBittorrent's
-  API points at the same file and importing is a rename, not a copy.
-- **Prowlarr** searches. Stupeflix generates the API key, injects it via
-  `PROWLARR__AUTH__APIKEY` and hands the same value to MediaManager. **You still
-  have to add your own trackers** — without them there is nothing to search.
-
-Two gotchas: its settings models **reject unknown keys**, so a `MEDIAMANAGER_*`
-variable its image does not define is a startup failure — check the names against
-`/app/media_manager/*/config.py` when bumping the tag. And on an empty database it
-creates its own admin with the password `admin`; setup claims that account,
-replaces the password, and logs in again to prove it took.
-
-### JOAL
-
-Its UI lives at `/<path>/ui/` (the `path` credential, default `joalui`). Path
-prefix and secret token are passed as **container arguments**, not written to a
-config file — and the UI caches them in `localStorage` (`guiConfig`) without ever
-refreshing them. So after a reconfigure the browser keeps the old token — the
-live values are always `docker inspect joal`, or the dashboard's key icon.
-Torrents dropped in `joal/torrents` survive a reconfigure.
+A service's quirks live in its template: `notes:` for what the user must know,
+which the wizard shows inline, and comments for what a maintainer must know when
+bumping the image. Neither is repeated here.
 
 ## Media Libraries
 
