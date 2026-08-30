@@ -32,8 +32,10 @@ function AppContent() {
 
   const setupCompleted = data?.setup_completed && !forceWizard;
 
+  // Anchored near the top rather than vertically centred: the panel grows with
+  // the number of services, and centring pushed the logo down the taller it got.
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-start justify-center p-4 pt-8">
       {/* The dashboard lays out tiles and two card columns; the wizard is a form
           and reads better narrow, so the shell widens only for the dashboard. */}
       <div className={`w-full ${setupCompleted && !installing ? "max-w-4xl" : "max-w-2xl"}`}>

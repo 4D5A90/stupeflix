@@ -18,6 +18,14 @@ body {
   cursor: pointer;
 }
 
+/* Held for three seconds before it fires: an easter egg should reward staying,
+   not go off every time the cursor crosses the logo. Leaving cancels it. */
 .logo-spin:hover {
-  animation: logo-spin 1.4s cubic-bezier(0.1, 0, 0.2, 1) forwards;
+  animation: logo-spin 1.4s cubic-bezier(0.1, 0, 0.2, 1) 3s forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-spin:hover {
+    animation: none;
+  }
 }
