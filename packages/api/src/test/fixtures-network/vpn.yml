@@ -1,0 +1,25 @@
+id: vpn
+name: VPN
+description: Lends its network namespace
+category: vpn
+defaultEnabled: false
+container: vpn
+port: 8888
+
+network:
+  provides: vpn
+
+compose:
+  vpn:
+    image: example/vpn
+    container_name: vpn
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: ["CMD", "true"]
+    restart: unless-stopped
+
+credentials: []
+setup: []

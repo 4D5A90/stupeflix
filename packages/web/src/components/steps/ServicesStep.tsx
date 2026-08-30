@@ -14,6 +14,7 @@ interface ServicesStepProps {
 
 const CATEGORY_LABELS: Record<string, string> = {
   torrentClient: "Torrent Client",
+  vpn: "VPN",
   indexer: "Indexer",
   mediaServer: "Media Server",
   mediaManager: "Media Manager",
@@ -57,7 +58,7 @@ export function ServicesStep({
   };
 
   // Group services by category in display order
-  const CATEGORY_ORDER = ["torrentClient", "indexer", "mediaManager", "mediaServer", "seeder"];
+  const CATEGORY_ORDER = ["vpn", "torrentClient", "indexer", "mediaManager", "mediaServer", "seeder"];
   const categoryMap = new Map<string, ServiceMeta[]>();
   for (const svc of registry) {
     const list = categoryMap.get(svc.category) ?? [];

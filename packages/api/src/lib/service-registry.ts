@@ -24,11 +24,27 @@ export interface FieldRules {
 	message?: string;
 }
 
+export interface SelectOption {
+	value: string;
+	label: string;
+}
+
 export interface CredentialField {
 	key: string;
-	type: "text" | "password" | "email";
+	type: "text" | "password" | "email" | "select";
 	label: string;
+	/**
+	 * `select` only. The list belongs to the template, never to the frontend —
+	 * otherwise the wizard would have to know what a VPN provider is.
+	 */
+	options?: SelectOption[];
 	default?: string;
+	/**
+	 * Shown greyed inside the empty field. For a value whose *shape* matters but
+	 * whose content cannot be guessed — a plausible default there would look
+	 * filled in and be wrong.
+	 */
+	placeholder?: string;
 	required?: boolean;
 	rules?: FieldRules;
 }
@@ -89,6 +105,22 @@ export interface SetupStepDef {
 	icon?: string;
 }
 
+/**
+ * A value the service reports about itself, shown on its dashboard card.
+ * Complements `actions:` — an action does something and returns nothing, a
+ * readout is something and does nothing.
+ */
+export interface InfoField {
+	name: string;
+	label: string;
+	/** Polled through the API, so template variables and `serviceUrl()` apply. */
+	url: string;
+	/** Dotted path into the JSON body. Omitted, the whole body is used as text. */
+	extract?: string;
+	/** Seconds between refreshes. An exit IP is not a download rate. */
+	refresh?: number;
+}
+
 export interface ServiceTemplate {
 	id: string;
 	name: string;
@@ -96,7 +128,11 @@ export interface ServiceTemplate {
 	category: string;
 	defaultEnabled: boolean;
 	container: string;
-	port: number;
+	/**
+	 * Where its web UI answers. Omitted by a headless service — a VPN tunnel has
+	 * a control API but nothing to open, and the dashboard then offers no link.
+	 */
+	port?: number;
 	webUiPath?: string;
 	/**
 	 * What setup cannot do for the user: a step they must take by hand, or a
@@ -114,6 +150,15 @@ export interface ServiceTemplate {
 	setup: SetupStepDef[];
 	/** On-demand steps the dashboard can trigger after setup, e.g. `scan`. */
 	actions?: Record<string, SetupStepDef>;
+	/**
+	 * How this service reaches the network. `provides` names a capability whose
+	 * namespace it lends (a VPN tunnel); `join` asks for one. Neither side names
+	 * the other, so a template works with or without a provider installed — see
+	 * `lib/network.ts`.
+	 */
+	network?: { provides?: string; join?: string };
+	/** Values the dashboard polls and displays, beyond the container's state. */
+	info?: InfoField[];
 }
 
 // ── Public API sent to frontend ──

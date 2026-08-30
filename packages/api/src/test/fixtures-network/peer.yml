@@ -1,0 +1,18 @@
+id: peer
+name: Peer
+description: Talks to the client by name
+category: mediaManager
+defaultEnabled: false
+container: peer
+port: 7000
+
+compose:
+  peer:
+    image: example/peer
+    container_name: peer
+    environment:
+      - CLIENT_URL=http://{{host.client}}:9000
+    restart: unless-stopped
+
+credentials: []
+setup: []

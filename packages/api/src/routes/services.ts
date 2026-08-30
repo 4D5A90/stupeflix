@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { Hono } from "hono";
 import type { Db } from "../db.js";
 import { compose } from "../lib/docker-cli.js";
+import { readServiceInfo } from "../lib/service-info.js";
 import { removeService, runServiceInstall } from "../lib/service-install.js";
 import { getTemplate, getTemplates } from "../lib/service-registry.js";
 import { setStepStatus, stepKeys } from "../lib/setup-runner.js";
@@ -52,6 +53,12 @@ export function servicesRoutes(db: Db) {
 					id,
 					label: action.label,
 					icon: action.icon,
+				})),
+				// Names and labels only: the URL is the API's business, not the browser's
+				info: (tpl.info ?? []).map(({ name, label, refresh }) => ({
+					name,
+					label,
+					refresh,
 				})),
 				notes: tpl.notes ?? [],
 			};
@@ -112,6 +119,13 @@ export function servicesRoutes(db: Db) {
 
 		await removeService(db, tpl);
 		return c.json({ success: true });
+	});
+
+	/** Values the template declares reading off the service itself. */
+	app.get("/:name/info", async (c) => {
+		const tpl = getTemplate(c.req.param("name"));
+		if (!tpl) return c.json({ error: "Template not found" }, 404);
+		return c.json(await readServiceInfo(db, tpl));
 	});
 
 	app.get("/:name/logs", (c) => {

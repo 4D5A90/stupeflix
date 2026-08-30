@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Db } from "./db.js";
+import { generateCompose } from "./lib/compose.js";
+import { networkHosts } from "./lib/network.js";
 import {
 	ensureSecrets,
 	getTemplateDefaults,
@@ -28,6 +30,7 @@ const KNOWN_CATEGORIES = [
 	"mediaManager",
 	"mediaServer",
 	"seeder",
+	"vpn",
 ];
 
 let templates: ServiceTemplate[];
@@ -80,7 +83,10 @@ describe("every template", () => {
 			expect(tpl.id, `${tpl.id}: id`).toMatch(/^[a-z0-9-]+$/);
 			expect(tpl.name, `${tpl.id}: name`).toBeTruthy();
 			expect(tpl.container, `${tpl.id}: container`).toBeTruthy();
-			expect(typeof tpl.port, `${tpl.id}: port`).toBe("number");
+			// Optional: a headless service has no web UI to point at
+			if (tpl.port !== undefined) {
+				expect(typeof tpl.port, `${tpl.id}: port`).toBe("number");
+			}
 			expect(
 				Object.keys(tpl.compose ?? {}).length,
 				`${tpl.id}: compose`,
@@ -182,10 +188,103 @@ describe("every template", () => {
 		}
 	});
 
+	/**
+	 * A `join` nobody provides is inert by design — that is what makes the VPN
+	 * optional. But a typo is inert too, and silently so, which is why the
+	 * capability has to exist somewhere in the directory.
+	 */
+	/**
+	 * The list belongs to the template, so nothing in the code can validate its
+	 * contents — but an empty one renders a dead field, and a default outside it
+	 * silently submits a value the service will reject.
+	 */
+	it("gives every select its options, with the default among them", () => {
+		for (const tpl of templates) {
+			for (const field of tpl.credentials) {
+				if (field.type !== "select") continue;
+				const values = (field.options ?? []).map((o) => o.value);
+				expect(
+					values.length,
+					`${tpl.id}.${field.key} has no options`,
+				).toBeGreaterThan(0);
+				if (field.default === undefined) continue;
+				expect(values, `${tpl.id}.${field.key} default`).toContain(
+					field.default,
+				);
+			}
+		}
+	});
+
+	it("only joins a network some template provides", () => {
+		const provided = new Set(
+			templates.map((t) => t.network?.provides).filter(Boolean),
+		);
+		for (const tpl of templates) {
+			const wanted = tpl.network?.join;
+			if (!wanted) continue;
+			expect(provided, `${tpl.id} joins "${wanted}"`).toContain(wanted);
+		}
+	});
+
+	/** A joiner waits on `service_healthy`, so the provider has to report health. */
+	it("gives every network provider a healthcheck", () => {
+		for (const tpl of templates) {
+			if (!tpl.network?.provides) continue;
+			const primary = tpl.compose[tpl.container] as Record<string, unknown>;
+			expect(primary?.healthcheck, `${tpl.id}`).toBeTruthy();
+		}
+	});
+
+	/**
+	 * Docker rejects these on a container sharing a namespace, and only
+	 * `networks` is caught by `docker compose config` — the rest blow up at `up`.
+	 */
+	it("keeps namespace settings off a service that joins one", () => {
+		const forbidden = [
+			"networks",
+			"hostname",
+			"links",
+			"dns",
+			"dns_search",
+			"extra_hosts",
+		];
+		for (const tpl of templates) {
+			if (!tpl.network?.join) continue;
+			const primary = (tpl.compose[tpl.container] ?? {}) as Record<
+				string,
+				unknown
+			>;
+			for (const key of forbidden) {
+				expect(primary, `${tpl.id} declares ${key}`).not.toHaveProperty(key);
+			}
+		}
+	});
+
+	/**
+	 * Hardcoding a peer's container name is correct only by coincidence: the day
+	 * that peer joins a VPN it loses its own DNS name, and the reference breaks
+	 * without an error. `{{host.<id>}}` follows it wherever it ends up.
+	 */
+	it("addresses a peer through {{host.x}}, never by its container name", () => {
+		const peers = new Map(templates.map((t) => [t.container, t.id]));
+		for (const tpl of templates) {
+			const rendered = JSON.stringify(tpl.compose);
+			for (const [container, id] of peers) {
+				if (id === tpl.id) continue; // its own containers are its business
+				expect(
+					rendered.includes(`//${container}:`) ||
+						rendered.includes(`//${container}"`),
+					`${tpl.id} hardcodes "${container}" — use {{host.${id}}}`,
+				).toBe(false);
+			}
+		}
+	});
+
 	it("only references variables that actually resolve", () => {
 		for (const tpl of templates) {
 			const known = new Set([
 				...Object.keys(buildVars(db, tpl.id)),
+				...Object.keys(networkHosts(templates, { joins: new Map() })),
 				...runtimeVars(tpl),
 			]);
 			for (const ref of referencedVars(tpl)) {
@@ -234,6 +333,22 @@ describe("across templates", () => {
 				}
 			}
 		}
+	});
+
+	/**
+	 * Ports are moved, never copied, so the per-template uniqueness above already
+	 * covers the merged file. What this adds is that the whole directory renders
+	 * at once — two providers of one capability, or a forbidden key on a joiner,
+	 * throw here rather than at the user's `docker compose up`.
+	 */
+	it("renders a valid compose file with every template enabled", () => {
+		const all = fakeDb({
+			...db.all(),
+			...Object.fromEntries(
+				templates.map((t) => [`services.${t.id}.enabled`, true]),
+			),
+		});
+		expect(() => generateCompose(all)).not.toThrow();
 	});
 
 	it("keeps template ids unique", () => {

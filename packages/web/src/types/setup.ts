@@ -5,11 +5,20 @@ export interface FieldRules {
   message?: string;
 }
 
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
 export interface CredentialField {
   key: string;
-  type: "text" | "password" | "email";
+  type: "text" | "password" | "email" | "select";
   label: string;
+  /** `select` only; the list is declared by the template. */
+  options?: SelectOption[];
   default?: string;
+  /** Shown greyed inside the empty field, when a default would be wrong. */
+  placeholder?: string;
   required?: boolean;
   rules?: FieldRules;
 }
@@ -25,7 +34,7 @@ export interface ServiceMeta {
 }
 
 // Categories where only one service can be selected
-const SINGLE_SELECT_CATEGORIES = ["torrentClient"];
+const SINGLE_SELECT_CATEGORIES = ["torrentClient", "vpn"];
 
 export function isSingleSelect(category: string): boolean {
   return SINGLE_SELECT_CATEGORIES.includes(category);

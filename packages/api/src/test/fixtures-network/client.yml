@@ -1,0 +1,22 @@
+id: client
+name: Client
+description: Routes its traffic through the tunnel
+category: torrentClient
+defaultEnabled: false
+container: client
+port: 9000
+
+network:
+  join: vpn
+
+compose:
+  client:
+    image: example/client
+    container_name: client
+    ports:
+      - "9000:9000"
+      - "9001:9001/udp"
+    restart: unless-stopped
+
+credentials: []
+setup: []

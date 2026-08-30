@@ -55,6 +55,14 @@ export interface LibraryStats {
   disk: DiskStat | null;
 }
 
+/** A value the service reports about itself. The URL stays server-side. */
+export interface ServiceInfoField {
+  name: string;
+  label: string;
+  /** Seconds between refreshes, as the template declared it. */
+  refresh?: number;
+}
+
 export interface ServiceAction {
   id: string;
   label: string;
@@ -67,10 +75,13 @@ export interface ServiceInfo {
   label: string;
   enabled: boolean;
   status: string;
-  port: number;
+  /** Absent for a headless service, which then gets no Open link. */
+  port?: number;
   webUiPath?: string;
   /** Actions the service's template declares, one button each */
   actions: ServiceAction[];
+  /** Readouts to poll and show on the card; empty for most services */
+  info: ServiceInfoField[];
   /** Manual steps or quirks the template wants surfaced, shown as a tooltip */
   notes: string[];
 }
@@ -116,6 +127,10 @@ export const api = {
   },
 
   getLibraryStats: () => request<LibraryStats>("/library/stats"),
+
+  /** Null for a value the service could not report — never an error. */
+  getServiceInfo: (name: string) =>
+    request<Record<string, string | null>>(`/services/${name}/info`),
 
   restartService: (name: string) =>
     request<{ success: boolean }>(`/services/${name}/restart`, { method: "POST" }),

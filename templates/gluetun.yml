@@ -1,0 +1,127 @@
+id: gluetun
+name: Gluetun
+description: VPN tunnel — routes the torrent client's traffic through your provider
+category: vpn
+defaultEnabled: false
+container: gluetun
+# No port: the control server answers JSON, there is no UI to open.
+
+notes:
+  - qBittorrent's traffic leaves only through the tunnel — it has no network of
+    its own any more, and its web UI stays at the same address.
+  - Restarting Gluetun leaves qBittorrent without a network. Restart it too.
+  - The key and the address come from the same WireGuard config file and must
+    match. A mismatched address brings the tunnel up, then drops every packet.
+  - Copy the whole Address line, commas and all. Two addresses means IPv4 and
+    IPv6; on a host without IPv6 the second one is simply ignored.
+  - Two read-only routes of its control server are opened without a password so
+    the dashboard can show the exit IP. Anything that can reach this machine can
+    read them too.
+  - Server Countries is optional. Left blank, Gluetun picks any server.
+
+# Lends its network namespace to whichever service asks for `vpn`. Nothing here
+# names qBittorrent, and qBittorrent does not name Gluetun — see lib/network.ts.
+network:
+  provides: vpn
+
+compose:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - TZ={{env.TZ}}
+      - VPN_SERVICE_PROVIDER={{credentials.provider}}
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY={{credentials.private_key}}
+      - WIREGUARD_ADDRESSES={{credentials.addresses}}
+      - SERVER_COUNTRIES={{credentials.countries}}
+    volumes:
+      - "{{paths.config}}/gluetun:/gluetun"
+    ports:
+      # Control server only. The tunnelled services' ports are moved here by the
+      # engine when they join, so this list is not the whole story at runtime.
+      - "8001:8000"
+    # `depends_on: service_healthy` is what keeps a joined service from starting
+    # before the tunnel is up and leaking in the clear, so this is required.
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+dirs:
+  - gluetun
+
+credentials:
+  # Only providers Gluetun supports over WireGuard: this template fixes
+  # VPN_TYPE, so an OpenVPN-only provider would ask for a key it cannot use.
+  - key: provider
+    type: select
+    label: VPN Provider
+    default: mullvad
+    options:
+      - { value: mullvad, label: Mullvad }
+      - { value: protonvpn, label: Proton VPN }
+      - { value: nordvpn, label: NordVPN }
+      - { value: surfshark, label: Surfshark }
+      - { value: windscribe, label: Windscribe }
+      - { value: ivpn, label: IVPN }
+      - { value: airvpn, label: AirVPN }
+      - { value: cyberghost, label: CyberGhost }
+      - { value: privado, label: Privado }
+      - { value: torguard, label: TorGuard }
+      - { value: custom, label: Custom (wg config) }
+  - key: private_key
+    type: password
+    label: WireGuard Private Key
+  - key: addresses
+    type: text
+    label: WireGuard Address
+    placeholder: 10.64.0.1/32
+  - key: countries
+    type: text
+    label: Server Countries
+    required: false
+
+# The question a VPN exists to answer, and the one thing "running" cannot tell
+# you. Left as a dash when the tunnel is down, which is itself the answer.
+info:
+  - name: exit_ip
+    label: IP Address
+    url: http://localhost:8001/v1/publicip/ip
+    extract: public_ip
+    refresh: 300
+  - name: exit_country
+    label: Country
+    url: http://localhost:8001/v1/publicip/ip
+    extract: country
+    refresh: 300
+
+setup:
+  # Since v3.40 the control server denies everything unless a role says
+  # otherwise. Two read-only routes are opened, and nothing else: the dashboard
+  # needs to read the exit IP, not to steer the tunnel.
+  - name: auth
+    label: Allow the dashboard to read status
+    type: config_file
+    file: gluetun/auth/config.toml
+    content: |
+      [[roles]]
+      name = "dashboard"
+      routes = ["GET /v1/publicip/ip", "GET /v1/openvpn/status"]
+      auth = "none"
+
+  # An exit IP proves far more than a status field: the control server answers,
+  # the tunnel is established, and the credentials were accepted. Without the
+  # match, a 401 would count as ready — which is exactly what happened before.
+  - name: wait_ready
+    label: Wait for the tunnel
+    type: wait_ready
+    url: http://localhost:8001/v1/publicip/ip
+    match: '"public_ip"' 

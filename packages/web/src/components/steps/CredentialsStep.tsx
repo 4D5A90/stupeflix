@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { Input } from "../ui/Input";
+import { Select } from "../ui/Select";
 import { Button } from "../ui/Button";
 import type { SetupConfig, ServiceMeta, CredentialField } from "../../types/setup";
 
@@ -109,14 +110,26 @@ export function CredentialsStep({
                   <div key={field.key}>
                     <div className="flex items-end gap-1">
                       <div className="flex-1">
-                        <Input
-                          label={field.label}
-                          type={field.type === "text" ? undefined : field.type}
-                          value={value}
-                          onChange={(e) =>
-                            updateCredential(svc.id, field.key, e.target.value)
-                          }
-                        />
+                        {field.type === "select" ? (
+                          <Select
+                            label={field.label}
+                            options={field.options ?? []}
+                            value={value}
+                            onChange={(e) =>
+                              updateCredential(svc.id, field.key, e.target.value)
+                            }
+                          />
+                        ) : (
+                          <Input
+                            label={field.label}
+                            type={field.type === "text" ? undefined : field.type}
+                            placeholder={field.placeholder}
+                            value={value}
+                            onChange={(e) =>
+                              updateCredential(svc.id, field.key, e.target.value)
+                            }
+                          />
+                        )}
                       </div>
                       {field.type === "password" ? (
                         <button

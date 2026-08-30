@@ -6,6 +6,11 @@ defaultEnabled: true
 container: qbittorrent
 port: 8080
 
+# Asks to be tunnelled. Without a provider installed this does nothing and the
+# block below is generated verbatim, so there is no second variant to maintain.
+network:
+  join: vpn
+
 compose:
   qbittorrent:
     image: linuxserver/qbittorrent:latest

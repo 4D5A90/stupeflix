@@ -5,6 +5,8 @@ import { writeCompose } from "./compose.js";
 import { compose } from "./docker-cli.js";
 import { cleanServiceConfig, createTemplateDirs } from "./helpers.js";
 import { log, error as logError } from "./logger.js";
+import { affectedServices, resolveNetworkTopology } from "./network.js";
+import { getEnabledTemplates } from "./service-registry.js";
 import type { ServiceTemplate } from "./service-registry.js";
 import { runTemplateSteps } from "./setup-runner.js";
 
@@ -45,10 +47,23 @@ export async function runServiceInstall(
 
 		createTemplateDirs(db, tpl);
 		await runTemplateSteps(db, tpl, "pre_up");
+
+		// A network provider and its joiners share host ports, so they come up as
+		// a set — and the joiners must release those ports before the provider can
+		// bind them. Without a tunnel in play this is just the service itself.
+		const { all, joiners } = affectedServices(
+			tpl.container,
+			resolveNetworkTopology(getEnabledTemplates(db)),
+		);
+		if (joiners.length > 0) {
+			try {
+				await execAsync(compose(`stop ${joiners.join(" ")}`));
+			} catch {}
+		}
 		// Recreate on a reset: an unchanged definition would otherwise be left
 		// running, still holding the config we just replaced
 		await execAsync(
-			compose(`up -d ${reset ? "--force-recreate " : ""}${tpl.container}`),
+			compose(`up -d ${reset ? "--force-recreate " : ""}${all.join(" ")}`),
 		);
 		await runTemplateSteps(db, tpl, "post_up");
 

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { DiskStat, LibraryStats } from "../api/client";
+import type { DiskStat, LibraryStats, ServiceInfo } from "../api/client";
 import type { CredentialField, ServiceMeta } from "../types/setup";
 import { ActionIcon } from "./ui/ActionIcon";
 import { InfoTooltip } from "./ui/InfoTooltip";
@@ -50,6 +50,7 @@ function formatBytes(bytes: number): { value: string; unit: string } {
 
 const CATEGORY_LABELS: Record<string, string> = {
 	torrentClient: "Torrent",
+	vpn: "VPN",
 	indexer: "Indexer",
 	mediaServer: "Media",
 	mediaManager: "Manager",
@@ -211,20 +212,27 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 					</div>
 				</div>
 
-				<div className="grid gap-3 sm:grid-cols-2">
+				<div className="grid items-start gap-3 sm:grid-cols-2">
 					{enabledServices.map((service) => {
 						const style =
 							statusStyles[service.status] ?? statusStyles.not_found;
 						const label = service.label ?? service.name;
-						const url = `http://localhost:${service.port}${service.webUiPath ?? ""}`;
+						// A headless service declares no port, so there is nothing to open
+						const url = service.port
+							? `http://localhost:${service.port}${service.webUiPath ?? ""}`
+							: null;
 						const secret =
 							credentials?.[service.name]?.pass ??
 							credentials?.[service.name]?.token;
+						const hasFooter =
+							(service.actions?.length ?? 0) > 0 ||
+							Boolean(secret) ||
+							Boolean(url);
 
 						return (
 							<div
 								key={service.name}
-								className="bg-ink-800 border border-white/[0.07] rounded-lg"
+								className="flex flex-col bg-ink-800 border border-white/[0.07] rounded-lg"
 							>
 								<div className="flex items-center gap-3 px-3.5 py-3">
 									<div className="w-9 h-9 shrink-0 grid place-items-center rounded-md bg-ink-700 text-gray-400">
@@ -261,7 +269,13 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 									</div>
 								</div>
 
-								<div className="flex border-t border-white/[0.07] text-xs">
+								<ServiceInfoRow service={service} />
+
+								{/* A headless service with no declared action has nothing to put
+								    here, and an empty bordered strip reads as a rendering bug */}
+								<div
+									className={`flex border-t border-white/[0.07] text-xs ${hasFooter ? "" : "hidden"}`}
+								>
 									{service.actions?.map((action) => {
 										const key = `${service.name}:${action.id}`;
 										const running = runningAction === key;
@@ -316,16 +330,21 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 										</button>
 									) : null}
 
-									<a
-										href={url}
-										target="_blank"
-										rel="noopener noreferrer"
-										title={`Open ${label}`}
-										className="flex-1 min-w-0 flex items-center justify-center gap-1.5 py-2 px-1 text-gray-400 border-r border-white/[0.07] last:border-r-0 first:rounded-bl-lg last:rounded-br-lg hover:text-brand-400 hover:bg-white/[0.03] transition-colors"
-									>
-										<ActionIcon name="open" className="w-3.5 h-3.5 shrink-0" />
-										<span className="truncate">Open</span>
-									</a>
+									{url ? (
+										<a
+											href={url}
+											target="_blank"
+											rel="noopener noreferrer"
+											title={`Open ${label}`}
+											className="flex-1 min-w-0 flex items-center justify-center gap-1.5 py-2 px-1 text-gray-400 border-r border-white/[0.07] last:border-r-0 first:rounded-bl-lg last:rounded-br-lg hover:text-brand-400 hover:bg-white/[0.03] transition-colors"
+										>
+											<ActionIcon
+												name="open"
+												className="w-3.5 h-3.5 shrink-0"
+											/>
+											<span className="truncate">Open</span>
+										</a>
+									) : null}
 								</div>
 							</div>
 						);
@@ -439,6 +458,45 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 					</p>
 				) : null}
 			</div>
+		</div>
+	);
+}
+
+/**
+ * What a service says about itself, beyond whether its container runs — a VPN's
+ * exit IP, a server's version. Polled per card so a slow or stopped service
+ * never holds up the list, and a value it cannot report shows as a dash.
+ */
+function ServiceInfoRow({ service }: { service: ServiceInfo }) {
+	const fields = service.info ?? [];
+	// The busiest field sets the pace; a template that says nothing gets a minute
+	const refresh = Math.min(...fields.map((f) => f.refresh ?? 60), 60);
+
+	const { data } = useQuery({
+		queryKey: ["service-info", service.name],
+		queryFn: () => api.getServiceInfo(service.name),
+		refetchInterval: refresh * 1000,
+		enabled: fields.length > 0,
+	});
+
+	if (fields.length === 0) return null;
+
+	return (
+		<div
+			// Same strip as the action footer: same border, same 32px content box,
+			// same text size. Only the content differs, so nothing else should.
+			className="flex min-h-[33px] flex-wrap items-center justify-center gap-x-5 gap-y-1 border-t border-white/[0.07] px-3.5 text-xs"
+		>
+			{fields.map((field) => (
+				<span key={field.name} className="flex items-baseline gap-1.5">
+					<span className="text-gray-500">{field.label}</span>
+					{/* A monospace face reads larger than a sans at the same nominal
+					    size, so the value is stepped down to match the label optically */}
+					<span className="font-mono text-[11px] tabular-nums text-gray-300">
+						{data?.[field.name] ?? "—"}
+					</span>
+				</span>
+			))}
 		</div>
 	);
 }
@@ -793,19 +851,42 @@ function ServiceSetupScreen({
 									>
 										{field.label}
 									</label>
-									<input
-										id={`cred-${field.key}`}
-										type={field.type === "password" ? "password" : "text"}
-										value={creds[field.key] ?? ""}
-										onChange={(e) =>
-											setCreds((prev) => ({
-												...prev,
-												[field.key]: e.target.value,
-											}))
-										}
-										placeholder={field.required === false ? "Optional" : ""}
-										className="flex-1 px-3 py-1.5 text-sm bg-ink-950 border border-white/[0.12] rounded-md text-gray-200 placeholder-gray-600 focus:outline-none focus:border-brand-500"
-									/>
+									{field.type === "select" ? (
+										<select
+											id={`cred-${field.key}`}
+											value={creds[field.key] ?? ""}
+											onChange={(e) =>
+												setCreds((prev) => ({
+													...prev,
+													[field.key]: e.target.value,
+												}))
+											}
+											className="flex-1 px-3 py-1.5 text-sm bg-ink-950 border border-white/[0.12] rounded-md text-gray-200 focus:outline-none focus:border-brand-500"
+										>
+											{(field.options ?? []).map((option) => (
+												<option key={option.value} value={option.value}>
+													{option.label}
+												</option>
+											))}
+										</select>
+									) : (
+										<input
+											id={`cred-${field.key}`}
+											type={field.type === "password" ? "password" : "text"}
+											value={creds[field.key] ?? ""}
+											onChange={(e) =>
+												setCreds((prev) => ({
+													...prev,
+													[field.key]: e.target.value,
+												}))
+											}
+											placeholder={
+												field.placeholder ??
+												(field.required === false ? "Optional" : "")
+											}
+											className="flex-1 px-3 py-1.5 text-sm bg-ink-950 border border-white/[0.12] rounded-md text-gray-200 placeholder-gray-600 focus:outline-none focus:border-brand-500"
+										/>
+									)}
 								</div>
 							))}
 						</div>

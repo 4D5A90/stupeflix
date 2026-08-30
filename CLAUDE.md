@@ -63,13 +63,24 @@ docker run -d -p 3000:3000 \
 YAML files that declare each service: metadata, credentials, and setup pipeline. Loaded by the backend at startup and served to the frontend via `GET /registry`.
 
 Each template defines:
-- `id`, `name`, `description`, `category`, `defaultEnabled`, `container`, `port`
+- `id`, `name`, `description`, `category`, `defaultEnabled`, `container`
+- `port`: where its web UI answers. **Optional** — a headless service (a VPN
+  tunnel exposes a control API, not a UI) omits it, and the dashboard shows no
+  Open link rather than a dead one
 - `compose`: the compose service(s) it owns, merged verbatim into the generated file
 - `generate`: secrets minted once and kept in `internal.<id>.<key>`
 - `dirs` / `reset.dirs`: directories to create before boot / wipe on reconfigure
 - `notes`: manual steps or quirks, shown as a dashboard tooltip and inline in the
   wizard. Plain text — rendered as-is, no markdown
-- `credentials`: fields the frontend renders in the Credentials step
+- `network`: `{ provides }` lends this service's network namespace, `{ join }`
+  asks for one. Neither side names the other, and an unmatched `join` is inert —
+  see `lib/network.ts`
+- `credentials`: fields the frontend renders in the Credentials step. `type` is
+  `text`, `password`, `email` or `select` — a `select` carries its own `options`,
+  so the wizard never learns what a VPN provider is. Use `default:` only for a
+  value that is right as-is; when only the *shape* is knowable, use
+  `placeholder:` — a plausible default that is wrong looks filled in, and is
+  worse than an empty field
 - `setup`: ordered steps. Step types:
   - `wait_ready` — polls a `url` until it responds OK. Optional `match` regex:
     keep polling until the body matches, for a service that answers before it is
@@ -79,6 +90,10 @@ Each template defines:
     already done — for APIs that answer a duplicate with a second copy, not a 409
   - `config_file` — writes `content` to `file` under `paths.config`
   - `extract_from_logs` / `extract_from_config` — pull a value out via regex
+- `info`: values the dashboard polls and shows on the card — `{ name, label, url,
+  extract, refresh }`. Read server-side by `lib/service-info.ts`; anything that
+  fails reads as a dash, never as an error. An action *does* something and
+  returns nothing, a readout *is* something and does nothing — do not merge them
 - `actions`: on-demand steps the dashboard exposes at `/services/:name/actions/:action`.
   `label` is the button's text, and optional `icon` picks its glyph from
   `web/src/components/ui/ActionIcon.tsx` — names are case-sensitive and listed in
@@ -92,6 +107,20 @@ Templates reach each other through variables rather than code:
 `{{internal.<service>.<key>}}`, `{{credentials.<service>.<key>}}` and
 `{{services.<service>.enabled}}`. That is how MediaManager picks up the API key
 Stupeflix generated for Prowlarr, and how it switches its own integrations on.
+
+`network:` is the same idea applied to topology instead of values, because a
+variable can fill a string but cannot move a YAML key. A service that `join`s a
+provider gives up its own network stack, so `lib/network.ts` moves its `ports`
+onto the provider, sets `network_mode` and `depends_on`. Two rules follow, and
+both are enforced by `src/templates.test.ts`:
+
+- **A joined container has no DNS name of its own.** Address it with
+  `{{host.<service>}}`, never by hardcoding the container name — that variable
+  resolves to the provider once it has joined.
+- **Six keys are refused on a joiner** (`networks`, `hostname`, `links`, `dns`,
+  `dns_search`, `extra_hosts`). They belong to the shared namespace, so moving
+  them would change behaviour for the provider and every other joiner. Only
+  `networks` is caught by `docker compose config`; the rest fail at `up`.
 
 `config_file` steps run **before** `docker compose up` (a container reads its
 config at boot); everything else runs after. The phase comes from the step type.
@@ -109,8 +138,10 @@ src/
 │   ├── service-registry.ts # Loads YAML templates, mints secrets, runs setup steps
 │   ├── setup-runner.ts   # Phases (pre_up/post_up), foreach expansion, step statuses
 │   ├── compose.ts        # Merges the enabled templates' `compose:` blocks
+│   ├── network.ts        # provides/join topology, and the compose rewrite it implies
 │   ├── service-install.ts # Install / reconfigure / remove one service
 │   ├── library-stats.ts  # Counts each library off the filesystem, plus disk
+│   ├── service-info.ts   # Reads a template's `info:` readouts off the service
 │   ├── helpers.ts        # Media/template dirs, reconfigure reset (global + scoped)
 │   └── logger.ts         # Logging utility
 └── routes/

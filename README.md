@@ -227,7 +227,7 @@ description: What it does
 category: mediaServer
 defaultEnabled: false
 container: myservice        # compose service name, and the container_name below
-port: 8080
+port: 8080                  # its web UI — omit it entirely for a headless service
 
 # Merged verbatim into the generated docker-compose.yml when enabled.
 # A service may declare several containers (a sidecar database, say).
@@ -258,6 +258,12 @@ generate:
 notes:
   - Finish the last step in the service's own UI.
 
+# Network topology, declared as a capability rather than by naming a peer.
+# `provides` lends this service's network namespace; `join` asks for one.
+# Both sides are optional and inert when unmatched — see "Networking" below.
+network:
+  join: vpn
+
 dirs:                # created under paths.config before the container boots
   - myservice/cache
 
@@ -265,11 +271,23 @@ reset:               # wiped on reconfigure, to replay a startup wizard
   dirs:
     - myservice
 
+# Fields the wizard renders. `type` is text, password, email or select.
 credentials:
   - key: user
     type: text
     label: Username
-    default: admin
+    default: admin              # prefilled, and correct as-is
+  - key: token
+    type: password
+    label: API Token
+    placeholder: 10.64.0.1/32   # shape only, when a default would be wrong
+  - key: region
+    type: select                # the options belong here, never to the frontend
+    label: Region
+    default: eu
+    options:
+      - { value: eu, label: Europe }
+      - { value: us, label: United States }
   - key: pass
     type: password
     label: Password
@@ -290,6 +308,16 @@ setup:
     body:
       username: "{{credentials.user}}"
       password: "{{credentials.pass}}"
+
+# Values the dashboard polls and shows on the card, beyond "running".
+# Read server-side, so the URL never reaches the browser. Anything that fails —
+# service down, wrong path — shows as a dash rather than as an error.
+info:
+  - name: exit_ip
+    label: Exit IP
+    url: http://localhost:8000/v1/publicip/ip
+    extract: public_ip      # dotted path into the JSON; omit to use the whole body
+    refresh: 300            # seconds, default 60
 
 # Buttons the dashboard offers after setup, POSTed to
 # /services/:name/actions/:action. Declaring one is what makes it appear —
@@ -317,6 +345,67 @@ actions:
 `config_file` steps run **before** `docker compose up`, since a container reads
 its config at boot; every other step runs after. That ordering is derived from
 the step type, not declared.
+
+### Actions and readouts
+
+Two things a card can carry, and they are not the same:
+
+| | `actions:` | `info:` |
+|---|---|---|
+| Does | something | nothing |
+| Returns | nothing | a value |
+| Rendered as | a button | a label and a value |
+| Triggered | on click | on a timer |
+
+An action that needs to *show* you something belongs in `info:`; a readout that
+changes the world belongs in `actions:`. Keeping them apart is why neither has
+to grow the other's features.
+
+### Networking
+
+A service can route its traffic through another's tunnel. Neither template names
+the other: one declares a capability, the other asks for it.
+
+```yaml
+# gluetun.yml
+network: { provides: vpn }
+
+# qbittorrent.yml
+network: { join: vpn }
+```
+
+With both enabled, the generated compose file is rewritten so the joiner has **no
+network of its own** — it lives inside the provider's namespace and cannot reach
+the internet by any other route. That is a kill switch, not a setting:
+
+```yaml
+gluetun:
+  ports: ["8001:8000", "8080:8080", "6881:6881"]   # the joiner's ports move here
+qbittorrent:
+  network_mode: "service:gluetun"
+  depends_on: { gluetun: { condition: service_healthy } }
+  # no ports of its own: a shared namespace cannot publish
+```
+
+**With no provider enabled, nothing happens** and the joiner's block is generated
+verbatim. There is no second variant of a template to maintain.
+
+Three consequences worth knowing before writing one:
+
+- **Ports move to the provider.** Host port numbers are unchanged, so URLs, the
+  dashboard's Open button and `wait_ready` on `localhost:<port>` keep working.
+- **A joined container loses its DNS name.** Anything addressing it must use
+  `{{host.<service>}}`, which resolves to the provider once it has joined. This
+  is why `mediamanager.yml` writes `http://{{host.qbittorrent}}` and not
+  `http://qbittorrent`.
+- **A provider must declare a `healthcheck`**, because the joiner waits on
+  `service_healthy` — starting before the tunnel is up would leak in the clear.
+
+These keys are **refused** on a service that joins, because each is a property of
+the shared namespace and moving it would silently change behaviour for the
+provider and every other joiner: `networks`, `hostname`, `links`, `dns`,
+`dns_search`, `extra_hosts`. Only `networks` is caught by `docker compose
+config`; the rest fail at `up`, so `src/templates.test.ts` rejects them first.
 
 ### Action icons
 
@@ -352,6 +441,7 @@ which is what catches the casing trap above.
 | `{{internal.key}}` | Generated secrets, and values stored by previous steps (tokens, passwords) |
 | `{{paths.config}}` `{{paths.media}}` `{{paths.torrents}}` | Host paths from the wizard |
 | `{{env.PUID}}` `{{env.PGID}}` `{{env.TZ}}` | Host wiring |
+| `{{host.<service>}}` | The container another service must be addressed by — see Networking |
 | `{{library.name}}` | Library folder name (in `foreach: libraries` steps) |
 | `{{library.type}}` | Library type: `movies`, `tvshows`, `music` |
 | `{{libraries.<type>_json}}` | All libraries of a type as `[{"name":…,"path":"/media/…"}]` |

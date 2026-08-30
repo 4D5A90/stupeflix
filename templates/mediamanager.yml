@@ -70,7 +70,9 @@ compose:
       - MEDIAMANAGER_MISC__MOVIE_LIBRARIES={{libraries.movies_json}}
 
       - MEDIAMANAGER_TORRENTS__QBITTORRENT__ENABLED={{services.qbittorrent.enabled}}
-      - MEDIAMANAGER_TORRENTS__QBITTORRENT__HOST=http://qbittorrent
+      # Resolves to the container that owns qBittorrent's network — itself normally,
+      # the VPN once it has joined one, since a tunnelled container loses its own name
+      - MEDIAMANAGER_TORRENTS__QBITTORRENT__HOST=http://{{host.qbittorrent}}
       - MEDIAMANAGER_TORRENTS__QBITTORRENT__PORT=8080
       - MEDIAMANAGER_TORRENTS__QBITTORRENT__USERNAME={{credentials.qbittorrent.user}}
       - MEDIAMANAGER_TORRENTS__QBITTORRENT__PASSWORD={{credentials.qbittorrent.pass}}
@@ -80,7 +82,7 @@ compose:
       - MEDIAMANAGER_TORRENTS__QBITTORRENT__CATEGORY_SAVE_PATH=/media/downloads
 
       - MEDIAMANAGER_INDEXERS__PROWLARR__ENABLED={{services.prowlarr.enabled}}
-      - MEDIAMANAGER_INDEXERS__PROWLARR__URL=http://prowlarr:9696
+      - MEDIAMANAGER_INDEXERS__PROWLARR__URL=http://{{host.prowlarr}}:9696
       - MEDIAMANAGER_INDEXERS__PROWLARR__API_KEY={{internal.prowlarr.api_key}}
     volumes:
       - "{{paths.config}}/mediamanager/config:/app/config"
