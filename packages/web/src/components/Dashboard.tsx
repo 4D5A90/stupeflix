@@ -88,6 +88,8 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 	});
 
 	const [adding, setAdding] = useState(false);
+	const [templatesOpen, setTemplatesOpen] = useState(false);
+	const [reloaded, setReloaded] = useState<number | null>(null);
 	const [reconfiguring, setReconfiguring] = useState<string | null>(null);
 	const [copied, setCopied] = useState<string | null>(null);
 
@@ -123,10 +125,19 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 	};
 
 	const reload = useMutation({
-		mutationFn: api.reloadTemplates,
-		onSuccess: () => {
+		// Reloading seven files takes about 20ms, so the spinner would flash and
+		// the click would feel like it did nothing. Same minimum the card actions use.
+		mutationFn: () =>
+			Promise.all([
+				api.reloadTemplates(),
+				new Promise((r) => setTimeout(r, 600)),
+			]).then(([result]) => result),
+		// The confirmation is local state rather than `reload.isSuccess`, so how long
+		// it shows is decided here instead of by the mutation's lifecycle.
+		onSuccess: ({ count }) => {
 			invalidateTemplates();
-			setTimeout(() => reload.reset(), 3000);
+			setReloaded(count);
+			setTimeout(() => setReloaded(null), 2000);
 		},
 	});
 
@@ -383,8 +394,31 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 			</div>
 
 			<div className="border-t border-white/[0.07] pt-6">
-				<div className="flex items-center justify-between mb-5">
-					<h2 className="text-xl font-semibold">Templates</h2>
+				{/* One row, always there: the title toggles the grid, the two actions act
+				    on the catalogue whether it is shown or not. */}
+				<div
+					className={`flex items-center justify-between ${templatesOpen ? "mb-3" : ""}`}
+				>
+					<button
+						type="button"
+						onClick={() => setTemplatesOpen(!templatesOpen)}
+						className="group flex items-center gap-2 text-left"
+					>
+						<h2 className="text-xl font-semibold">Templates</h2>
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth={2}
+							className={`h-5 w-5 text-gray-400 transition-transform group-hover:text-gray-200 ${templatesOpen ? "rotate-180" : ""}`}
+						>
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								d="M19 9l-7 7-7-7"
+							/>
+						</svg>
+					</button>
 					<div className="flex items-center gap-2">
 						<label className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-300 bg-ink-800 hover:bg-ink-700 rounded-md transition-colors cursor-pointer">
 							<svg
@@ -431,32 +465,44 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 									d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
 								/>
 							</svg>
-							Reload
+							{reload.isPending
+								? "Reloading…"
+								: reloaded !== null
+									? `Reloaded ${reloaded}`
+									: "Reload"}
 						</button>
 					</div>
 				</div>
-				{templates ? (
-					<div className="flex flex-wrap gap-2">
+
+				{templatesOpen && templates ? (
+					<div
+						className="grid gap-2"
+						style={{
+							gridTemplateColumns: "repeat(auto-fill, minmax(9.5rem, 1fr))",
+						}}
+					>
 						{templates.map((tpl) => (
 							<div
 								key={tpl.id}
-								className="flex items-center gap-2 px-3 py-1.5 bg-ink-800 rounded-md"
+								className="flex items-center gap-2.5 rounded-md border border-white/[0.07] bg-ink-800 px-3 py-2"
 							>
-								<span className="text-gray-400">
+								<span
+									className="grid h-7 w-7 shrink-0 place-items-center rounded"
+									style={serviceTint(tpl.id)}
+								>
 									<ServiceIcon id={tpl.id} />
 								</span>
-								<span className="text-gray-200 text-sm">{tpl.name}</span>
-								<span className="text-xs text-gray-500">
-									{CATEGORY_LABELS[tpl.category] ?? tpl.category}
+								<span className="min-w-0">
+									<span className="block truncate text-sm text-gray-200">
+										{tpl.name}
+									</span>
+									<span className="block text-xs text-gray-500">
+										{CATEGORY_LABELS[tpl.category] ?? tpl.category}
+									</span>
 								</span>
 							</div>
 						))}
 					</div>
-				) : null}
-				{reload.isSuccess ? (
-					<p className="mt-2 text-xs text-green-400">
-						Reloaded {reload.data.count} templates
-					</p>
 				) : null}
 			</div>
 		</div>
