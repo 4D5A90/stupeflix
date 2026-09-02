@@ -41,7 +41,7 @@ export function Wizard({ onComplete }: WizardProps) {
 
 	const goToHome = () => {
 		window.location.href = "/";
-	}
+	};
 	const goToPaths = useCallback(() => setStep("paths"), []);
 	const goToServices = useCallback(() => setStep("services"), []);
 	const goToCredentials = useCallback(() => setStep("credentials"), []);

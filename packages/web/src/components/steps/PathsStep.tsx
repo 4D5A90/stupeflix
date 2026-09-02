@@ -18,7 +18,12 @@ const LIBRARY_TYPES: { value: Library["type"]; label: string }[] = [
 	{ value: "music", label: "Music" },
 ];
 
-export function PathsStep({ config, onChange, onNext, onCancel }: PathsStepProps) {
+export function PathsStep({
+	config,
+	onChange,
+	onNext,
+	onCancel,
+}: PathsStepProps) {
 	const [useBasePath, setUseBasePath] = useState(true);
 	const [basePath, setBasePath] = useState("");
 	const [mountedRoot, setMountedRoot] = useState("");
