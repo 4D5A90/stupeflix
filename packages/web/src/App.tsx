@@ -42,11 +42,10 @@ function AppContent() {
 	// the number of services, and centring pushed the logo down the taller it got.
 	return (
 		<div className="min-h-screen flex items-start justify-center p-4 pt-8">
-			{/* The dashboard lays out tiles and two card columns; the wizard is a form
-          and reads better narrow, so the shell widens only for the dashboard. */}
-			<div
-				className={`w-full ${setupCompleted && !installing ? "max-w-4xl" : "max-w-2xl"}`}
-			>
+			{/* One width throughout. The wizard used to be narrower on the grounds
+          that a form reads better that way, but its Services step is a table
+          now, and 672px squeezed the description column to nothing. */}
+			<div className="w-full max-w-4xl">
 				<div className="flex flex-col items-center mb-8">{logo}</div>
 				<div className="bg-ink-900 rounded-xl p-6 shadow-xl ring-1 ring-white/5">
 					{installing ? (
