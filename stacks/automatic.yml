@@ -1,0 +1,9 @@
+id: automatic
+name: Automatic
+description: It finds and files episodes and films on its own
+services:
+  - qbittorrent
+  - prowlarr
+  - sonarr
+  - radarr
+  - jellyfin

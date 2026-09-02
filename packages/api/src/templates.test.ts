@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { Db } from "./db.js";
 import { generateCompose } from "./lib/compose.js";
 import { networkHosts } from "./lib/network.js";
+import { checkRequirements } from "./lib/requirements.js";
 import {
 	ensureSecrets,
 	getTemplateDefaults,
@@ -13,6 +14,7 @@ import {
 } from "./lib/service-registry.js";
 import type { ServiceTemplate } from "./lib/service-registry.js";
 import { foreachSpec } from "./lib/setup-runner.js";
+import { getStacks, loadStacks } from "./lib/stacks.js";
 import { buildVars } from "./lib/template-vars.js";
 import { fakeDb } from "./test/fake-db.js";
 import { lastStep, template } from "./test/helpers.js";
@@ -23,6 +25,7 @@ import { lastStep, template } from "./test/helpers.js";
  * only thing standing between it and a container that fails to boot.
  */
 const TEMPLATES = fileURLToPath(new URL("../../../templates", import.meta.url));
+const STACKS = fileURLToPath(new URL("../../../stacks", import.meta.url));
 
 /** Collections `expandStep` knows how to walk (lib/setup-runner.ts). */
 const KNOWN_FOREACH_SOURCES = ["libraries"];
@@ -43,6 +46,7 @@ let db: Db;
 
 beforeAll(() => {
 	loadTemplates(TEMPLATES);
+	loadStacks(STACKS);
 	templates = getTemplates();
 	db = fakeDb({
 		...getTemplateDefaults(),
@@ -432,5 +436,45 @@ describe("mediamanager", () => {
 		const last = lastStep(tpl);
 		expect(last.name).toBe("verify_login");
 		expect(last.ignoreStatus).toBeUndefined();
+	});
+});
+
+/**
+ * A stack is an offer: pick this set and it works. Nothing in the app checks
+ * that at runtime — the stack path deliberately has no alert region — so the
+ * proof has to happen here, or an unusable combination ships as a one-click
+ * recommendation.
+ */
+describe("stacks", () => {
+	it("names only services that exist", () => {
+		const known = new Set(templates.map((t) => t.id));
+		for (const stack of getStacks()) {
+			for (const id of stack.services) {
+				expect(known, `${stack.id} names "${id}"`).toContain(id);
+			}
+		}
+	});
+
+	it("leaves no requirement unmet, so the stack path never has to warn", () => {
+		for (const stack of getStacks()) {
+			const { missing } = checkRequirements(templates, stack.services);
+			expect(
+				missing,
+				`${stack.id}: ${missing.map((m) => m.reason).join(" ")}`,
+			).toHaveLength(0);
+		}
+	});
+
+	it("carries the two things the card renders", () => {
+		for (const stack of getStacks()) {
+			expect(stack.name, `${stack.id} name`).toBeTruthy();
+			expect(stack.description, `${stack.id} description`).toBeTruthy();
+			expect(stack.services.length, `${stack.id} services`).toBeGreaterThan(0);
+		}
+	});
+
+	it("has unique ids", () => {
+		const ids = getStacks().map((s) => s.id);
+		expect(ids).toEqual([...new Set(ids)]);
 	});
 });

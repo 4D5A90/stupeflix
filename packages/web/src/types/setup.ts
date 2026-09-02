@@ -43,6 +43,14 @@ export interface ServiceMeta {
 	credentials: CredentialField[];
 }
 
+/** A named set of services someone has already proved works together. */
+export interface Stack {
+	id: string;
+	name: string;
+	description: string;
+	services: string[];
+}
+
 export interface UnmetRequirement {
 	service: string;
 	category: string;

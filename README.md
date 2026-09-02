@@ -160,6 +160,33 @@ builds its registry from those files, so this list is the source of truth:
 | JOAL | `joal` | 6060 | Seeder | off | path, token |
 
 
+## Stacks
+
+A stack is a named set of services that work together — the shortcut past
+choosing ten things one by one. They live in `stacks/`, are loaded like
+templates and served on `GET /stacks`:
+
+```yaml
+# stacks/household.yml
+id: household
+name: Household
+description: Everyone asks from their phone, it downloads itself
+services: [qbittorrent, prowlarr, sonarr, radarr, jellyfin, seerr]
+```
+
+The directory is the discriminant — a file in `stacks/` is a stack the way a
+file in `templates/` is a service. No `kind:` field, so nothing to describe,
+nothing to forget, and no default to rule on for the templates that predate it.
+
+`src/templates.test.ts` asserts every stack names services that exist and leaves
+no `requires` unmet. That proof is what lets the wizard offer a stack with no
+warnings attached: an unusable combination cannot ship as a one-click
+recommendation.
+
+Shipping them is optional. An absent directory, an empty one, or one whose
+stacks all name a missing service arrive the same way — an empty list — and the
+Services step simply offers no fork.
+
 ## Media Libraries
 
 Libraries are defined in the first step of the wizard (under Media Path). Each library has a name and a type (`movies`, `tvshows`, or `music`). Default: Movies + TvShows.
@@ -526,6 +553,7 @@ API also serves the built wizard on the same port).
 | GET | `/setup/status` | Track setup progress |
 | POST | `/install/:name` | Install a single service (per-service flow) |
 | GET | `/credentials` | Get stored credentials |
+| GET | `/stacks` | List the stacks this install can offer |
 | GET | `/services` | List services with status |
 
 ## Stack

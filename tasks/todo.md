@@ -359,7 +359,7 @@ services un par un via `POST /install/:name`.
   beaucoup de machinerie et de risque pour un cas que le bouton Reconfigure
   traite déjà.
 
-## Phase 6 — refonte de l'étape Services (design validé, pas implémenté)
+## Phase 6 — refonte de l'étape Services ✅ faite
 
 Spec visuelle : artefact **The Services Step**
 (`claude.ai/code/artifact/7b59350f-caef-451f-8637-24ebd505f3bb`), interactif.
@@ -413,10 +413,23 @@ qui n'en contiennent qu'un — rien de visible au repos.
    quoi il refuse de se comprimer et pousse son voisin dehors — c'est ce qui
    sortait le switch de sa carte.
 
-**Portée côté code, non commencée :** `ServicesStep.tsx` (réécrit),
-`lib/stacks.ts` + son chargement, `GET /registry`, `templates.test.ts`,
-`stacks/*.yml`, et l'ordre des catégories qui est aujourd'hui codé en dur
-(`ServicesStep.tsx:65`) alors qu'il décide de ce qu'on voit en premier.
+**Implémenté** — `stacks/{just-watch,automatic,household}.yml`,
+`lib/stacks.ts`, `GET /stacks` (route à part plutôt qu'une clé dans `/registry`,
+qui aurait changé une forme que le front consomme déjà), `useStacks`,
+`ui/CategoryIcon.tsx`, et `ServicesStep.tsx` réécrit. 151 tests, lint et build
+verts, et vérifié à l'écran : la fourche, le tableau, le blocage rouge avec
+l'avertissement ambre, et le repli sans `stacks/`.
+
+Deux écarts assumés par rapport à la maquette :
+
+- **Les `notes:` reviennent sous le tableau**, pour les services cochés
+  seulement. Elles n'ont plus leur place dans une ligne, mais CLAUDE.md dit
+  qu'elles s'affichent dans le wizard — les retirer aurait été une régression
+  silencieuse.
+- **L'ordre des catégories reste en dur** dans `ServicesStep.tsx`, avec les
+  catégories inconnues ajoutées à la fin plutôt qu'ignorées. Il décide désormais
+  de ce qu'on voit en premier ; le faire venir des templates est un chantier à
+  part.
 
 ## Risques
 

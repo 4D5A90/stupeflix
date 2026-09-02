@@ -155,6 +155,25 @@ both are enforced by `src/templates.test.ts`:
 `config_file` steps run **before** `docker compose up` (a container reads its
 config at boot); everything else runs after. The phase comes from the step type.
 
+### Stacks (`stacks/`)
+
+A named set of services that work together, offered above the manual list in
+the wizard's Services step: `{ id, name, description, services[] }`. Loaded by
+`lib/stacks.ts` and served on `GET /stacks`.
+
+**The directory is the discriminant, not a `kind:` field.** A discriminant field
+would need a list of valid values somewhere a gate can read, prose here, and a
+ruling on what an absent one means; a path needs none of that and cannot hold an
+invalid value.
+
+`getStacks()` drops a stack naming a service this install does not have, so the
+frontend only ever asks whether the list is empty — never why. Shipping stacks
+is optional: an absent directory is an empty list, not an error.
+
+`templates.test.ts` proves each stack names real services and leaves no
+`requires` unmet. That is what lets the stack path in the wizard skip the alert
+region entirely.
+
 ### API (`packages/api/`)
 
 ```
@@ -170,6 +189,7 @@ src/
 │   ├── compose.ts        # Merges the enabled templates' `compose:` blocks
 │   ├── network.ts        # provides/join topology, and the compose rewrite it implies
 │   ├── requirements.ts   # requires/recommends resolved by category, never by name
+│   ├── stacks.ts         # stacks/*.yml — a named set of services, loaded like templates
 │   ├── service-install.ts # Install / reconfigure / remove one service
 │   ├── library-stats.ts  # Counts each library off the filesystem, plus disk
 │   ├── service-info.ts   # Reads a template's `info:` readouts off the service

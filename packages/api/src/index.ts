@@ -6,7 +6,14 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { initDb } from "./db.js";
-import { PORT, ROOT, SERVICE_HOST, TEMPLATES_DIR, WEB_DIR } from "./lib/env.js";
+import {
+	PORT,
+	ROOT,
+	SERVICE_HOST,
+	STACKS_DIR,
+	TEMPLATES_DIR,
+	WEB_DIR,
+} from "./lib/env.js";
 import { getLibraryStats } from "./lib/library-stats.js";
 import {
 	getServiceMetas,
@@ -19,6 +26,7 @@ import {
 	reloadTemplates,
 	runSetupStep,
 } from "./lib/service-registry.js";
+import { getStacks, loadStacks, reloadStacks } from "./lib/stacks.js";
 import { dockerRoutes } from "./routes/docker.js";
 import { installRoutes } from "./routes/install.js";
 import { servicesRoutes } from "./routes/services.js";
@@ -28,6 +36,7 @@ import { setupRoutes } from "./routes/setup.js";
 loadTemplates(
 	TEMPLATES_DIR ?? resolve(import.meta.dirname, "../../../templates"),
 );
+loadStacks(STACKS_DIR ?? resolve(import.meta.dirname, "../../../stacks"));
 
 const db = await initDb(getTemplateDefaults());
 
@@ -45,6 +54,10 @@ api.get("/health", (c) => c.json({ status: "ok" }));
 api.get("/runtime", (c) => c.json({ root: ROOT, serviceHost: SERVICE_HOST }));
 
 api.get("/registry", (c) => c.json(getServiceMetas()));
+
+// Its own route rather than a key inside /registry: a stack is not a service,
+// and the wizard asks one question of this list — is it empty.
+api.get("/stacks", (c) => c.json(getStacks()));
 
 /**
  * Filesystem view of the libraries, so the dashboard can lead with what the user
@@ -67,6 +80,7 @@ api.get("/templates", (c) => {
 
 api.post("/templates/reload", (c) => {
 	reloadTemplates();
+	reloadStacks();
 	return c.json({ success: true, count: getTemplates().length });
 });
 

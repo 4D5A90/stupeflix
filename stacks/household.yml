@@ -1,0 +1,10 @@
+id: household
+name: Household
+description: Everyone asks from their phone, it downloads itself
+services:
+  - qbittorrent
+  - prowlarr
+  - sonarr
+  - radarr
+  - jellyfin
+  - seerr

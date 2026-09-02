@@ -1,4 +1,9 @@
-import type { ServiceMeta, SetupConfig, SetupStatus } from "../types/setup";
+import type {
+	ServiceMeta,
+	SetupConfig,
+	SetupStatus,
+	Stack,
+} from "../types/setup";
 
 const BASE_URL = "/api";
 
@@ -110,6 +115,8 @@ export const api = {
 	getServices: () => request<ServiceInfo[]>("/services"),
 
 	getRegistry: () => request<ServiceMeta[]>("/registry"),
+
+	getStacks: () => request<Stack[]>("/stacks"),
 
 	getRuntime: () => request<RuntimeInfo>("/runtime"),
 

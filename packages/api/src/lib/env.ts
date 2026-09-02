@@ -28,6 +28,9 @@ export const COMPOSE_PROJECT =
 /** Service templates. */
 export const TEMPLATES_DIR = fromEnv("STUPEFLIX_TEMPLATES_DIR");
 
+/** Where the shipped stacks live. Absent is legal — there is simply no fork. */
+export const STACKS_DIR = fromEnv("STUPEFLIX_STACKS_DIR");
+
 /** Built frontend. When set, the API also serves the web UI on the same port. */
 export const WEB_DIR = fromEnv("STUPEFLIX_WEB_DIR");
 

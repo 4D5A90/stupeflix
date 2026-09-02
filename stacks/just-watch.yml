@@ -1,0 +1,6 @@
+id: just-watch
+name: Just watch
+description: Download by hand, play it anywhere in the house
+services:
+  - qbittorrent
+  - jellyfin
