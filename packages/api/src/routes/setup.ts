@@ -12,7 +12,8 @@ import {
 	createTemplateDirs,
 } from "../lib/helpers.js";
 import { debug, error, log } from "../lib/logger.js";
-import { getEnabledTemplates } from "../lib/service-registry.js";
+import { checkRequirements, requirementMessage } from "../lib/requirements.js";
+import { getEnabledTemplates, getTemplates } from "../lib/service-registry.js";
 import {
 	type StepStatus,
 	runTemplateSteps,
@@ -147,6 +148,26 @@ export function setupRoutes(db: Db) {
 
 	app.post("/complete", async (c) => {
 		const body = await c.req.json().catch(() => ({}));
+
+		// Checked against what was posted, before any of it is stored: a rejected
+		// selection must not become the one the wizard reloads into. The wizard
+		// blocks this too, but a check living only in the frontend is one anyone
+		// can walk around.
+		const posted = Object.entries(
+			(body.services ?? {}) as Record<string, { enabled: boolean }>,
+		)
+			.filter(([, cfg]) => cfg.enabled)
+			.map(([id]) => id);
+		const { missing } = checkRequirements(
+			getTemplates(),
+			body.services ? posted : getEnabledTemplates(db).map((t) => t.id),
+		);
+		if (missing.length > 0) {
+			return c.json(
+				{ error: requirementMessage(missing), unmet: missing },
+				400,
+			);
+		}
 
 		if (body.paths) applyPaths(db, body.paths);
 		if (body.libraries) applyLibraries(db, body.libraries);

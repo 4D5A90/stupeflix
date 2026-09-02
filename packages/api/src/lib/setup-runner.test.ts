@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +8,12 @@ import { configuredDb } from "../test/fake-db.js";
 import { template } from "../test/helpers.js";
 import { loadTemplates } from "./service-registry.js";
 import type { ServiceTemplate } from "./service-registry.js";
-import { runTemplateSteps, stepKeys, stepPhase } from "./setup-runner.js";
+import {
+	runTemplateSteps,
+	stepEnabled,
+	stepKeys,
+	stepPhase,
+} from "./setup-runner.js";
 
 const FIXTURES = fileURLToPath(new URL("../test/fixtures", import.meta.url));
 
@@ -42,6 +47,53 @@ describe("stepKeys", () => {
 		]);
 	});
 
+	it("reads the scalar shorthand and the long form the same way", () => {
+		const alpha = template("alpha");
+		const step = { name: "s", label: "s", type: "api_call" as const };
+		const short = { ...alpha, setup: [{ ...step, foreach: "libraries" }] };
+		const long = {
+			...alpha,
+			setup: [{ ...step, foreach: { source: "libraries" } }],
+		};
+		const db = configuredDb();
+		expect(stepKeys(db, short)).toEqual(stepKeys(db, long));
+		expect(stepKeys(db, short)).toHaveLength(2);
+	});
+
+	it("runs once for a source nothing iterates", () => {
+		const alpha = template("alpha");
+		const tpl: ServiceTemplate = {
+			...alpha,
+			setup: [
+				{
+					name: "s",
+					label: "s",
+					type: "api_call",
+					foreach: { source: "countries", type: "tvshows" },
+				},
+			],
+		};
+		expect(stepKeys(configuredDb(), tpl)).toEqual(["alpha.s"]);
+	});
+
+	it("keeps only the libraries of the type a step declares", () => {
+		const alpha = template("alpha");
+		const tvOnly: ServiceTemplate = {
+			...alpha,
+			setup: [
+				{
+					name: "root_folder",
+					label: "Add root folder",
+					type: "api_call",
+					foreach: { source: "libraries", type: "tvshows" },
+				},
+			],
+		};
+		expect(stepKeys(configuredDb(), tvOnly)).toEqual([
+			"alpha.root_folder_TvShows",
+		]);
+	});
+
 	it("follows the libraries the user actually defined", () => {
 		const db = configuredDb({
 			libraries: JSON.stringify([{ name: "Anime", type: "tvshows" }]),
@@ -49,6 +101,71 @@ describe("stepKeys", () => {
 		expect(stepKeys(db, template("alpha"))).toContain(
 			"alpha.add_library_Anime",
 		);
+	});
+});
+
+describe("stepEnabled", () => {
+	const guarded = (condition: string | string[]) => ({
+		name: "register",
+		label: "Register",
+		type: "api_call" as const,
+		if: condition,
+	});
+
+	it("runs an unguarded step", () => {
+		expect(
+			stepEnabled(configuredDb(), template("alpha"), {
+				name: "s",
+				label: "s",
+				type: "api_call",
+			}),
+		).toBe(true);
+	});
+
+	it("follows whether the peer is enabled", () => {
+		const cond = "{{services.beta.enabled}}";
+		const on = configuredDb({ "services.beta.enabled": true });
+		const off = configuredDb({ "services.beta.enabled": false });
+		expect(stepEnabled(on, template("alpha"), guarded(cond))).toBe(true);
+		expect(stepEnabled(off, template("alpha"), guarded(cond))).toBe(false);
+	});
+
+	it("requires every condition of a list to hold", () => {
+		const both = ["{{services.beta.enabled}}", "{{services.zeta.enabled}}"];
+		const one = configuredDb({
+			"services.beta.enabled": true,
+			"services.zeta.enabled": false,
+		});
+		const all = configuredDb({
+			"services.beta.enabled": true,
+			"services.zeta.enabled": true,
+		});
+		expect(stepEnabled(one, template("alpha"), guarded(both))).toBe(false);
+		expect(stepEnabled(all, template("alpha"), guarded(both))).toBe(true);
+	});
+
+	it("treats a peer that does not exist as absent, not as an error", () => {
+		const db = configuredDb();
+		expect(
+			stepEnabled(db, template("alpha"), guarded("{{services.ghost.enabled}}")),
+		).toBe(false);
+	});
+
+	it("keeps a step that will not run out of the status list", () => {
+		const alpha = template("alpha");
+		const tpl: ServiceTemplate = {
+			...alpha,
+			setup: [
+				{ name: "always", label: "Always", type: "api_call" },
+				{
+					name: "never",
+					label: "Never",
+					type: "api_call",
+					if: "{{services.beta.enabled}}",
+				},
+			],
+		};
+		expect(stepKeys(configuredDb(), tpl)).toEqual(["alpha.always"]);
 	});
 });
 
@@ -84,6 +201,56 @@ describe("runTemplateSteps", () => {
 	it("skips the steps of the other phase", async () => {
 		await runTemplateSteps(db, preUpOnly, "post_up");
 		expect(db.get("setup.status.alpha.config")).toBeNull();
+	});
+
+	it("injects the per-type values of `map` into each run", async () => {
+		const mapped: ServiceTemplate = {
+			...preUpOnly,
+			setup: [
+				{
+					name: "write",
+					label: "Write",
+					type: "config_file",
+					foreach: {
+						source: "libraries",
+						map: {
+							movies: { kind: "movie" },
+							tvshows: { kind: "show" },
+						},
+					},
+					file: "{{library.name}}.conf",
+					content: "kind={{library.kind}}\n",
+				},
+			],
+		};
+
+		await runTemplateSteps(db, mapped, "pre_up");
+		expect(readFileSync(join(dir, "Movies.conf"), "utf-8")).toBe(
+			"kind=movie\n",
+		);
+		expect(readFileSync(join(dir, "TvShows.conf"), "utf-8")).toBe(
+			"kind=show\n",
+		);
+	});
+
+	it("does not run a step whose condition is false", async () => {
+		const guarded: ServiceTemplate = {
+			...preUpOnly,
+			setup: [
+				{
+					name: "optional",
+					label: "Optional",
+					type: "config_file",
+					if: "{{services.beta.enabled}}",
+					file: "skipped.conf",
+					content: "x",
+				},
+			],
+		};
+
+		await runTemplateSteps(db, guarded, "pre_up");
+		expect(existsSync(join(dir, "skipped.conf"))).toBe(false);
+		expect(db.get("setup.status.alpha.optional")).toBeNull();
 	});
 
 	it("marks the failing step and stops, so the UI can point at it", async () => {

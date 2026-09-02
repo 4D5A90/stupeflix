@@ -11,8 +11,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 		},
 	});
 	if (!res.ok) {
-		const error = await res.json().catch(() => ({ message: res.statusText }));
-		throw new Error(error.message || res.statusText);
+		const error = await res.json().catch(() => ({}));
+		// The API answers `{ error }`; a template's own wording travels in there,
+		// and reading only `message` turned every refusal into "Conflict"
+		throw new Error(error.error || error.message || res.statusText);
 	}
 	return res.json();
 }

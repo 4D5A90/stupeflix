@@ -66,6 +66,11 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 	const enabledServices = services.filter((s) => s.enabled);
 	const enabledIds = new Set(enabledServices.map((s) => s.name));
 	const uninstalled = (registry ?? []).filter((svc) => !enabledIds.has(svc.id));
+	// What the stack already covers, so the install screen can say what is
+	// missing instead of letting the API refuse after the form is filled in
+	const installedCategories = (registry ?? [])
+		.filter((svc) => enabledIds.has(svc.id))
+		.map((svc) => svc.category);
 
 	// Reconfiguring replays one service's template with new values; picking a new
 	// one is the same form arriving empty. Both replace the dashboard.
@@ -79,6 +84,7 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 				title={`Reconfigure ${reconfigureMeta.name}`}
 				services={[]}
 				locked={reconfigureMeta}
+				installedCategories={installedCategories}
 				initialCreds={credentials?.[reconfiguring]}
 				submitVerb="Reconfigure"
 				submit={(id, creds) => api.reconfigureService(id, creds)}
@@ -96,6 +102,7 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 			<ServiceSetupScreen
 				title="Add a service"
 				services={uninstalled}
+				installedCategories={installedCategories}
 				submitVerb="Install"
 				submit={(id, creds) => api.installService(id, creds)}
 				onBack={() => setAdding(false)}

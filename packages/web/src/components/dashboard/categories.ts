@@ -4,5 +4,6 @@ export const CATEGORY_LABELS: Record<string, string> = {
 	indexer: "Indexer",
 	mediaServer: "Media",
 	mediaManager: "Manager",
+	requests: "Requests",
 	seeder: "Seeder",
 };

@@ -15,6 +15,7 @@ export function ServiceSetupScreen({
 	title,
 	services,
 	locked,
+	installedCategories,
 	initialCreds,
 	submitVerb,
 	submit,
@@ -25,6 +26,8 @@ export function ServiceSetupScreen({
 	/** Choices to offer; empty when `locked` already names the service. */
 	services: ServiceMeta[];
 	locked?: ServiceMeta;
+	/** Categories the installed services already cover, to resolve `requires`. */
+	installedCategories: string[];
 	initialCreds?: Record<string, string>;
 	submitVerb: string;
 	submit: (id: string, creds: Record<string, string>) => Promise<unknown>;
@@ -37,6 +40,12 @@ export function ServiceSetupScreen({
 	);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
+
+	// The API refuses this too, and says the same thing — but only once the form
+	// has been filled in and sent, which is a poor moment to learn it
+	const unmet = (picked?.requires ?? []).filter(
+		(req) => !installedCategories.includes(req.category),
+	);
 
 	const selectService = (svc: ServiceMeta) => {
 		setPicked(svc);
@@ -134,6 +143,19 @@ export function ServiceSetupScreen({
 						</ul>
 					) : null}
 
+					{unmet.length > 0 ? (
+						<ul className="space-y-1 rounded-md border border-brand-500/30 bg-brand-600/10 px-3 py-2.5 text-xs leading-relaxed text-brand-200">
+							{unmet.map((req) => (
+								<li key={req.category} className="flex gap-2">
+									<span className="text-brand-400">•</span>
+									<span>
+										{req.reason ?? `Needs a ${req.category} service first.`}
+									</span>
+								</li>
+							))}
+						</ul>
+					) : null}
+
 					{picked.credentials.length > 0 ? (
 						<div className="space-y-2">
 							{picked.credentials.map((field: CredentialField) => (
@@ -190,7 +212,7 @@ export function ServiceSetupScreen({
 					<button
 						type="button"
 						onClick={handleSubmit}
-						disabled={busy}
+						disabled={busy || unmet.length > 0}
 						className="w-full py-2 text-sm font-medium text-white bg-brand-600 rounded-md hover:bg-brand-500 transition-colors disabled:opacity-50"
 					>
 						{busy

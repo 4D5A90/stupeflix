@@ -1,7 +1,12 @@
 import { Hono } from "hono";
 import type { Db } from "../db.js";
+import { requirementMessage, unmetRequirements } from "../lib/requirements.js";
 import { runServiceInstall } from "../lib/service-install.js";
-import { getTemplate } from "../lib/service-registry.js";
+import {
+	getEnabledTemplates,
+	getTemplate,
+	getTemplates,
+} from "../lib/service-registry.js";
 import { setStepStatus, stepKeys } from "../lib/setup-runner.js";
 
 export function installRoutes(db: Db) {
@@ -19,6 +24,15 @@ export function installRoutes(db: Db) {
 			db.get("setup.global") !== "failed"
 		) {
 			return c.json({ error: "Already installed" }, 409);
+		}
+
+		const unmet = unmetRequirements(
+			getTemplates(),
+			getEnabledTemplates(db).map((t) => t.id),
+			tpl,
+		);
+		if (unmet.length > 0) {
+			return c.json({ error: requirementMessage(unmet), unmet }, 409);
 		}
 
 		const body = await c.req.json().catch(() => ({}));

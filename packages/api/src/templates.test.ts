@@ -12,6 +12,7 @@ import {
 	loadTemplates,
 } from "./lib/service-registry.js";
 import type { ServiceTemplate } from "./lib/service-registry.js";
+import { foreachSpec } from "./lib/setup-runner.js";
 import { buildVars } from "./lib/template-vars.js";
 import { fakeDb } from "./test/fake-db.js";
 import { lastStep, template } from "./test/helpers.js";
@@ -23,12 +24,16 @@ import { lastStep, template } from "./test/helpers.js";
  */
 const TEMPLATES = fileURLToPath(new URL("../../../templates", import.meta.url));
 
+/** Collections `expandStep` knows how to walk (lib/setup-runner.ts). */
+const KNOWN_FOREACH_SOURCES = ["libraries"];
+
 /** Categories the wizard knows how to label and order (web ServicesStep.tsx). */
 const KNOWN_CATEGORIES = [
 	"torrentClient",
 	"indexer",
 	"mediaManager",
 	"mediaServer",
+	"requests",
 	"seeder",
 	"vpn",
 ];
@@ -94,9 +99,43 @@ describe("every template", () => {
 		}
 	});
 
+	// A step declaring a source the runner does not know runs once, silently,
+	// as if it had no loop at all — the kind of typo only a gate catches.
+	it("only iterates a source the runner implements", () => {
+		for (const tpl of templates) {
+			for (const step of tpl.setup) {
+				const spec = foreachSpec(step);
+				if (!spec) continue;
+				expect(KNOWN_FOREACH_SOURCES, `${tpl.id}.${step.name}`).toContain(
+					spec.source,
+				);
+			}
+		}
+	});
+
 	it("uses a category the wizard can render", () => {
 		for (const tpl of templates) {
 			expect(KNOWN_CATEGORIES, `${tpl.id}`).toContain(tpl.category);
+		}
+	});
+
+	// A dependency names a category, never a service — so the only way it can be
+	// wrong is by naming a category nothing provides, which would block the
+	// wizard on a box the user has no way to tick.
+	it("only requires categories some template actually provides", () => {
+		const provided = new Set(templates.map((t) => t.category));
+		for (const tpl of templates) {
+			for (const req of [...(tpl.requires ?? []), ...(tpl.recommends ?? [])]) {
+				expect(provided, `${tpl.id} requires`).toContain(req.category);
+			}
+		}
+	});
+
+	it("never depends on its own category, which it satisfies itself", () => {
+		for (const tpl of templates) {
+			for (const req of [...(tpl.requires ?? []), ...(tpl.recommends ?? [])]) {
+				expect(req.category, `${tpl.id}`).not.toBe(tpl.category);
+			}
 		}
 	});
 
@@ -270,7 +309,13 @@ describe("every template", () => {
 	it("addresses a peer through {{host.x}}, never by its container name", () => {
 		const peers = new Map(templates.map((t) => [t.container, t.id]));
 		for (const tpl of templates) {
-			const rendered = JSON.stringify(tpl.compose);
+			// Setup steps write addresses too, and resolve the same hosts
+			const rendered = JSON.stringify([
+				tpl.compose,
+				tpl.setup,
+				tpl.actions,
+				tpl.info,
+			]);
 			for (const [container, id] of peers) {
 				if (id === tpl.id) continue; // its own containers are its business
 				expect(

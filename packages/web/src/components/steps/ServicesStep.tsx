@@ -1,6 +1,10 @@
 import { useCallback, useEffect } from "react";
-import type { ServiceMeta, SetupConfig } from "../../types/setup";
-import { isSingleSelect } from "../../types/setup";
+import type {
+	ServiceMeta,
+	SetupConfig,
+	UnmetRequirement,
+} from "../../types/setup";
+import { checkRequirements, isSingleSelect } from "../../types/setup";
 import { Button } from "../ui/Button";
 import { RadioGroup } from "../ui/RadioGroup";
 
@@ -18,8 +22,15 @@ const CATEGORY_LABELS: Record<string, string> = {
 	indexer: "Indexer",
 	mediaServer: "Media Server",
 	mediaManager: "Media Manager",
+	requests: "Requests",
 	seeder: "Seeder",
 };
+
+/** What a service is still missing, in its own words when it gave one. */
+function requirementText(unmet: UnmetRequirement): string {
+	const label = CATEGORY_LABELS[unmet.category] ?? unmet.category;
+	return unmet.reason ?? `Needs a ${label} service.`;
+}
 
 export function ServicesStep({
 	registry,
@@ -28,11 +39,20 @@ export function ServicesStep({
 	onNext,
 	onBack,
 }: ServicesStepProps) {
+	// The API refuses the same thing before it does any work; this is only so the
+	// wizard can say it now rather than after the user commits
+	const { missing, warnings } = checkRequirements(
+		registry,
+		(id) => config.services[id]?.enabled ?? false,
+	);
+	const blocked = missing.length > 0;
+
 	const handleKeyDown = useCallback(
 		(e: KeyboardEvent) => {
-			if (e.key === "Enter") onNext();
+			// Enter must not walk past the disabled button
+			if (e.key === "Enter" && !blocked) onNext();
 		},
-		[onNext],
+		[onNext, blocked],
 	);
 
 	useEffect(() => {
@@ -64,6 +84,7 @@ export function ServicesStep({
 		"indexer",
 		"mediaManager",
 		"mediaServer",
+		"requests",
 		"seeder",
 	];
 	const categoryMap = new Map<string, ServiceMeta[]>();
@@ -157,13 +178,16 @@ export function ServicesStep({
 													key={svc.id}
 													type="button"
 													onClick={() => toggleService(svc.id, !enabled)}
-													className={`flex items-center justify-between w-full px-4 py-3 rounded-md text-left transition-colors ${
+													className={`flex items-center justify-between gap-3 w-full px-4 py-3 rounded-md text-left transition-colors ${
 														enabled
 															? "bg-brand-600/20 border border-brand-500"
 															: "bg-gray-700 border border-transparent hover:bg-gray-700/70"
 													}`}
 												>
-													<div>
+													{/* min-w-0 so the text yields first: without it flexbox
+													    shrinks the switch instead, and its knob — offset for
+													    a 44px track — lands outside the pill */}
+													<div className="min-w-0">
 														<span className="text-gray-100">{svc.name}</span>
 														<p className="text-gray-400 text-sm">
 															{svc.description}
@@ -180,9 +204,33 @@ export function ServicesStep({
 																))}
 															</ul>
 														)}
+														{enabled && (
+															<ul className="mt-2 space-y-1 text-xs leading-relaxed">
+																{missing
+																	.filter((u) => u.service === svc.id)
+																	.map((u) => (
+																		<li
+																			key={u.category}
+																			className="text-brand-400"
+																		>
+																			{requirementText(u)}
+																		</li>
+																	))}
+																{warnings
+																	.filter((u) => u.service === svc.id)
+																	.map((u) => (
+																		<li
+																			key={u.category}
+																			className="text-white/50"
+																		>
+																			{requirementText(u)}
+																		</li>
+																	))}
+															</ul>
+														)}
 													</div>
 													<div
-														className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+														className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
 															enabled ? "bg-brand-600" : "bg-gray-600"
 														}`}
 													>
@@ -203,11 +251,29 @@ export function ServicesStep({
 				})}
 			</div>
 
+			{blocked ? (
+				<div className="rounded-xl border border-brand-500/30 bg-brand-600/10 p-4 text-sm text-brand-200">
+					<p className="font-medium">Some choices are incomplete</p>
+					<ul className="mt-2 space-y-1 text-brand-200/80">
+						{missing.map((u) => (
+							<li key={`${u.service}.${u.category}`}>
+								<span className="text-brand-200">
+									{registry.find((s) => s.id === u.service)?.name ?? u.service}
+								</span>{" "}
+								— {requirementText(u)}
+							</li>
+						))}
+					</ul>
+				</div>
+			) : null}
+
 			<div className="flex justify-between">
 				<Button variant="secondary" onClick={onBack}>
 					Back
 				</Button>
-				<Button onClick={onNext}>Next</Button>
+				<Button onClick={onNext} disabled={blocked}>
+					Next
+				</Button>
 			</div>
 		</div>
 	);

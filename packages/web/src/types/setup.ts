@@ -25,6 +25,12 @@ export interface CredentialField {
 	rules?: FieldRules;
 }
 
+/** A need expressed as a category, so no service ever names another. */
+export interface Requirement {
+	category: string;
+	reason?: string;
+}
+
 export interface ServiceMeta {
 	id: string;
 	name: string;
@@ -32,7 +38,40 @@ export interface ServiceMeta {
 	category: string;
 	defaultEnabled: boolean;
 	notes: string[];
+	requires: Requirement[];
+	recommends: Requirement[];
 	credentials: CredentialField[];
+}
+
+export interface UnmetRequirement {
+	service: string;
+	category: string;
+	reason?: string;
+}
+
+/**
+ * Mirrors the API's own check (`lib/requirements.ts`) so the wizard can react as
+ * the user toggles, with no round trip. The API stays the authority — it runs
+ * the same check before it does anything — and this is only the fast feedback.
+ */
+export function checkRequirements(
+	registry: ServiceMeta[],
+	isEnabled: (id: string) => boolean,
+): { missing: UnmetRequirement[]; warnings: UnmetRequirement[] } {
+	const enabled = registry.filter((s) => isEnabled(s.id));
+	const covered = new Set(enabled.map((s) => s.category));
+	const unmet = (svc: ServiceMeta, reqs: Requirement[] = []) =>
+		reqs
+			.filter((r) => !covered.has(r.category))
+			.map((r) => ({
+				service: svc.id,
+				category: r.category,
+				reason: r.reason,
+			}));
+	return {
+		missing: enabled.flatMap((s) => unmet(s, s.requires)),
+		warnings: enabled.flatMap((s) => unmet(s, s.recommends)),
+	};
 }
 
 // Categories where only one service can be selected

@@ -6,12 +6,20 @@ defaultEnabled: false
 container: mediamanager
 port: 8000
 
+# Both only recommended, unlike Sonarr and Radarr: this template switches its
+# own integrations off through {{services.<id>.enabled}} and none of its setup
+# steps touch a peer, so it installs cleanly on its own — it is merely useless.
+recommends:
+  - category: torrentClient
+    reason: Without a torrent client, MediaManager can find releases but never
+      download them.
+  - category: indexer
+    reason: Without an indexer, MediaManager has nothing to search.
+
 notes:
-  - Needs qBittorrent and Prowlarr enabled to be useful — one downloads, the
-    other searches. Both are wired automatically.
-  - Log in with the admin email and password you set here.
-  - Its downloads land in a dedicated MediaManager category in qBittorrent,
-    separate from your per-library ones.
+  - Its upstream has gone quiet since February 2026, and its next version drops
+    the request system entirely — hence the pinned tag. Sonarr and Radarr are
+    the maintained path, and the only one Seerr can talk to.
 
 generate:
   - key: token_secret
@@ -43,7 +51,7 @@ compose:
       retries: 5
 
   mediamanager:
-    image: quay.io/maxdorninger/mediamanager:latest
+    image: quay.io/maxdorninger/mediamanager:v1.12.3
     container_name: mediamanager
     environment:
       - TZ={{env.TZ}}

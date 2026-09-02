@@ -57,20 +57,21 @@ setup:
   - name: add_library
     label: Add library
     type: api_call
-    foreach: libraries
-    typeMap:
-      movies:
-        content_type: movie
-        agent: tv.plex.agents.movie
-        scanner: Plex%20Movie
-      tvshows:
-        content_type: show
-        agent: tv.plex.agents.series
-        scanner: Plex%20TV%20Series
-      music:
-        content_type: artist
-        agent: tv.plex.agents.music
-        scanner: Plex%20Music
+    foreach:
+      source: libraries
+      map:
+        movies:
+          content_type: movie
+          agent: tv.plex.agents.movie
+          scanner: Plex%20Movie
+        tvshows:
+          content_type: show
+          agent: tv.plex.agents.series
+          scanner: Plex%20TV%20Series
+        music:
+          content_type: artist
+          agent: tv.plex.agents.music
+          scanner: Plex%20Music
     url: http://localhost:32400/library/sections?name={{library.name}}&type={{library.content_type}}&agent={{library.agent}}&scanner={{library.scanner}}&language=en-US&location=/media/{{library.name}}
     method: POST
     # Plex has no "create if absent": posting a name that already exists answers

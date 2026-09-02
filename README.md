@@ -151,9 +151,12 @@ builds its registry from those files, so this list is the source of truth:
 | Gluetun | `gluetun` | none | VPN | off | provider, key, address, countries |
 | qBittorrent | `qbittorrent` | 8080 | Torrent Client | on | user, pass |
 | Prowlarr | `prowlarr` | 9696 | Indexer | off | none |
+| Sonarr | `sonarr` | 8989 | Media Manager | off | none |
+| Radarr | `radarr` | 7878 | Media Manager | off | none |
 | MediaManager | `mediamanager` | 8000 | Media Manager | off | email, pass |
 | Jellyfin | `jellyfin` | 8096 | Media Server | on | user, pass |
 | Plex | `plex` | 32400 | Media Server | off | claim |
+| Seerr | `seerr` | 5055 | Requests | off | email |
 | JOAL | `joal` | 6060 | Seeder | off | path, token |
 
 
@@ -290,6 +293,28 @@ actions:
 | `extract_from_logs` | Extract a value from container logs via regex |
 | `extract_from_config` | Extract a value from a config file via regex |
 
+Any step may carry `if:` — a template expression that has to resolve to `true`
+for the step to run. A step that does not run never appears in the status list
+either, so the wizard does not display a step nobody was going to take:
+
+```yaml
+- name: register_in_prowlarr
+  type: api_call
+  if: "{{services.prowlarr.enabled}}"
+```
+
+A list means every condition has to hold — wiring two services together needs
+both of them:
+
+```yaml
+  if:
+    - "{{services.jellyfin.enabled}}"
+    - "{{services.sonarr.enabled}}"
+```
+
+That is what makes an optional peer usable: a `recommends:` service may well be
+absent, and the steps that talk to it have to disappear rather than fail.
+
 `config_file` steps run **before** `docker compose up`, since a container reads
 its config at boot; every other step runs after. That ordering is derived from
 the step type, not declared.
@@ -299,6 +324,28 @@ the step type, not declared.
 `actions:` **does** something and returns nothing: a button. `info:` **is**
 something and does nothing: a label and a value, polled on a timer. An action
 that needs to show you a result belongs in `info:`, and the reverse.
+
+### Requirements
+
+A template can declare what it needs, by **category** and never by name:
+
+```yaml
+requires:
+  - category: torrentClient
+    reason: Sonarr hands every download to a torrent client — install one first.
+recommends:
+  - category: indexer
+    reason: Without an indexer, Sonarr has nothing to search.
+```
+
+`requires:` blocks — the wizard refuses to move on, and `POST /install/:name`
+answers 409. `recommends:` only warns: Sonarr without Prowlarr still runs, its
+owner just adds trackers by hand, and forbidding that would forbid a legitimate
+stack. The `reason` is what the user reads, so write it as a sentence.
+
+Depending on a category rather than a service is what keeps the rule general:
+adding `emby.yml` satisfies Seerr's need for a media server without either file
+being touched — the same reason `network:` matches a `join` to a `provides`.
 
 ### Networking
 
@@ -328,7 +375,9 @@ With no provider enabled, a `join` is inert and the block renders verbatim.
   `localhost:<port>` keep working.
 - **A joined container loses its DNS name.** Address it with `{{host.<service>}}`,
   which follows it to the provider. Hence `http://{{host.qbittorrent}}` in
-  `mediamanager.yml`.
+  `mediamanager.yml`. It resolves in **setup steps as well as `compose:`** — a
+  step wiring one service into another writes a container's view of a container,
+  so `sonarr.yml` hands Sonarr `{{host.qbittorrent}}`, not `qbittorrent`.
 - **A provider needs a `healthcheck`**: the joiner waits on `service_healthy`, and
   starting before the tunnel is up would leak in the clear.
 - **Refused on a joiner**: `networks`, `hostname`, `links`, `dns`, `dns_search`,
@@ -366,7 +415,7 @@ generic glyph rather than breaking the button, so a typo is invisible in the UI.
 | `{{internal.key}}` | Generated secrets, and values stored by previous steps (tokens, passwords) |
 | `{{paths.config}}` `{{paths.media}}` `{{paths.torrents}}` | Host paths from the wizard |
 | `{{env.PUID}}` `{{env.PGID}}` `{{env.TZ}}` | Host wiring |
-| `{{host.<service>}}` | The container another service must be addressed by; see Networking |
+| `{{host.<service>}}` | The container another service must be addressed by, in `compose:` and in setup steps; see Networking |
 | `{{library.name}}` | Library folder name (in `foreach: libraries` steps) |
 | `{{library.type}}` | Library type: `movies`, `tvshows`, `music` |
 | `{{libraries.<type>_json}}` | All libraries of a type as `[{"name":…,"path":"/media/…"}]` |
@@ -379,25 +428,56 @@ reads `{{internal.prowlarr.api_key}}`. An entry resolving to empty (`FOO=`) is
 dropped from the compose file, so a blank optional credential falls back to the
 image's default instead of shadowing it.
 
-### `foreach: libraries`
+### `foreach`
 
-Expanded once per media library. `typeMap` maps library types to
-service-specific values, injected as `{{library.key}}`:
+Repeats a step over a collection. `libraries` is the only source so far, and
+`foreach: libraries` is shorthand for `foreach: { source: libraries }`:
 
 ```yaml
 - name: add_library
   type: api_call
   foreach: libraries
-  typeMap:
-    movies:
-      content_type: movie
-      agent: tv.plex.agents.movie
-    tvshows:
-      content_type: show
-      agent: tv.plex.agents.series
+  url: http://localhost:8096/Library/VirtualFolders?name={{library.name}}
+```
+
+Every option lives **inside** `foreach`, never beside it. `type` means something
+to `libraries` and would mean nothing to whatever source comes next, so it has no
+business in the vocabulary every template has to read — and nesting also makes a
+filter with no loop impossible to write.
+
+`type` keeps only the libraries of one kind; Sonarr has no business being handed
+a Movies folder:
+
+```yaml
+- name: root_folder
+  type: api_call
+  foreach:
+    source: libraries
+    type: tvshows
+  body:
+    path: "/media/{{library.name}}"
+```
+
+`map` supplies per-type values, injected as `{{library.<key>}}`:
+
+```yaml
+- name: add_library
+  type: api_call
+  foreach:
+    source: libraries
+    map:
+      movies:
+        content_type: movie
+        agent: tv.plex.agents.movie
+      tvshows:
+        content_type: show
+        agent: tv.plex.agents.series
   url: http://localhost:32400/library/sections?type={{library.content_type}}&agent={{library.agent}}
   method: POST
 ```
+
+A step naming a source the runner does not implement would quietly run once, as
+if it had no loop — `src/templates.test.ts` fails on it instead.
 
 ### `api_call` options
 

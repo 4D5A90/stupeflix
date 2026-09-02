@@ -1,0 +1,164 @@
+id: sonarr
+name: Sonarr
+description: TV shows — searches, downloads and files every episode
+category: mediaManager
+defaultEnabled: false
+container: sonarr
+port: 8989
+
+# Blocking: Sonarr hands every download to a client, and has nobody to hand to
+# without one. Prowlarr is only recommended — Sonarr can hold its own indexers,
+# so refusing to install without it would forbid a legitimate setup.
+requires:
+  - category: torrentClient
+    reason: Sonarr hands every download to a torrent client — install one first.
+recommends:
+  - category: indexer
+    reason: Without an indexer, Sonarr has nothing to search until you add
+      trackers to it by hand.
+
+# Minted once and kept: injected into Sonarr itself, and read back as
+# {{internal.sonarr.api_key}} by whoever needs to talk to it.
+generate:
+  - key: api_key
+    type: hex
+    length: 16
+
+compose:
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID={{env.PUID}}
+      - PGID={{env.PGID}}
+      - TZ={{env.TZ}}
+      # Read ahead of config.xml on every boot, so Sonarr comes up already
+      # configured and never shows its authentication wizard.
+      #
+      # The values are case-sensitive: a typo does not raise, it falls back to
+      # config.xml, lands on AuthenticationType.None, and hands you the very
+      # wizard this is here to skip. AUTH__ENABLED is deliberately absent —
+      # setting it forces Basic auth and writes it to config.xml.
+      - SONARR__AUTH__APIKEY={{internal.api_key}}
+      - SONARR__AUTH__METHOD=External
+      - SONARR__AUTH__REQUIRED=DisabledForLocalAddresses
+    volumes:
+      - "{{paths.config}}/sonarr:/config"
+      - "{{paths.media}}:/media"
+      - "{{paths.torrents}}:/downloads"
+    ports:
+      - "8989:8989"
+    restart: unless-stopped
+
+dirs:
+  - sonarr
+
+# Deliberately no `reset:` — a reconfigure must not throw away the series the
+# user added. The API key lives in our DB and is re-injected on every boot.
+
+credentials: []
+
+setup:
+  - name: wait_ready
+    label: Wait for Sonarr API
+    type: wait_ready
+    url: http://localhost:8989/ping
+    # It answers 500 with a body while its database migrates, so a reply alone
+    # is not readiness
+    match: '"OK"'
+
+  - name: root_folder
+    label: Add root folder
+    type: api_call
+    foreach:
+      source: libraries
+      # A Movies folder is none of Sonarr's business
+      type: tvshows
+    url: http://localhost:8989/api/v3/rootfolder
+    method: POST
+    headers:
+      X-Api-Key: "{{internal.api_key}}"
+    # Rejected as a duplicate rather than accepted as a no-op, so probe first
+    skipIf:
+      url: http://localhost:8989/api/v3/rootfolder
+      match: "/media/{{library.name}}"
+    body:
+      path: "/media/{{library.name}}"
+
+  - name: download_client
+    label: Connect qBittorrent
+    type: api_call
+    # Guarded like the Prowlarr steps: a reconfigure after qBittorrent was
+    # removed would otherwise replay this against a container that is gone
+    if: "{{services.qbittorrent.enabled}}"
+    url: http://localhost:8989/api/v3/downloadclient
+    method: POST
+    headers:
+      X-Api-Key: "{{internal.api_key}}"
+    skipIf:
+      url: http://localhost:8989/api/v3/downloadclient
+      match: QBittorrent
+    body:
+      enable: true
+      protocol: torrent
+      # Top-level, not a field, and validated between 1 and 50 — omitting it
+      # sends 0 and the whole call is rejected
+      priority: 1
+      name: qBittorrent
+      # The class name, not the display name — Sonarr matches on the former
+      implementation: QBittorrent
+      configContract: QBittorrentSettings
+      # A partial field list is legal: anything omitted keeps its default, and
+      # `apiKey` is left out on purpose since it requires an empty username
+      fields:
+        # Resolves to whoever owns qBittorrent's namespace — itself normally,
+        # the VPN once it has joined one, since a tunnelled container loses its
+        # own name
+        - name: host
+          value: "{{host.qbittorrent}}"
+        - name: port
+          value: 8080
+        - name: username
+          value: "{{credentials.qbittorrent.user}}"
+        - name: password
+          value: "{{credentials.qbittorrent.pass}}"
+        - name: tvCategory
+          value: tv-sonarr
+
+  # Prowlarr is only recommended, so both steps below have to disappear when it
+  # is not installed rather than fail
+  - name: wait_prowlarr
+    label: Wait for Prowlarr API
+    type: wait_ready
+    if: "{{services.prowlarr.enabled}}"
+    url: http://localhost:9696/ping
+
+  - name: register_in_prowlarr
+    label: Register with Prowlarr
+    type: api_call
+    if: "{{services.prowlarr.enabled}}"
+    # Sonarr registers itself rather than Prowlarr enumerating the apps: the
+    # setup runner walks templates in name order, so Prowlarr's own steps run
+    # before Sonarr exists. Registering tests the connection both ways and
+    # cannot be forced past, so it has to happen from this side.
+    url: http://localhost:9696/api/v1/applications
+    method: POST
+    headers:
+      X-Api-Key: "{{internal.prowlarr.api_key}}"
+    skipIf:
+      url: http://localhost:9696/api/v1/applications
+      match: '"Sonarr"'
+    body:
+      name: Sonarr
+      syncLevel: fullSync
+      implementation: Sonarr
+      configContract: SonarrSettings
+      fields:
+        # Prowlarr as Sonarr sees it, then Sonarr as Prowlarr sees it: both are
+        # container-to-container, never localhost
+        - name: prowlarrUrl
+          value: "http://{{host.prowlarr}}:9696"
+        - name: baseUrl
+          value: "http://{{host.sonarr}}:8989"
+        - name: apiKey
+          value: "{{internal.api_key}}"

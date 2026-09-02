@@ -1,0 +1,138 @@
+id: radarr
+name: Radarr
+description: Films — searches, downloads and files every movie
+category: mediaManager
+defaultEnabled: false
+container: radarr
+port: 7878
+
+requires:
+  - category: torrentClient
+    reason: Radarr hands every download to a torrent client — install one first.
+recommends:
+  - category: indexer
+    reason: Without an indexer, Radarr has nothing to search until you add
+      trackers to it by hand.
+
+generate:
+  - key: api_key
+    type: hex
+    length: 16
+
+compose:
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID={{env.PUID}}
+      - PGID={{env.PGID}}
+      - TZ={{env.TZ}}
+      # See sonarr.yml: read ahead of config.xml on every boot, case-sensitive,
+      # and AUTH__ENABLED is left unset on purpose.
+      - RADARR__AUTH__APIKEY={{internal.api_key}}
+      - RADARR__AUTH__METHOD=External
+      - RADARR__AUTH__REQUIRED=DisabledForLocalAddresses
+    volumes:
+      - "{{paths.config}}/radarr:/config"
+      - "{{paths.media}}:/media"
+      - "{{paths.torrents}}:/downloads"
+    ports:
+      - "7878:7878"
+    restart: unless-stopped
+
+dirs:
+  - radarr
+
+# Deliberately no `reset:` — a reconfigure must not throw away the films the
+# user added. The API key lives in our DB and is re-injected on every boot.
+
+credentials: []
+
+setup:
+  - name: wait_ready
+    label: Wait for Radarr API
+    type: wait_ready
+    url: http://localhost:7878/ping
+    match: '"OK"'
+
+  - name: root_folder
+    label: Add root folder
+    type: api_call
+    foreach:
+      source: libraries
+      type: movies
+    url: http://localhost:7878/api/v3/rootfolder
+    method: POST
+    headers:
+      X-Api-Key: "{{internal.api_key}}"
+    skipIf:
+      url: http://localhost:7878/api/v3/rootfolder
+      match: "/media/{{library.name}}"
+    body:
+      path: "/media/{{library.name}}"
+
+  - name: download_client
+    label: Connect qBittorrent
+    type: api_call
+    # Guarded like the Prowlarr steps: a reconfigure after qBittorrent was
+    # removed would otherwise replay this against a container that is gone
+    if: "{{services.qbittorrent.enabled}}"
+    url: http://localhost:7878/api/v3/downloadclient
+    method: POST
+    headers:
+      X-Api-Key: "{{internal.api_key}}"
+    skipIf:
+      url: http://localhost:7878/api/v3/downloadclient
+      match: QBittorrent
+    body:
+      enable: true
+      protocol: torrent
+      # Top-level, not a field, and validated between 1 and 50 — omitting it
+      # sends 0 and the whole call is rejected
+      priority: 1
+      name: qBittorrent
+      implementation: QBittorrent
+      configContract: QBittorrentSettings
+      fields:
+        - name: host
+          value: "{{host.qbittorrent}}"
+        - name: port
+          value: 8080
+        - name: username
+          value: "{{credentials.qbittorrent.user}}"
+        - name: password
+          value: "{{credentials.qbittorrent.pass}}"
+        - name: movieCategory
+          value: radarr
+
+  - name: wait_prowlarr
+    label: Wait for Prowlarr API
+    type: wait_ready
+    if: "{{services.prowlarr.enabled}}"
+    url: http://localhost:9696/ping
+
+  - name: register_in_prowlarr
+    label: Register with Prowlarr
+    type: api_call
+    if: "{{services.prowlarr.enabled}}"
+    # See sonarr.yml: the app registers itself, because the runner reaches
+    # Prowlarr's own steps before this template exists.
+    url: http://localhost:9696/api/v1/applications
+    method: POST
+    headers:
+      X-Api-Key: "{{internal.prowlarr.api_key}}"
+    skipIf:
+      url: http://localhost:9696/api/v1/applications
+      match: '"Radarr"'
+    body:
+      name: Radarr
+      syncLevel: fullSync
+      implementation: Radarr
+      configContract: RadarrSettings
+      fields:
+        - name: prowlarrUrl
+          value: "http://{{host.prowlarr}}:9696"
+        - name: baseUrl
+          value: "http://{{host.radarr}}:7878"
+        - name: apiKey
+          value: "{{internal.api_key}}"

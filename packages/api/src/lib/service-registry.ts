@@ -13,6 +13,7 @@ import type { Db } from "../db.js";
 import { compose } from "./docker-cli.js";
 import { serviceUrl } from "./env.js";
 import { debug, log, error as logError } from "./logger.js";
+import { networkHosts, resolveNetworkTopology } from "./network.js";
 import { buildVars, resolveTemplateVars } from "./template-vars.js";
 
 // ── YAML schema types ──
@@ -63,6 +64,27 @@ export interface SecretDef {
 	length?: number;
 }
 
+/**
+ * What a step iterates, and how. Every option lives under here rather than
+ * beside it, so an option that only makes sense for one source never becomes
+ * part of the vocabulary every template has to read: `type` means something to
+ * `libraries` and would mean nothing to whatever source comes next.
+ *
+ * It also makes the invalid state unwritable — a filter with no loop to filter.
+ */
+export interface ForeachSpec {
+	/** The collection to walk. `libraries` is the only one so far. */
+	source: string;
+	/**
+	 * `libraries`: keep only the libraries of this type. A service that handles
+	 * one medium — Sonarr has nothing to do with a Movies folder — would
+	 * otherwise be handed every library the user declared.
+	 */
+	type?: string;
+	/** `libraries`: per-type values, injected as `{{library.<key>}}`. */
+	map?: Record<string, Record<string, string>>;
+}
+
 export interface SetupStepDef {
 	name: string;
 	label: string;
@@ -72,6 +94,15 @@ export interface SetupStepDef {
 		| "wait_ready"
 		| "extract_from_logs"
 		| "extract_from_config";
+	/**
+	 * Resolved like any other value, and the step runs only when it comes out
+	 * `"true"`. This is what makes a `recommends:` peer usable: it may be
+	 * absent, and the steps that talk to it must then not exist at all.
+	 *
+	 * A list means every condition has to hold — wiring two services together
+	 * needs both of them present.
+	 */
+	if?: string | string[];
 	url?: string;
 	method?: string;
 	headers?: Record<string, string>;
@@ -81,8 +112,11 @@ export interface SetupStepDef {
 	useCookie?: boolean;
 	storeToken?: string;
 	useToken?: boolean;
-	foreach?: string;
-	typeMap?: Record<string, Record<string, string>>;
+	/**
+	 * Repeat this step over a collection. `foreach: libraries` is shorthand for
+	 * `foreach: { source: libraries }`.
+	 */
+	foreach?: string | ForeachSpec;
 	retryOn?: number[];
 	maxRetries?: number;
 	ignoreStatus?: number[];
@@ -127,6 +161,18 @@ export interface InfoField {
 	refresh?: number;
 }
 
+/**
+ * A dependency on a *category*, never on a named service — the same reason
+ * `network:` matches a `join` to a `provides` by capability. A future
+ * `emby.yml` satisfies Seerr's need for a media server without either file
+ * being touched.
+ */
+export interface Requirement {
+	category: string;
+	/** Shown to the user when the need is not met. */
+	reason?: string;
+}
+
 export interface ServiceTemplate {
 	id: string;
 	name: string;
@@ -145,6 +191,10 @@ export interface ServiceTemplate {
 	 * quirk of the service worth warning about. Surfaced as a tooltip.
 	 */
 	notes?: string[];
+	/** Categories this service cannot work without: an unmet one blocks install. */
+	requires?: Requirement[];
+	/** Categories it runs without but poorly: an unmet one only warns. */
+	recommends?: Requirement[];
 	/** Compose services this template owns, verbatim, with template variables. */
 	compose: Record<string, unknown>;
 	generate?: SecretDef[];
@@ -176,6 +226,8 @@ export interface ServiceMeta {
 	category: string;
 	defaultEnabled: boolean;
 	notes: string[];
+	requires: Requirement[];
+	recommends: Requirement[];
 	credentials: CredentialField[];
 }
 
@@ -247,6 +299,8 @@ export function getServiceMetas(): ServiceMeta[] {
 			category,
 			defaultEnabled,
 			notes,
+			requires,
+			recommends,
 			credentials,
 		}) => ({
 			id,
@@ -255,6 +309,8 @@ export function getServiceMetas(): ServiceMeta[] {
 			category,
 			defaultEnabled,
 			notes: notes ?? [],
+			requires: requires ?? [],
+			recommends: recommends ?? [],
 			credentials,
 		}),
 	);
@@ -372,7 +428,14 @@ export async function runSetupStep(
 	serviceId: string,
 	extraVars?: Record<string, string>,
 ): Promise<string | null> {
-	const vars = { ...buildVars(db, serviceId), ...extraVars };
+	const vars = {
+		...buildVars(db, serviceId),
+		// A step configures one service to reach another, so the address it writes
+		// is a container's view of a container — and a tunnelled service has no DNS
+		// name of its own. Same resolution the compose block gets.
+		...networkHosts(templates, resolveNetworkTopology(getEnabledTemplates(db))),
+		...extraVars,
+	};
 	const url =
 		serviceUrl(resolveTemplateVars(step.url ?? "", vars) as string) ||
 		undefined;

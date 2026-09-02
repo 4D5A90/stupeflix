@@ -74,6 +74,13 @@ Each template defines:
 - `notes`: manual steps or quirks, shown inline in the wizard and on the
   install/reconfigure screen — where the user is configuring, not on the
   dashboard card. Plain text, rendered as-is, no markdown
+- `requires` / `recommends`: what this service needs, declared as a **category**
+  and never as a service name. `requires` blocks — the wizard refuses to advance
+  and `POST /install/:name` answers 409; `recommends` only warns, because Sonarr
+  without Prowlarr still runs and forbidding that would forbid a legitimate
+  stack. Each carries the `reason` the user reads. Resolved by
+  `lib/requirements.ts`, mirrored in `web/src/types/setup.ts` for live feedback —
+  the API is the authority, change the two together
 - `network`: `{ provides }` lends this service's network namespace, `{ join }`
   asks for one. Neither side names the other, and an unmatched `join` is inert —
   see `lib/network.ts`
@@ -92,6 +99,21 @@ Each template defines:
     already done — for APIs that answer a duplicate with a second copy, not a 409
   - `config_file` — writes `content` to `file` under `paths.config`
   - `extract_from_logs` / `extract_from_config` — pull a value out via regex
+
+  Any step takes `if:`, a condition (or a list of them, all of which must hold)
+  that has to resolve to `"true"`. A step that will not run never enters the
+  status list either, so the wizard never shows a step nobody was going to take.
+  This is what makes a `recommends:` peer usable — it may be absent, and the
+  steps talking to it must disappear rather than fail.
+
+  `foreach` repeats a step over a collection, and **every option lives inside
+  it** — `foreach: libraries` is shorthand for `{ source: libraries }`, while
+  `type:` filters by library type and `map:` supplies per-type values as
+  `{{library.<key>}}`. Nesting is deliberate: `type` means something to
+  `libraries` and nothing to whatever source comes next, so it has no business in
+  the vocabulary every template reads. `libraries` is the only source implemented,
+  and `templates.test.ts` refuses any other — an unknown source would quietly run
+  once, as if there were no loop at all
 - `info`: values the dashboard polls and shows on the card — `{ name, label, url,
   extract, refresh }`. Read server-side by `lib/service-info.ts`; anything that
   fails reads as a dash, never as an error. An action *does* something and
@@ -103,7 +125,10 @@ Each template defines:
 
 **No file under `src/` names a service.** Adding one is dropping a `.yml` in
 `templates/` and nothing else — that invariant is the point of the design, so
-resist adding a service-specific branch anywhere in the API.
+resist adding a service-specific branch anywhere in the API. It is also why a
+dependency is expressed as a category: adding `emby.yml` satisfies Seerr's need
+for a media server without either file being touched, exactly as an unmatched
+`network: join` finds its provider without naming it.
 
 Templates reach each other through variables rather than code:
 `{{internal.<service>.<key>}}`, `{{credentials.<service>.<key>}}` and
@@ -118,7 +143,10 @@ both are enforced by `src/templates.test.ts`:
 
 - **A joined container has no DNS name of its own.** Address it with
   `{{host.<service>}}`, never by hardcoding the container name — that variable
-  resolves to the provider once it has joined.
+  resolves to the provider once it has joined. It resolves in **setup steps as
+  well as `compose:`**: a step wiring one service into another writes a
+  container's view of a container, so `sonarr.yml` gives Sonarr
+  `{{host.qbittorrent}}` and not `qbittorrent`.
 - **Six keys are refused on a joiner** (`networks`, `hostname`, `links`, `dns`,
   `dns_search`, `extra_hosts`). They belong to the shared namespace, so moving
   them would change behaviour for the provider and every other joiner. Only
@@ -141,6 +169,7 @@ src/
 │   ├── setup-runner.ts   # Phases (pre_up/post_up), foreach expansion, step statuses
 │   ├── compose.ts        # Merges the enabled templates' `compose:` blocks
 │   ├── network.ts        # provides/join topology, and the compose rewrite it implies
+│   ├── requirements.ts   # requires/recommends resolved by category, never by name
 │   ├── service-install.ts # Install / reconfigure / remove one service
 │   ├── library-stats.ts  # Counts each library off the filesystem, plus disk
 │   ├── service-info.ts   # Reads a template's `info:` readouts off the service
@@ -178,14 +207,24 @@ Vitest, colocated as `src/**/*.test.ts`. Fixture templates live in
 `src/templates.test.ts` is the important one: it runs against the **real**
 `templates/` directory and asserts what the code no longer can — that every
 `{{...}}` reference resolves, that `container_name` matches `container`, that
-compose service names and host ports do not collide, and that MediaManager only
-ever sets `MEDIAMANAGER_*` variables. **A new service template must keep it
-green** — that suite is what replaces the per-service code that used to exist.
+compose service names and host ports do not collide, that a peer is addressed
+through `{{host.x}}` rather than by container name (in `compose:`, `setup:`,
+`actions:` and `info:` alike), that every `requires`/`recommends` category is one
+some template provides, that every `foreach` source is one the runner implements,
+and that MediaManager only ever sets `MEDIAMANAGER_*` variables. **A new service
+template must keep it green** — that suite is what replaces the per-service code
+that used to exist.
+
+Those last two are gates against silent no-ops rather than crashes: a category
+nobody provides blocks the wizard on a box the user cannot tick, and an unknown
+`foreach` source runs the step once as if it had no loop. Neither raises.
 
 There is no test for the docker-facing paths (`compose up`, `rm --remove-orphans`,
 live service APIs) — which now includes reconfiguring and removing a service.
 Changes there need a real run: see the isolated recipe in the README, and never
-against a live stack.
+against a live stack. That recipe works, and it is worth the trouble: it is what
+caught `priority` being a top-level field of Sonarr's download client rather than
+one of its `fields[]`, which no amount of reading the API docs had revealed.
 
 ### Web (`packages/web/`)
 

@@ -1,21 +1,19 @@
 id: prowlarr
 name: Prowlarr
-description: Indexer manager — add your trackers, MediaManager searches them
+description: Indexer manager — add your trackers, your downloaders search them
 category: indexer
 defaultEnabled: false
 container: prowlarr
 port: 9696
 
 notes:
-  - Add your trackers in Prowlarr's UI — it ships with none, and MediaManager
-    has nothing to search until you do.
-  - No login is needed from this machine, and the API key MediaManager uses is
-    set up for you.
+  - Add your trackers in Prowlarr's UI — it ships with none, and nothing has
+    anything to search until you do.
   - Your indexers survive a reconfigure.
 
-# Minted once and kept: it is injected into Prowlarr itself and read by
-# MediaManager as {{internal.prowlarr.api_key}}, so the two agree without
-# either template knowing how the other is configured.
+# Minted once and kept: it is injected into Prowlarr itself and read back as
+# {{internal.prowlarr.api_key}} by whoever needs to register here, so the two
+# agree without either template knowing how the other is configured.
 generate:
   - key: api_key
     type: hex

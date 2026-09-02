@@ -7,17 +7,14 @@ container: gluetun
 # No port: the control server answers JSON, there is no UI to open.
 
 notes:
-  - qBittorrent's traffic leaves only through the tunnel — it has no network of
-    its own any more, and its web UI stays at the same address.
-  - Restarting Gluetun leaves qBittorrent without a network. Restart it too.
+  - Restarting Gluetun leaves qBittorrent without a network, since it no longer
+    has one of its own. Restart it too.
   - The key and the address come from the same WireGuard config file and must
-    match. A mismatched address brings the tunnel up, then drops every packet.
-  - Copy the whole Address line, commas and all. Two addresses means IPv4 and
-    IPv6; on a host without IPv6 the second one is simply ignored.
+    match — a mismatch brings the tunnel up, then drops every packet. Copy the
+    whole Address line, commas and all.
   - Two read-only routes of its control server are opened without a password so
     the dashboard can show the exit IP. Anything that can reach this machine can
     read them too.
-  - Server Countries is optional. Left blank, Gluetun picks any server.
 
 # Lends its network namespace to whichever service asks for `vpn`. Nothing here
 # names qBittorrent, and qBittorrent does not name Gluetun — see lib/network.ts.

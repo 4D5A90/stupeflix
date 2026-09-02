@@ -8,11 +8,9 @@ port: 6060
 webUiPath: /{{credentials.path}}/ui/
 
 notes:
-  - The secret token is passed as a container argument, not stored in a config
-    file, and JOAL's UI caches it in your browser. After a reconfigure the cached
-    one is stale.
-  - To reconnect, copy the token with the key icon here, then paste it into
-    JOAL's connection settings.
+  - JOAL's UI caches the secret token in your browser, so after a reconfigure the
+    cached one is stale. Copy the new token with the key icon here and paste it
+    into JOAL's connection settings.
   - Drop .torrent files in the joal/torrents config folder — a reconfigure
     never touches them.
 

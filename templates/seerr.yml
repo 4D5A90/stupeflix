@@ -1,0 +1,192 @@
+id: seerr
+name: Seerr
+description: Request portal — your users ask for a show, it downloads itself
+category: requests
+defaultEnabled: false
+container: seerr
+port: 5055
+
+notes:
+  - Install Sonarr and Radarr before Seerr. Added afterwards, they are picked up
+    only when you reconfigure Seerr.
+  - Tick the libraries Seerr should watch, in Settings — Media Server.
+  - New users have their requests approved automatically. Change it in
+    Settings — Users.
+  - With Plex and no Jellyfin, finish the setup in Seerr's own wizard.
+
+# Blocking, and not a matter of taste: Seerr's first account can only be created
+# by signing in against a media server, so without one it cannot be set up at
+# all — see the bootstrap step below.
+requires:
+  - category: mediaServer
+    reason: Seerr signs your users in through a media server — install Jellyfin
+      or Plex first.
+
+# Injected as API_KEY, which wins over whatever Seerr stored. A chat bot reads
+# it back as {{internal.seerr.api_key}}.
+generate:
+  - key: api_key
+    type: hex
+    length: 32
+
+compose:
+  seerr:
+    image: ghcr.io/seerr-team/seerr:v3.4.1
+    container_name: seerr
+    # Required by the project: without it the node process leaves zombies behind
+    init: true
+    environment:
+      - TZ={{env.TZ}}
+      - LOG_LEVEL=info
+      - API_KEY={{internal.api_key}}
+    volumes:
+      - "{{paths.config}}/seerr:/app/config"
+    ports:
+      - "5055:5055"
+    restart: unless-stopped
+
+dirs:
+  - seerr
+
+credentials:
+  - key: email
+    type: email
+    label: Admin Email
+    placeholder: you@example.com
+
+setup:
+  - name: wait_ready
+    label: Wait for Seerr API
+    type: wait_ready
+    # The one endpoint that answers before anything is configured
+    url: http://localhost:5055/api/v1/settings/public
+
+  # Everything below needs a Jellyfin to sign in against. With Plex only, these
+  # vanish and Seerr shows its own browser wizard instead — which is the honest
+  # outcome, since Stupeflix holds a Plex claim token and never a plex.tv login.
+  - name: bootstrap_admin
+    label: Create the admin account
+    type: api_call
+    if: "{{services.jellyfin.enabled}}"
+    # Unauthenticated, and only while no user exists: this single call creates
+    # user 1 as admin, pins the media server, and mints its own Jellyfin token.
+    url: http://localhost:5055/api/v1/auth/jellyfin
+    method: POST
+    skipIf:
+      url: http://localhost:5055/api/v1/settings/public
+      match: '"initialized":\s*true'
+    body:
+      username: "{{credentials.jellyfin.user}}"
+      password: "{{credentials.jellyfin.pass}}"
+      # A bare host, no scheme: Seerr builds the URL itself from these three
+      hostname: "{{host.jellyfin}}"
+      port: 8096
+      useSsl: false
+      urlBase: ""
+      email: "{{credentials.email}}"
+      # 2 = Jellyfin, in Seerr's MediaServerType enum
+      serverType: 2
+
+  - name: sync_libraries
+    label: Discover Jellyfin libraries
+    type: api_call
+    if: "{{services.jellyfin.enabled}}"
+    # A GET with a side effect. It lists the libraries; ticking the ones to
+    # watch stays a click in the UI, since their ids only exist after this runs.
+    url: http://localhost:5055/api/v1/settings/jellyfin/library?sync=true
+    method: GET
+    headers:
+      X-API-Key: "{{internal.api_key}}"
+
+  - name: auto_approve
+    label: Approve new users' requests automatically
+    type: api_call
+    if: "{{services.jellyfin.enabled}}"
+    # 160 = REQUEST (32) | AUTO_APPROVE (128). Without it every request waits for
+    # an admin, and "ask for a show and it downloads" stops being true.
+    # Applies to accounts created from here on, never to existing ones.
+    url: http://localhost:5055/api/v1/settings/main
+    method: POST
+    headers:
+      X-API-Key: "{{internal.api_key}}"
+    body:
+      defaultPermissions: 160
+
+  # Both need the admin account, which only the Jellyfin bootstrap above
+  # creates — hence the pair of conditions rather than just the downloader.
+  - name: connect_sonarr
+    label: Connect Sonarr
+    type: api_call
+    if:
+      - "{{services.jellyfin.enabled}}"
+      - "{{services.sonarr.enabled}}"
+    # One entry per TV library: `foreach` handles none, one and several without
+    # this template having to guess which folder is the right one.
+    foreach:
+      source: libraries
+      type: tvshows
+    url: http://localhost:5055/api/v1/settings/sonarr
+    method: POST
+    headers:
+      X-API-Key: "{{internal.api_key}}"
+    skipIf:
+      url: http://localhost:5055/api/v1/settings/sonarr
+      match: "/media/{{library.name}}"
+    body:
+      name: "Sonarr ({{library.name}})"
+      hostname: "{{host.sonarr}}"
+      port: 8989
+      apiKey: "{{internal.sonarr.api_key}}"
+      useSsl: false
+      # 1 = "Any", the stock profile every fresh Sonarr ships with. Anything
+      # narrower would be us choosing a quality on the user's behalf.
+      activeProfileId: 1
+      activeProfileName: Any
+      activeDirectory: "/media/{{library.name}}"
+      is4k: false
+      isDefault: true
+      enableSeasonFolders: true
+      syncEnabled: true
+      preventSearch: false
+
+  - name: connect_radarr
+    label: Connect Radarr
+    type: api_call
+    if:
+      - "{{services.jellyfin.enabled}}"
+      - "{{services.radarr.enabled}}"
+    foreach:
+      source: libraries
+      type: movies
+    url: http://localhost:5055/api/v1/settings/radarr
+    method: POST
+    headers:
+      X-API-Key: "{{internal.api_key}}"
+    skipIf:
+      url: http://localhost:5055/api/v1/settings/radarr
+      match: "/media/{{library.name}}"
+    body:
+      name: "Radarr ({{library.name}})"
+      hostname: "{{host.radarr}}"
+      port: 7878
+      apiKey: "{{internal.radarr.api_key}}"
+      useSsl: false
+      activeProfileId: 1
+      activeProfileName: Any
+      activeDirectory: "/media/{{library.name}}"
+      is4k: false
+      isDefault: true
+      minimumAvailability: released
+      syncEnabled: true
+      preventSearch: false
+
+  - name: initialize
+    label: Finish setup
+    type: api_call
+    if: "{{services.jellyfin.enabled}}"
+    # Flips public.initialized, which is the only thing standing between the
+    # user and the app: every route redirects to /setup until it is set.
+    url: http://localhost:5055/api/v1/settings/initialize
+    method: POST
+    headers:
+      X-API-Key: "{{internal.api_key}}"
