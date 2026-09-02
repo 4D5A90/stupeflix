@@ -431,6 +431,28 @@ Deux écarts assumés par rapport à la maquette :
   de ce qu'on voit en premier ; le faire venir des templates est un chantier à
   part.
 
+## Phase 7 — MediaManager retiré (2026-09-03)
+
+Décision : le projet n'est plus maintenu (dernière release v1.12.3 en février
+2026, et sa branche `master` supprime les requests). Sonarr et Radarr le
+remplacent, et Seerr ne pouvait de toute façon pas lui parler.
+
+Retiré partout, pas seulement son `.yml` : la suite `describe("mediamanager")`
+de `templates.test.ts`, les commentaires qui s'en servaient d'exemple dans
+`service-install.ts` et `template-vars.ts`, la ligne du tableau des services et
+les exemples de variables dans README.md, SPEC.md et CLAUDE.md. Les fixtures de
+`template-vars.test.ts` qui utilisaient son id pointent désormais sur `sonarr`.
+
+La catégorie `mediaManager` reste : elle porte Sonarr et Radarr.
+
+**Conséquence pour la capacité `provides`/`provided`** (voir la discussion sur
+le couplage aux clients torrent) : les couplages à généraliser passent de six à
+quatre — `sonarr`/`radarr` vers `prowlarr` et `qbittorrent`. Et les deux
+consommateurs restants sont des jumeaux, donc la duplication qu'on supprimerait
+est surtout entre eux. Le besoin reste réel dès qu'un second client torrent ou
+un second indexer arrive, mais il est moins pressant qu'avec trois
+consommateurs.
+
 ## Risques
 
 - La séquence de bootstrap Seerr est vérifiée dans le code de la v3.4.1 mais

@@ -57,7 +57,6 @@ Whatever `templates/` contains — this table is what ships today, not a fixed l
 |---------|------|-------------|
 | Stupeflix API | 3000 | Orchestrator backend |
 | Stupeflix Web | 5173 | Setup wizard frontend (dev) |
-| MediaManager | 8000 | Downloads and library management |
 | Gluetun | 8001 | VPN tunnel (control server) |
 | qBittorrent | 8080 | Torrent client |
 | Jellyfin | 8096 | Media streaming |
@@ -93,8 +92,8 @@ Templates connect to each other **without naming each other in code**:
 
 | Mechanism | Used for | Example |
 |-----------|----------|---------|
-| `{{internal.<svc>.<key>}}` | A secret another service minted | MediaManager reads Prowlarr's API key |
-| `{{credentials.<svc>.<key>}}` | A value the user typed elsewhere | MediaManager reuses qBittorrent's login |
+| `{{internal.<svc>.<key>}}` | A secret another service minted | Sonarr reads Prowlarr's API key |
+| `{{credentials.<svc>.<key>}}` | A value the user typed elsewhere | Sonarr reuses qBittorrent's login |
 | `{{services.<svc>.enabled}}` | Switching an integration on | `..._PROWLARR__ENABLED=true` |
 | `{{host.<svc>}}` | Addressing a peer container | `http://{{host.qbittorrent}}` |
 | `network: provides/join` | Sharing a network namespace | qBittorrent routed through Gluetun |

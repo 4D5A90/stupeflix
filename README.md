@@ -153,7 +153,6 @@ builds its registry from those files, so this list is the source of truth:
 | Prowlarr | `prowlarr` | 9696 | Indexer | off | none |
 | Sonarr | `sonarr` | 8989 | Media Manager | off | none |
 | Radarr | `radarr` | 7878 | Media Manager | off | none |
-| MediaManager | `mediamanager` | 8000 | Media Manager | off | email, pass |
 | Jellyfin | `jellyfin` | 8096 | Media Server | on | user, pass |
 | Plex | `plex` | 32400 | Media Server | off | claim |
 | Seerr | `seerr` | 5055 | Requests | off | email |
@@ -402,7 +401,7 @@ With no provider enabled, a `join` is inert and the block renders verbatim.
   `localhost:<port>` keep working.
 - **A joined container loses its DNS name.** Address it with `{{host.<service>}}`,
   which follows it to the provider. Hence `http://{{host.qbittorrent}}` in
-  `mediamanager.yml`. It resolves in **setup steps as well as `compose:`** — a
+  `sonarr.yml`. It resolves in **setup steps as well as `compose:`** — a
   step wiring one service into another writes a container's view of a container,
   so `sonarr.yml` hands Sonarr `{{host.qbittorrent}}`, not `qbittorrent`.
 - **A provider needs a `healthcheck`**: the joiner waits on `service_healthy`, and
@@ -450,7 +449,7 @@ generic glyph rather than breaking the button, so a typo is invisible in the UI.
 | `{{credentials.<service>.<key>}}` | **Another** service's credential |
 | `{{services.<service>.enabled}}` | `"true"` / `"false"` |
 
-The last three connect two services without touching either's code. MediaManager
+The last three connect two services without touching either's code. Sonarr
 reads `{{internal.prowlarr.api_key}}`. An entry resolving to empty (`FOO=`) is
 dropped from the compose file, so a blank optional credential falls back to the
 image's default instead of shadowing it.

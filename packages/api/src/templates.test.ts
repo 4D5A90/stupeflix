@@ -17,7 +17,6 @@ import { foreachSpec } from "./lib/setup-runner.js";
 import { getStacks, loadStacks } from "./lib/stacks.js";
 import { buildVars } from "./lib/template-vars.js";
 import { fakeDb } from "./test/fake-db.js";
-import { lastStep, template } from "./test/helpers.js";
 
 /**
  * These run against the real `templates/` directory. Since no code names a
@@ -405,37 +404,6 @@ describe("across templates", () => {
 	it("keeps template ids unique", () => {
 		const ids = templates.map((t) => t.id);
 		expect(new Set(ids).size).toBe(ids.length);
-	});
-});
-
-describe("mediamanager", () => {
-	const env = (tpl: ServiceTemplate) =>
-		(
-			(tpl.compose.mediamanager as { environment: string[] }).environment ?? []
-		).map((e) => e.split("=")[0]);
-
-	it("configures itself only through MEDIAMANAGER_* variables", () => {
-		// Its settings model rejects unknown keys, so a stray prefix is a boot failure
-		const tpl = template("mediamanager");
-		const unexpected = env(tpl).filter(
-			(k) =>
-				!k.startsWith("MEDIAMANAGER_") && !["TZ", "CONFIG_DIR"].includes(k),
-		);
-		expect(unexpected).toEqual([]);
-	});
-
-	it("writes no config file, since env wins over the TOML", () => {
-		const tpl = template("mediamanager");
-		expect(tpl.setup.filter((s) => s.type === "config_file")).toEqual([]);
-	});
-
-	it("ends its pipeline on a strict credential check", () => {
-		// The steps before it tolerate failure; this one is what proves the admin
-		// answers to the password the wizard showed the user
-		const tpl = template("mediamanager");
-		const last = lastStep(tpl);
-		expect(last.name).toBe("verify_login");
-		expect(last.ignoreStatus).toBeUndefined();
 	});
 });
 

@@ -87,7 +87,7 @@ describe("buildVars", () => {
 				"internal.prowlarr.api_key": "deadbeef",
 				"credentials.qbittorrent.user": "hugo",
 			}),
-			"mediamanager",
+			"sonarr",
 		);
 		expect(vars["internal.prowlarr.api_key"]).toBe("deadbeef");
 		expect(vars["credentials.qbittorrent.user"]).toBe("hugo");
@@ -102,14 +102,14 @@ describe("buildVars", () => {
 				"services.prowlarr.enabled": true,
 				"services.plex.enabled": false,
 			}),
-			"mediamanager",
+			"sonarr",
 		);
 		expect(vars["services.prowlarr.enabled"]).toBe("true");
 		expect(vars["services.plex.enabled"]).toBe("false");
 	});
 
 	it("groups libraries by type as JSON, with container-side paths", () => {
-		const vars = buildVars(configuredDb(), "mediamanager");
+		const vars = buildVars(configuredDb(), "sonarr");
 		expect(JSON.parse(vars["libraries.movies_json"])).toEqual([
 			{ name: "Movies", path: "/media/Movies" },
 		]);
@@ -120,18 +120,18 @@ describe("buildVars", () => {
 
 	it("emits an empty array for a known type with no library", () => {
 		// Otherwise the variable resolves to "" and the container gets invalid JSON
-		expect(
-			buildVars(configuredDb(), "mediamanager")["libraries.music_json"],
-		).toBe("[]");
+		expect(buildVars(configuredDb(), "sonarr")["libraries.music_json"]).toBe(
+			"[]",
+		);
 	});
 
 	it("covers a custom library type too", () => {
 		const db = configuredDb({
 			libraries: JSON.stringify([{ name: "Anime", type: "anime" }]),
 		});
-		expect(
-			JSON.parse(buildVars(db, "mediamanager")["libraries.anime_json"]),
-		).toEqual([{ name: "Anime", path: "/media/Anime" }]);
+		expect(JSON.parse(buildVars(db, "sonarr")["libraries.anime_json"])).toEqual(
+			[{ name: "Anime", path: "/media/Anime" }],
+		);
 	});
 });
 

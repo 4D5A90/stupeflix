@@ -132,8 +132,9 @@ for a media server without either file being touched, exactly as an unmatched
 
 Templates reach each other through variables rather than code:
 `{{internal.<service>.<key>}}`, `{{credentials.<service>.<key>}}` and
-`{{services.<service>.enabled}}`. That is how MediaManager picks up the API key
-Stupeflix generated for Prowlarr, and how it switches its own integrations on.
+`{{services.<service>.enabled}}`. That is how Sonarr picks up the API key
+Stupeflix generated for Prowlarr, and how it skips the step when Prowlarr is
+not installed.
 
 `network:` is the same idea applied to topology instead of values, because a
 variable can fill a string but cannot move a YAML key. A service that `join`s a
@@ -214,8 +215,8 @@ Two invariants that are easy to break:
 - **A reset is scoped.** `cleanConfigs` clears every template, `cleanServiceConfig`
   clears one. Reconfiguring Jellyfin must not replay Plex's startup wizard, so use
   the per-template lists (`getTemplateConfigFiles`, `getTemplateResetDirs`).
-- **Removal never names a container.** A template may own several (MediaManager
-  has a Postgres sidecar), so it disables the service, rewrites the compose file
+- **Removal never names a container.** A template may own several (a service and
+  its database, say), so it disables the service, rewrites the compose file
   and lets `up -d --remove-orphans` collect what is no longer declared. The
   service's directory under `paths.config` is deliberately kept.
 
@@ -230,8 +231,7 @@ Vitest, colocated as `src/**/*.test.ts`. Fixture templates live in
 compose service names and host ports do not collide, that a peer is addressed
 through `{{host.x}}` rather than by container name (in `compose:`, `setup:`,
 `actions:` and `info:` alike), that every `requires`/`recommends` category is one
-some template provides, that every `foreach` source is one the runner implements,
-and that MediaManager only ever sets `MEDIAMANAGER_*` variables. **A new service
+some template provides, and that every `foreach` source is one the runner implements. **A new service
 template must keep it green** — that suite is what replaces the per-service code
 that used to exist.
 

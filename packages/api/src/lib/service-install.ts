@@ -86,8 +86,9 @@ export async function runServiceInstall(
 /**
  * Drops a service: disable it, rewrite the compose file without it, and let
  * Docker collect what is no longer declared. Going through `--remove-orphans`
- * rather than naming containers is what makes a template with a sidecar (the
- * MediaManager database) come down whole, with no per-service knowledge here.
+ * rather than naming containers is what makes a template owning several of them
+ * — a service and its database, say — come down whole, with no per-service
+ * knowledge here.
  *
  * The service's directory under `paths.config` is deliberately left alone: it is
  * the user's settings, and reinstalling should find them again.

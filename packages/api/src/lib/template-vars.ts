@@ -10,7 +10,7 @@ export interface Library {
 /**
  * Where `paths.media` is mounted inside every service container. Templates bind
  * it there, so a library the user calls `Movies` is `/media/Movies` for qBittorrent,
- * Jellyfin and MediaManager alike — that shared view is what lets them agree on a
+ * Jellyfin and Sonarr alike — that shared view is what lets them agree on a
  * file without any service knowing about the others.
  */
 export const CONTAINER_MEDIA_ROOT = "/media";
@@ -73,7 +73,7 @@ export function buildVars(db: Db, serviceId?: string): Record<string, string> {
 	for (const [key, value] of Object.entries(all)) {
 		if (key.startsWith("services.") && key.endsWith(".enabled")) {
 			// Lets a template switch on a peer it integrates with, e.g.
-			// MEDIAMANAGER_INDEXERS__PROWLARR__ENABLED={{services.prowlarr.enabled}}
+			// A step that wires a peer disappears when the peer is not installed
 			vars[key] = value ? "true" : "false";
 			continue;
 		}

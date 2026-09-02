@@ -1,6 +1,6 @@
-id: household
-name: Household
-description: Everyone asks from their phone, it downloads itself
+id: household-vpn
+name: Household + VPN
+description: Everyone asks from their phone, it downloads itself, with a VPN for privacy
 services:
   - qbittorrent
   - prowlarr
@@ -8,3 +8,4 @@ services:
   - radarr
   - jellyfin
   - seerr
+  - gluetun
