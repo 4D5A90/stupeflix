@@ -9,6 +9,7 @@ interface PathsStepProps {
 	config: SetupConfig;
 	onChange: (config: SetupConfig) => void;
 	onNext: () => void;
+	onCancel: () => void;
 }
 
 const LIBRARY_TYPES: { value: Library["type"]; label: string }[] = [
@@ -17,7 +18,7 @@ const LIBRARY_TYPES: { value: Library["type"]; label: string }[] = [
 	{ value: "music", label: "Music" },
 ];
 
-export function PathsStep({ config, onChange, onNext }: PathsStepProps) {
+export function PathsStep({ config, onChange, onNext, onCancel }: PathsStepProps) {
 	const [useBasePath, setUseBasePath] = useState(true);
 	const [basePath, setBasePath] = useState("");
 	const [mountedRoot, setMountedRoot] = useState("");
@@ -278,7 +279,10 @@ export function PathsStep({ config, onChange, onNext }: PathsStepProps) {
 				/>
 			</div>
 
-			<div className="flex justify-end">
+			<div className="flex justify-between">
+				<Button variant="secondary" onClick={onCancel}>
+					Cancel
+				</Button>
 				<Button onClick={onNext} disabled={!isValid}>
 					Next
 				</Button>

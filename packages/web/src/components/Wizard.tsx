@@ -39,6 +39,9 @@ export function Wizard({ onComplete }: WizardProps) {
 		},
 	});
 
+	const goToHome = () => {
+		window.location.href = "/";
+	}
 	const goToPaths = useCallback(() => setStep("paths"), []);
 	const goToServices = useCallback(() => setStep("services"), []);
 	const goToCredentials = useCallback(() => setStep("credentials"), []);
@@ -70,6 +73,7 @@ export function Wizard({ onComplete }: WizardProps) {
 					config={activeConfig}
 					onChange={setConfig}
 					onNext={goToServices}
+					onCancel={goToHome}
 				/>
 			) : null}
 
