@@ -45,6 +45,12 @@ export interface CredentialField {
 	 * filled in and be wrong.
 	 */
 	placeholder?: string;
+	/**
+	 * `password` only. `false` for a secret the wizard cannot invent because it
+	 * must match a value held elsewhere — a VPN key, a provider's token. Minting
+	 * one would fill the field with something that is wrong.
+	 */
+	generate?: boolean;
 	required?: boolean;
 	rules?: FieldRules;
 }

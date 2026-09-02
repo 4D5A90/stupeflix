@@ -19,6 +19,8 @@ export interface CredentialField {
 	default?: string;
 	/** Shown greyed inside the empty field, when a default would be wrong. */
 	placeholder?: string;
+	/** `password` only; `false` when the secret must match one held elsewhere. */
+	generate?: boolean;
 	required?: boolean;
 	rules?: FieldRules;
 }

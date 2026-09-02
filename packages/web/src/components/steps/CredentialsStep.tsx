@@ -145,7 +145,7 @@ export function CredentialsStep({
 													/>
 												)}
 											</div>
-											{field.type === "password" ? (
+											{field.type === "password" && field.generate !== false ? (
 												<button
 													type="button"
 													onClick={() => {

@@ -130,11 +130,17 @@ export function ServicesStep({
 										<div className="mt-3">
 											<RadioGroup
 												label=""
-												options={services.map((s) => ({
-													value: s.id,
-													label: s.name,
-													description: s.description,
-												}))}
+												options={[
+													...services.map((s) => ({
+														value: s.id,
+														label: s.name,
+														description: s.description,
+													})),
+													// Picking one must not be a one-way door: without
+													// this row the only way back out of the category is
+													// to restart the wizard.
+													{ value: "", label: `No ${label}` },
+												]}
 												value={selected?.id ?? ""}
 												onChange={(v) => selectSingle(category, v)}
 											/>

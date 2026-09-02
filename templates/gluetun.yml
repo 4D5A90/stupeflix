@@ -80,6 +80,10 @@ credentials:
   - key: private_key
     type: password
     label: WireGuard Private Key
+    # Masked like a password, but not ours to invent: it must match the public
+    # key the provider holds. A generated one would look filled in and never
+    # bring the tunnel up.
+    generate: false
   - key: addresses
     type: text
     label: WireGuard Address
