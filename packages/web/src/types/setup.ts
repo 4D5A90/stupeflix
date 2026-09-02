@@ -25,10 +25,23 @@ export interface CredentialField {
 	rules?: FieldRules;
 }
 
-/** A need expressed as a category, so no service ever names another. */
+/**
+ * A need expressed as a category, so no service ever names another — except
+ * through `supports`, which lists the members of that category this service was
+ * actually built against.
+ */
 export interface Requirement {
 	category: string;
+	supports?: string[];
 	reason?: string;
+}
+
+/** A named set of services someone has already proved works together. */
+export interface Stack {
+	id: string;
+	name: string;
+	description: string;
+	services: string[];
 }
 
 export interface ServiceMeta {
@@ -43,12 +56,11 @@ export interface ServiceMeta {
 	credentials: CredentialField[];
 }
 
-/** A named set of services someone has already proved works together. */
-export interface Stack {
-	id: string;
-	name: string;
-	description: string;
-	services: string[];
+// Categories where only one service can be selected
+const SINGLE_SELECT_CATEGORIES = ["torrentClient", "vpn"];
+
+export function isSingleSelect(category: string): boolean {
+	return SINGLE_SELECT_CATEGORIES.includes(category);
 }
 
 export interface UnmetRequirement {
@@ -61,32 +73,39 @@ export interface UnmetRequirement {
  * Mirrors the API's own check (`lib/requirements.ts`) so the wizard can react as
  * the user toggles, with no round trip. The API stays the authority — it runs
  * the same check before it does anything — and this is only the fast feedback.
+ * Change the two together.
  */
 export function checkRequirements(
 	registry: ServiceMeta[],
 	isEnabled: (id: string) => boolean,
 ): { missing: UnmetRequirement[]; warnings: UnmetRequirement[] } {
 	const enabled = registry.filter((s) => isEnabled(s.id));
-	const covered = new Set(enabled.map((s) => s.category));
-	const unmet = (svc: ServiceMeta, reqs: Requirement[] = []) =>
-		reqs
-			.filter((r) => !covered.has(r.category))
-			.map((r) => ({
-				service: svc.id,
-				category: r.category,
-				reason: r.reason,
-			}));
-	return {
-		missing: enabled.flatMap((s) => unmet(s, s.requires)),
-		warnings: enabled.flatMap((s) => unmet(s, s.recommends)),
+	const names = (ids: string[]) =>
+		ids.map((id) => registry.find((s) => s.id === id)?.name ?? id).join(" or ");
+
+	// null means met; anything else is the sentence to show
+	const unmetReason = (svc: ServiceMeta, req: Requirement) => {
+		const inCategory = enabled.filter((s) => s.category === req.category);
+		if (inCategory.length === 0) return req.reason;
+		if (!req.supports) return null;
+		if (inCategory.some((s) => req.supports?.includes(s.id))) return null;
+		return `${svc.name} only works with ${names(req.supports)}, and ${names(
+			inCategory.map((s) => s.id),
+		)} is installed instead.`;
 	};
-}
 
-// Categories where only one service can be selected
-const SINGLE_SELECT_CATEGORIES = ["torrentClient", "vpn"];
+	const collect = (svc: ServiceMeta, reqs: Requirement[] = []) =>
+		reqs.flatMap((req) => {
+			const reason = unmetReason(svc, req);
+			return reason === null
+				? []
+				: [{ service: svc.id, category: req.category, reason }];
+		});
 
-export function isSingleSelect(category: string): boolean {
-	return SINGLE_SELECT_CATEGORIES.includes(category);
+	return {
+		missing: enabled.flatMap((s) => collect(s, s.requires)),
+		warnings: enabled.flatMap((s) => collect(s, s.recommends)),
+	};
 }
 
 export interface Library {

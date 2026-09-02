@@ -134,6 +134,23 @@ describe("every template", () => {
 		}
 	});
 
+	// A lock naming a service that does not exist can never be satisfied, which
+	// makes the template uninstallable without saying why.
+	it("only supports services that exist, in the category it names", () => {
+		const byId = new Map(templates.map((t) => [t.id, t]));
+		for (const tpl of templates) {
+			for (const req of [...(tpl.requires ?? []), ...(tpl.recommends ?? [])]) {
+				for (const id of req.supports ?? []) {
+					const peer = byId.get(id);
+					expect(peer, `${tpl.id} supports "${id}"`).toBeDefined();
+					expect(peer?.category, `${tpl.id} supports "${id}"`).toBe(
+						req.category,
+					);
+				}
+			}
+		}
+	});
+
 	it("never depends on its own category, which it satisfies itself", () => {
 		for (const tpl of templates) {
 			for (const req of [...(tpl.requires ?? []), ...(tpl.recommends ?? [])]) {

@@ -369,6 +369,31 @@ answers 409. `recommends:` only warns: Sonarr without Prowlarr still runs, its
 owner just adds trackers by hand, and forbidding that would forbid a legitimate
 stack. The `reason` is what the user reads, so write it as a sentence.
 
+`supports:` narrows which members of the category count:
+
+```yaml
+requires:
+  - category: torrentClient
+    supports: [qbittorrent]
+    reason: Sonarr hands every download to a torrent client — install one first.
+```
+
+Use it when the wiring is not interchangeable. Sonarr's download-client step
+sends a qBittorrent-shaped body whose field names come from the settings class
+its API names, so another client is not different values — it is a different
+step. Until that step exists, `supports:` makes the wizard say so instead of
+installing a service that would quietly download nothing.
+
+It is also how a template declines a peer deliberately: list the combinations
+you have actually tested, and the ones too complex or too poorly maintained to
+carry simply never validate. Omit it where the members really are
+interchangeable — any media server will do behind Seerr.
+
+The message differs by case, because the fix does. Nothing of that kind
+installed at all gives you the template's `reason`; the wrong one installed
+gives a generated line naming both, since a template cannot guess which peer
+someone would pick.
+
 Depending on a category rather than a service is what keeps the rule general:
 adding `emby.yml` satisfies Seerr's need for a media server without either file
 being touched — the same reason `network:` matches a `join` to a `provides`.

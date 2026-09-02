@@ -9,7 +9,6 @@ port: 9696
 notes:
   - Add your trackers in Prowlarr's UI — it ships with none, and nothing has
     anything to search until you do.
-  - Your indexers survive a reconfigure.
 
 # Minted once and kept: it is injected into Prowlarr itself and read back as
 # {{internal.prowlarr.api_key}} by whoever needs to register here, so the two

@@ -80,7 +80,14 @@ Each template defines:
   without Prowlarr still runs and forbidding that would forbid a legitimate
   stack. Each carries the `reason` the user reads. Resolved by
   `lib/requirements.ts`, mirrored in `web/src/types/setup.ts` for live feedback —
-  the API is the authority, change the two together
+  the API is the authority, change the two together.
+  `supports: [id, …]` narrows which members of the category count, for a peer
+  that is not interchangeable: Sonarr's download-client body is shaped by
+  qBittorrent's settings class, so Transmission is a *different step*, not
+  different values. Without it, picking Transmission would satisfy the category
+  and install a Sonarr that quietly downloads nothing. It doubles as an
+  editorial lock — list the combinations you have tested, and decline the rest.
+  Omit it where the members really are interchangeable
 - `network`: `{ provides }` lends this service's network namespace, `{ join }`
   asks for one. Neither side names the other, and an unmatched `join` is inert —
   see `lib/network.ts`

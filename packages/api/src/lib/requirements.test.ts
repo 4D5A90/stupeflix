@@ -25,10 +25,21 @@ const TEMPLATES = [
 	svc("jellyfin", "mediaServer"),
 	svc("plex", "mediaServer"),
 	svc("qbittorrent", "torrentClient"),
+	svc("transmission", "torrentClient"),
 	svc("prowlarr", "indexer"),
 	svc("sonarr", "mediaManager", {
 		requires: [{ category: "torrentClient", reason: "hands off downloads" }],
 		recommends: [{ category: "indexer" }],
+	}),
+	// Declares the one it was actually built against
+	svc("locked", "mediaManager", {
+		requires: [
+			{
+				category: "torrentClient",
+				supports: ["qbittorrent"],
+				reason: "hands off downloads",
+			},
+		],
 	}),
 	svc("seerr", "requests", {
 		requires: [{ category: "mediaServer" }],
@@ -81,6 +92,45 @@ describe("checkRequirements", () => {
 			"mediaServer",
 		]);
 		expect(warnings).toHaveLength(1);
+	});
+});
+
+describe("supports", () => {
+	it("is met by a member the template was built against", () => {
+		expect(
+			checkRequirements(TEMPLATES, ["locked", "qbittorrent"]).missing,
+		).toEqual([]);
+	});
+
+	it("is not met by another member of the same category", () => {
+		const { missing } = checkRequirements(TEMPLATES, [
+			"locked",
+			"transmission",
+		]);
+		expect(missing).toHaveLength(1);
+		expect(missing[0].category).toBe("torrentClient");
+	});
+
+	it("says which one it wants and which one is there", () => {
+		const { missing } = checkRequirements(TEMPLATES, [
+			"locked",
+			"transmission",
+		]);
+		// Named, not id'd — and the one we want is by definition not installed
+		expect(missing[0].reason).toContain("qbittorrent");
+		expect(missing[0].reason).toContain("transmission");
+		expect(missing[0].reason).not.toContain("undefined");
+	});
+
+	it("falls back to the template's own words when the category is empty", () => {
+		const { missing } = checkRequirements(TEMPLATES, ["locked"]);
+		expect(missing[0].reason).toBe("hands off downloads");
+	});
+
+	it("leaves a requirement without it satisfied by any member", () => {
+		expect(
+			checkRequirements(TEMPLATES, ["sonarr", "transmission"]).missing,
+		).toEqual([]);
 	});
 });
 

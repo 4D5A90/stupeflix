@@ -453,6 +453,38 @@ est surtout entre eux. Le besoin reste réel dès qu'un second client torrent ou
 un second indexer arrive, mais il est moins pressant qu'avec trois
 consommateurs.
 
+## Phase 8 — `supports:` sur une exigence (2026-09-03)
+
+Le trou : `requires: torrentClient` est satisfait par **n'importe quel** client,
+mais l'étape `download_client` de Sonarr envoie un corps en forme de
+qBittorrent — et les noms de champs viennent de la classe de réglages que
+l'API nomme (`configContract`), donc un autre client n'est pas une affaire de
+valeurs, c'est **une autre étape**. Résultat avant : Transmission coché,
+exigence satisfaite, Sonarr installé sans client, en silence.
+
+Envisagé et écarté : un mécanisme `provides`/`provided` où le fournisseur
+déclare ses valeurs. Il ne règle que la moitié du problème — la forme du corps
+reste irréductible — et il coûte la lisibilité de bout en bout des templates,
+qui sont la documentation de ce repo.
+
+Retenu : `supports: [qbittorrent]` sur l'exigence. La catégorie doit être
+couverte **par un membre que le consommateur connaît**. Deux échecs distincts,
+parce que les corrections diffèrent :
+
+- rien de la catégorie installé → la phrase écrite dans le template ;
+- le mauvais installé → une phrase générée nommant les deux, que le template ne
+  peut pas écrire puisqu'il ignore ce qui sera choisi.
+
+C'est aussi un **outil éditorial** : on liste les combinaisons réellement
+testées, et on décline celles qui sont trop complexes ou trop peu maintenues.
+Absent, rien ne change — la catégorie `mediaServer` derrière Seerr reste
+interchangeable.
+
+Vérifié en vrai avec un `transmission.yml` déposé : `POST /setup/complete` → 400,
+`POST /install/sonarr` sur une install à Transmission → 409, même phrase. Le
+gate CI vérifie en plus qu'un `supports:` ne nomme que des services existants,
+et de la bonne catégorie.
+
 ## Risques
 
 - La séquence de bootstrap Seerr est vérifiée dans le code de la v3.4.1 mais

@@ -11,6 +11,11 @@ port: 8989
 # so refusing to install without it would forbid a legitimate setup.
 requires:
   - category: torrentClient
+    # Its download_client step sends a qBittorrent-shaped body, and the field
+    # names come from the settings class the API names — so another client is
+    # not a matter of different values, it is a different step. Until that step
+    # exists, say so rather than install and quietly download nothing.
+    supports: [qbittorrent]
     reason: Sonarr hands every download to a torrent client — install one first.
 recommends:
   - category: indexer

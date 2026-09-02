@@ -14,14 +14,33 @@ export interface RequirementReport {
 	warnings: UnmetRequirement[];
 }
 
-function unmet(
+/**
+ * Why a need is not met, which is two different situations asking for two
+ * different fixes: install something of that kind, or pick a different one.
+ */
+function unmetReason(
 	tpl: ServiceTemplate,
-	reqs: Requirement[] | undefined,
-	covered: Set<string>,
-): UnmetRequirement[] {
-	return (reqs ?? [])
-		.filter((r) => !covered.has(r.category))
-		.map((r) => ({ service: tpl.id, category: r.category, reason: r.reason }));
+	req: Requirement,
+	enabled: ServiceTemplate[],
+	all: ServiceTemplate[],
+): string | undefined | null {
+	const inCategory = enabled.filter((t) => t.category === req.category);
+	if (inCategory.length === 0) return req.reason;
+	if (!req.supports) return null;
+
+	const supported = inCategory.filter((t) => req.supports?.includes(t.id));
+	if (supported.length > 0) return null;
+
+	// Generated rather than authored: the template cannot know in advance which
+	// unsupported peer someone would pick, and "install one first" would be wrong
+	// advice here — there is one installed.
+	// Named from every template, not the enabled ones: the service being asked
+	// for is by definition the one that is not installed.
+	const names = (ids: string[]) =>
+		ids.map((id) => all.find((t) => t.id === id)?.name ?? id).join(" or ");
+	return `${tpl.name} only works with ${names(req.supports)}, and ${names(
+		inCategory.map((t) => t.id),
+	)} is installed instead.`;
 }
 
 /**
@@ -30,8 +49,8 @@ function unmet(
  * still runs — its owner just has to add indexers by hand. Refusing the second
  * case would forbid a perfectly legitimate stack.
  *
- * Nothing here names a service: a need is expressed as a category, and any
- * enabled template of that category answers it.
+ * A need names a category, never a service. `supports:` narrows which members of
+ * that category count, without the requirement ever becoming a service name.
  *
  * Mirrored in `web/src/types/setup.ts` so the wizard can react as the user
  * toggles. This side is the authority — change the two together.
@@ -41,10 +60,16 @@ export function checkRequirements(
 	enabledIds: string[],
 ): RequirementReport {
 	const enabled = templates.filter((t) => enabledIds.includes(t.id));
-	const covered = new Set(enabled.map((t) => t.category));
+	const collect = (reqs: Requirement[] | undefined, tpl: ServiceTemplate) =>
+		(reqs ?? []).flatMap((req) => {
+			const reason = unmetReason(tpl, req, enabled, templates);
+			if (reason === null) return [];
+			return [{ service: tpl.id, category: req.category, reason }];
+		});
+
 	return {
-		missing: enabled.flatMap((t) => unmet(t, t.requires, covered)),
-		warnings: enabled.flatMap((t) => unmet(t, t.recommends, covered)),
+		missing: enabled.flatMap((t) => collect(t.requires, t)),
+		warnings: enabled.flatMap((t) => collect(t.recommends, t)),
 	};
 }
 
@@ -66,9 +91,9 @@ export function unmetRequirements(
 }
 
 /**
- * One sentence per unmet need. The wording belongs to the template — it is the
- * only place that knows *why* the dependency exists — and this only falls back
- * to a generic line when a template did not bother to say.
+ * One sentence per unmet need. The wording belongs to the template when it knows
+ * what to say, and is generated when it cannot — a template cannot guess which
+ * unsupported peer someone would pick.
  */
 export function requirementMessage(unmet: UnmetRequirement[]): string {
 	return unmet

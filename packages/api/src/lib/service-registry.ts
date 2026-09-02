@@ -169,7 +169,19 @@ export interface InfoField {
  */
 export interface Requirement {
 	category: string;
-	/** Shown to the user when the need is not met. */
+	/**
+	 * The members of that category this template actually knows how to wire.
+	 * Omitted, any of them will do — which is right for a category whose members
+	 * are interchangeable, like a media server behind Seerr.
+	 *
+	 * Given, it is a lock: the template declares the combinations it was built
+	 * and tested against, and the wizard refuses the others rather than
+	 * installing a service that would quietly do nothing. It is also how a
+	 * template declines to support a peer that is too complex or too poorly
+	 * maintained to be worth it.
+	 */
+	supports?: string[];
+	/** Shown when nothing in the category is installed at all. */
 	reason?: string;
 }
 

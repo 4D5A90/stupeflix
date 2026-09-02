@@ -9,9 +9,6 @@ port: 5055
 notes:
   - Install Sonarr and Radarr before Seerr. Added afterwards, they are picked up
     only when you reconfigure Seerr.
-  - Tick the libraries Seerr should watch, in Settings — Media Server.
-  - New users have their requests approved automatically. Change it in
-    Settings — Users.
   - With Plex and no Jellyfin, finish the setup in Seerr's own wizard.
 
 # Blocking, and not a matter of taste: Seerr's first account can only be created

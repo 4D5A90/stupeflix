@@ -10,11 +10,7 @@ notes:
   - Restarting Gluetun leaves qBittorrent without a network, since it no longer
     has one of its own. Restart it too.
   - The key and the address come from the same WireGuard config file and must
-    match — a mismatch brings the tunnel up, then drops every packet. Copy the
-    whole Address line, commas and all.
-  - Two read-only routes of its control server are opened without a password so
-    the dashboard can show the exit IP. Anything that can reach this machine can
-    read them too.
+    match. Copy the whole Address line, commas and all.
 
 # Lends its network namespace to whichever service asks for `vpn`. Nothing here
 # names qBittorrent, and qBittorrent does not name Gluetun — see lib/network.ts.

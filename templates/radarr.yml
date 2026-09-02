@@ -8,6 +8,11 @@ port: 7878
 
 requires:
   - category: torrentClient
+    # Its download_client step sends a qBittorrent-shaped body, and the field
+    # names come from the settings class the API names — so another client is
+    # not a matter of different values, it is a different step. Until that step
+    # exists, say so rather than install and quietly download nothing.
+    supports: [qbittorrent]
     reason: Radarr hands every download to a torrent client — install one first.
 recommends:
   - category: indexer
