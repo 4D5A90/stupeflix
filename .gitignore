@@ -6,3 +6,7 @@ assets/
 docker-compose.yml
 storage/
 .DS_Store
+
+# Working notes: the plan, and the lessons from corrections. Local by design —
+# they are a scratchpad for whoever is mid-task, not part of the project.
+tasks/
