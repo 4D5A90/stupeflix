@@ -103,7 +103,10 @@ Each template defines:
     actually usable
   - `api_call` — sends a request (`url`, `method`, `body`). Optional `ignoreStatus`
     array, and `skipIf: {url, match}` to no-op when a probe shows the work is
-    already done — for APIs that answer a duplicate with a second copy, not a 409
+    already done — for APIs that answer a duplicate with a second copy, not a 409.
+    `merge: true` reads the resource first and lays `body` over it before sending
+    the whole thing back, for an API that accepts nothing but the entire object
+    on a write and whose other fields are not the template's to know
   - `config_file` — writes `content` to `file` under `paths.config`
   - `extract_from_logs` / `extract_from_config` — pull a value out via regex
 

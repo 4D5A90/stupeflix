@@ -60,6 +60,25 @@ setup:
     url: http://localhost:7878/ping
     match: '"OK"'
 
+  # Radarr ships its profiles on "Original", meaning it demands the film's own
+  # language and rejects everything else — which silently blocks every release
+  # from a tracker that is not English-speaking, with no message anywhere. The
+  # profile carries a list of qualities that differs between Radarr versions, so
+  # this reads it back and lays one key over it rather than sending a body we
+  # would have had to guess. Profile 1 is the one Seerr is handed below.
+  - name: profile_language
+    label: Accept releases in any language
+    type: api_call
+    method: PUT
+    merge: true
+    url: http://localhost:7878/api/v3/qualityprofile/1
+    headers:
+      X-Api-Key: "{{internal.api_key}}"
+    body:
+      language:
+        id: -1
+        name: Any
+
   - name: root_folder
     label: Add root folder
     type: api_call

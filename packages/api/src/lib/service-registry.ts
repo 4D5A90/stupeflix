@@ -128,6 +128,14 @@ export interface SetupStepDef {
 	 * a second copy instead of a conflict.
 	 */
 	skipIf?: { url: string; match: string };
+	/**
+	 * `api_call` only: read the resource first and merge `body` into it, instead
+	 * of sending `body` alone. For APIs that accept nothing but the whole object
+	 * on a write — Radarr's quality profile carries a list of qualities that
+	 * differs between versions, so a template can neither send it verbatim nor
+	 * omit it. Merging is shallow, by top-level key.
+	 */
+	merge?: boolean;
 	container?: string;
 	/** Path under `paths.config`, for `config_file` and `extract_from_config`. */
 	file?: string;
@@ -483,9 +491,28 @@ export async function runSetupStep(
 		case "api_call": {
 			if (!url) return "No URL configured";
 			const method = step.method ?? "POST";
-			const resolved = step.body
+			let resolved = step.body
 				? resolveTemplateVars(step.body, vars)
 				: undefined;
+
+			// Change one field of a resource whose other fields are not ours to
+			// know: read it, lay our keys over it, and send the whole thing back.
+			if (step.merge && resolved) {
+				try {
+					const current = await fetch(url, {
+						headers: stepHeaders(step, db, serviceId, vars),
+					});
+					if (!current.ok) {
+						return `${url} returned ${current.status} while reading it to merge`;
+					}
+					resolved = {
+						...((await current.json()) as Record<string, unknown>),
+						...(resolved as Record<string, unknown>),
+					};
+				} catch (e) {
+					return `Failed to read ${url} to merge: ${e instanceof Error ? e.message : e}`;
+				}
+			}
 			const isForm = step.contentType === "form";
 			let body: string | undefined;
 			let contentType: string | undefined;

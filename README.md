@@ -543,6 +543,7 @@ if it had no loop — `src/templates.test.ts` fails on it instead.
 | `retryOn: [503]` | Retry on specific status codes (default: `[503]`) |
 | `maxRetries: 10` | Max retry attempts (default: `10`) |
 | `ignoreStatus: [400]` | Treat these status codes as success |
+| `merge: true` | Read the resource first and lay `body` over it, then send the whole thing back (shallow, by top-level key) |
 
 ### Credential field rules
 

@@ -2,11 +2,19 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 import type { Db } from "../db.js";
 import { configuredDb } from "../test/fake-db.js";
 import { template } from "../test/helpers.js";
-import { loadTemplates } from "./service-registry.js";
+import { loadTemplates, runSetupStep } from "./service-registry.js";
 import type { ServiceTemplate } from "./service-registry.js";
 import {
 	runTemplateSteps,
@@ -166,6 +174,78 @@ describe("stepEnabled", () => {
 			],
 		};
 		expect(stepKeys(configuredDb(), tpl)).toEqual(["alpha.always"]);
+	});
+});
+
+describe("merge", () => {
+	/**
+	 * A tiny stand-in for an API that refuses anything but the whole object —
+	 * which is the only reason `merge` exists.
+	 */
+	function server(state: Record<string, unknown>) {
+		const seen: Record<string, unknown>[] = [];
+		const fetchMock = async (_url: string, init?: RequestInit) => {
+			if (!init?.method || init.method === "GET") {
+				return new Response(JSON.stringify(state), { status: 200 });
+			}
+			const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+			seen.push(body);
+			return new Response("{}", { status: 200 });
+		};
+		return { seen, fetchMock };
+	}
+
+	it("lays the step's keys over the resource and sends it whole", async () => {
+		const { seen, fetchMock } = server({
+			id: 1,
+			name: "Any",
+			items: [{ quality: "WEB 1080p" }],
+			language: { id: -2, name: "Original" },
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		await runSetupStep(
+			{
+				name: "lang",
+				label: "Language",
+				type: "api_call",
+				method: "PUT",
+				merge: true,
+				url: "http://localhost:7878/api/v3/qualityprofile/1",
+				body: { language: { id: -1, name: "Any" } },
+			},
+			configuredDb(),
+			"radarr",
+		);
+
+		expect(seen).toHaveLength(1);
+		// the field we asked for…
+		expect(seen[0].language).toEqual({ id: -1, name: "Any" });
+		// …and everything we had no business knowing about
+		expect(seen[0].items).toEqual([{ quality: "WEB 1080p" }]);
+		expect(seen[0].name).toBe("Any");
+		vi.unstubAllGlobals();
+	});
+
+	it("sends the body alone when merge is off", async () => {
+		const { seen, fetchMock } = server({ id: 1, name: "Any" });
+		vi.stubGlobal("fetch", fetchMock);
+
+		await runSetupStep(
+			{
+				name: "plain",
+				label: "Plain",
+				type: "api_call",
+				method: "PUT",
+				url: "http://localhost:7878/api/v3/qualityprofile/1",
+				body: { language: { id: -1 } },
+			},
+			configuredDb(),
+			"radarr",
+		);
+
+		expect(seen[0]).toEqual({ language: { id: -1 } });
+		vi.unstubAllGlobals();
 	});
 });
 
