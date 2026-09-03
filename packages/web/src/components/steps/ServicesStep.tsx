@@ -241,8 +241,11 @@ export function ServicesStep({
 					<span className="font-mono text-xs text-gray-500">
 						{enabled.length} selected
 					</span>
+					{/* Still "Next": the alert above says what is wrong, and a button
+					    that renames itself explains a state it does not own. Disabled
+					    is already the whole message. */}
 					<Button onClick={onNext} disabled={stalled}>
-						{blocked ? "Blocked" : "Next"}
+						Next
 					</Button>
 				</div>
 			</div>
