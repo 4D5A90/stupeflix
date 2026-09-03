@@ -1,6 +1,6 @@
 id: seerr
 name: Seerr
-description: Request portal — your users ask for a show, it downloads itself
+description: Request portal — your household asks, your downloaders take it from there
 category: requests
 defaultEnabled: false
 container: seerr

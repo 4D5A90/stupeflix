@@ -1,6 +1,6 @@
 id: household-vpn
 name: Household + VPN
-description: Everyone asks from their phone, it downloads itself, with a VPN for privacy
+description: A request portal, with the torrent client's traffic routed through your VPN provider
 services:
   - qbittorrent
   - prowlarr

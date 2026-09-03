@@ -1,6 +1,6 @@
 id: automatic
 name: Automatic
-description: It finds and files episodes and films on its own
+description: Your downloaders watch your indexers and file what arrives
 services:
   - qbittorrent
   - prowlarr

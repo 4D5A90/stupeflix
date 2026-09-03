@@ -1,6 +1,6 @@
 id: household
 name: Household
-description: Everyone asks from their phone, it downloads itself
+description: A request portal, so the household asks from a phone instead of asking you
 services:
   - qbittorrent
   - prowlarr
