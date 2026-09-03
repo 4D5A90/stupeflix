@@ -485,6 +485,32 @@ Vérifié en vrai avec un `transmission.yml` déposé : `POST /setup/complete` �
 gate CI vérifie en plus qu'un `supports:` ne nomme que des services existants,
 et de la bonne catégorie.
 
+## À ajouter — Wizarr
+
+<https://github.com/wizarrrr/wizarr> — l'invitation et l'accueil des utilisateurs
+d'un media server : on envoie un lien, la personne crée son compte Jellyfin ou
+Plex toute seule et arrive avec les bibliothèques déjà attribuées.
+
+Pourquoi ça complète bien la stack actuelle : Seerr répond à « comment ils
+demandent », mais rien ne répond encore à « comment ils obtiennent un compte ».
+Aujourd'hui c'est à la main dans Jellyfin, et c'est la seule étape du parcours
+qui reste artisanale.
+
+Ce que ça demandera, à vérifier au moment de le faire :
+
+- **Une nouvelle catégorie** — rien de ce qui existe ne convient. Ce sera le
+  premier template à en introduire une, donc l'occasion de traiter l'ordre des
+  catégories, aujourd'hui codé en dur dans `ServicesStep.tsx` alors qu'il décide
+  de ce qu'on voit avant de défiler.
+- **`requires: mediaServer`**, comme Seerr — il n'a rien à inviter sans.
+- Est-ce que son API permet de créer les invitations sans passer par son écran,
+  ou est-ce que le premier lancement reste un wizard navigateur comme Seerr en
+  Plex-only.
+- Une entrée dans les `stacks/` livrées, probablement dans `household`.
+
+Détails à revérifier avant de coder : je ne l'ai pas audité, je le note parce
+que tu me l'as signalé.
+
 ## Risques
 
 - La séquence de bootstrap Seerr est vérifiée dans le code de la v3.4.1 mais
