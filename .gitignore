@@ -3,9 +3,13 @@ dist/
 *.tsbuildinfo
 data/
 assets/
-docker-compose.yml
 storage/
 .DS_Store
+
+# The deployment compose file at the root IS tracked. The generated one lives
+# under `data/`, already covered above — a bare `docker-compose.yml` pattern
+# here would match at every level and silently untrack both.
+.env
 
 # Working notes: the plan, and the lessons from corrections. Local by design —
 # they are a scratchpad for whoever is mid-task, not part of the project.

@@ -1,0 +1,55 @@
+name: stupeflix-host
+
+services:
+  stupeflix:
+    build: .
+    image: stupeflix
+    container_name: stupeflix
+    ports:
+      - "3000:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${STUPEFLIX_ROOT:-/srv/stupeflix}:${STUPEFLIX_ROOT:-/srv/stupeflix}
+      - stupeflix-data:/data
+    environment:
+      STUPEFLIX_ROOT: ${STUPEFLIX_ROOT:-/srv/stupeflix}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Europe/Paris}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  npm:
+    profiles: ["proxy"]
+    image: jc21/nginx-proxy-manager:latest
+    container_name: stupeflix-npm
+    ports:
+      - "81:81"
+      # Needed by the `proxy` profile on its own; useless behind the tunnel.
+      # - "80:80"
+      # - "443:443"
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  cloudflared:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    container_name: stupeflix-cloudflared
+    command: tunnel --no-autoupdate run
+    environment:
+      # Not `:?` — Compose interpolates the file before it filters on profiles,
+      # so a required variable here would break `up -d` for everyone else.
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  stupeflix-data:
+  npm-data:
+  npm-letsencrypt:

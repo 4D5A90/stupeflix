@@ -1,8 +1,11 @@
 # Stupeflix
 
-- [Quick Start](#quick-start-docker)
+- [Quick Start](#quick-start)
+  - [Docker](#docker)
+  - [Docker Compose](#docker-compose)
   - [Windows](#windows)
   - [Alternating between the image and `pnpm dev`](#alternating-between-the-image-and-pnpm-dev)
+- [Exposing it on the internet](#exposing-it-on-the-internet)
 - [Development](#development)
   - [Tests](#tests)
 - [How it Works](#how-it-works)
@@ -20,9 +23,20 @@
 - [API](#api)
 - [Stack](#stack)
 
-## Quick Start (Docker)
+## Quick Start
 
-Only Docker is required. The image builds the API and the wizard itself.
+Only Docker is required — the image builds the API and the wizard itself. Both
+routes below produce the same container; Compose only spares you the flags and
+carries the optional exposure layer. Either way, open `http://localhost:3000`
+afterwards and follow the setup wizard.
+
+| Mount | Why |
+|-------|-----|
+| `/var/run/docker.sock` | Stupeflix drives the host Docker daemon to run your media stack |
+| `/srv/stupeflix` | Config, media and torrents. **Mounted at the same path inside**, so the bind mounts Stupeflix generates resolve on the host. Every path set in the wizard must live under it |
+| `stupeflix-data:/data` | SQLite database and generated `docker-compose.yml` |
+
+### Docker
 
 ```bash
 docker build -t stupeflix .
@@ -36,21 +50,20 @@ docker run -d --name stupeflix \
   stupeflix
 ```
 
-Open `http://localhost:3000` and follow the setup wizard.
-
-| Mount | Why |
-|-------|-----|
-| `/var/run/docker.sock` | Stupeflix drives the host Docker daemon to run your media stack |
-| `/srv/stupeflix` | Config, media and torrents. **Mounted at the same path inside**, so the bind mounts Stupeflix generates resolve on the host. Every path set in the wizard must live under it |
-| `stupeflix-data:/data` | SQLite database and generated `docker-compose.yml` |
-
 `--add-host` is Linux-only. Docker Desktop and OrbStack provide
 `host.docker.internal`. For another host directory, change both sides of the mount
 and pass `-e STUPEFLIX_ROOT=/your/path`.
 
+### Docker Compose
+
+```bash
+cp .env.example .env          # optional: host path, PUID/PGID, timezone
+docker compose up -d --build
+```
+
 ### Windows
 
-Run it from **inside WSL 2** the Linux Quick Start then works verbatim. Keep
+Run it from **inside WSL 2** — the Linux Quick Start then works verbatim. Keep
 `STUPEFLIX_ROOT` on the WSL 2 filesystem, **not** under `/mnt/c/...`: the daemon
 resolves that path a second time when creating the service containers, which only
 works for Linux paths it sees natively.
@@ -58,11 +71,14 @@ works for Linux paths it sees natively.
 From **PowerShell** or **Git Bash**: double the socket's leading slash
 (`-v //var/run/docker.sock:...`), one line only (`` ` `` continues in PowerShell,
 `^` in cmd), drop `--add-host`, and run the dev-sharing command from WSL 2.
+Compose sidesteps the first three, since none of it is typed on a command line.
 
 ### Alternating between the image and `pnpm dev`
 
-Both use the project `stupeflix`, so neither steals the other's containers. To
-share credentials and setup state too, point `/data` at the dev server's:
+Both drive the stack under the project `stupeflix`, so neither steals the other's
+containers. Stop whichever instance is running first — `docker compose down`, or
+`docker rm -f stupeflix` — since it holds the `stupeflix` container name. To share
+credentials and setup state too, point `/data` at the dev server's:
 
 ```bash
 docker run -d --name stupeflix \
@@ -87,6 +103,36 @@ every container.
 | `STUPEFLIX_COMPOSE_PROJECT` | `stupeflix` | Compose project name |
 | `PUID` / `PGID` | `1000` | Ownership applied to the service containers |
 | `PORT` | `3000` | HTTP port (API + wizard) |
+
+## Exposing it on the internet
+
+Two optional containers, one profile each, usable alone or together. Neither
+starts by default.
+
+| Profile | Container | How traffic gets in | Routing lives in |
+|---------|-----------|---------------------|------------------|
+| `proxy` | Nginx Proxy Manager | ports 80/443, forwarded on your router | NPM, on your machine |
+| `tunnel` | cloudflared | an outbound tunnel — nothing opened | the Cloudflare dashboard |
+| both | the pair | the tunnel | NPM |
+
+```bash
+docker compose --profile proxy --profile tunnel up -d
+```
+
+`proxy` without the tunnel also needs 80 and 443 uncommented in
+`docker-compose.yml` and forwarded on your router. Behind the tunnel they stay
+closed, and NPM publishes only its admin UI on 81.
+
+Cloudflare setup, once, in Zero Trust → Networks → Tunnels:
+
+1. Create a tunnel, copy its token into `.env` as `CLOUDFLARE_TUNNEL_TOKEN`.
+2. Add a public hostname. **With NPM**, one wildcard is enough:
+   `*.yourdomain.com` → `HTTP` → `npm:80`. **Without it**, add one per service,
+   pointing at `host.docker.internal:<port>`.
+
+With NPM, every subdomain afterwards is a proxy host (`http://localhost:81`, first
+login `admin@example.com` / `changeme`) forwarding to `host.docker.internal:<port>`.
+Certificates are handled at Cloudflare's edge, so those proxy hosts need no SSL.
 
 ## Development
 
