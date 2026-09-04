@@ -56,9 +56,17 @@ export function ServiceCard({
 
 	const style = statusStyles[service.status] ?? statusStyles.not_found;
 	const label = service.label ?? service.name;
-	// A headless service declares no port, so there is nothing to open
+	// A headless service declares no port, so there is nothing to open.
+	//
+	// The host comes from the page, not from a constant: a service is reachable
+	// wherever the dashboard was reached — localhost from this machine, the LAN
+	// address from another one. Hardcoding `localhost` sent every remote browser
+	// to itself, so the link was dead from any other computer.
+	//
+	// The scheme stays http: the services publish plain ports, and borrowing an
+	// https page's scheme would point at a port that speaks no TLS.
 	const url = service.port
-		? `http://localhost:${service.port}${service.webUiPath ?? ""}`
+		? `http://${window.location.hostname}:${service.port}${service.webUiPath ?? ""}`
 		: null;
 	const secret =
 		credentials?.[service.name]?.pass ?? credentials?.[service.name]?.token;
