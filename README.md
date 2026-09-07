@@ -175,7 +175,7 @@ Ready-made combinations, offered in the wizard's Services step. They live in
 templates/*.yml ─┐
                  ├─► registry ──► wizard ──► generated docker-compose.yml ──► compose up
 stacks/*.yml ────┘                 │                                              │
-                                   └────────► setup steps ◄──────────────────────┘
+                                   └────────► setup steps ◄───────────────────────┘
                                               (each service's own API)
 ```
 
