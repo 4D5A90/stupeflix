@@ -1,0 +1,288 @@
+# Writing a service template
+
+A template owns everything about its service: container, files, setup pipeline,
+dashboard actions. Drop a `.yml` in [`templates/`](../templates), keep `pnpm test`
+green, and it appears in the wizard. No file under `packages/api/src` names a service.
+
+[Anatomy](#anatomy) ·
+[Setup steps](#setup-steps) ·
+[Requirements](#requirements) ·
+[Networking](#networking) ·
+[Variables](#variables) ·
+[`foreach`](#foreach) ·
+[`api_call` options](#api_call-options) ·
+[Credential rules](#credential-rules) ·
+[Action icons](#action-icons)
+
+## Anatomy
+
+```yaml
+id: myservice
+name: My Service
+description: What it does
+category: mediaServer
+defaultEnabled: false
+container: myservice        # compose service name, and the container_name below
+port: 8080                  # its web UI; omit it for a headless service
+
+# Merged verbatim into the generated compose file. A template may declare
+# several containers (a sidecar database, say).
+compose:
+  myservice:
+    image: example/myservice:latest
+    container_name: myservice
+    environment:
+      - PUID={{env.PUID}}
+      - TZ={{env.TZ}}
+      - API_KEY={{internal.api_key}}
+    volumes:
+      - "{{paths.config}}/myservice:/config"
+      - "{{paths.media}}:/media"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+# Secrets minted once and kept in internal.<id>.<key> across reconfigures
+generate:
+  - key: api_key
+    type: hex        # or uuid
+    length: 16       # bytes
+
+# Shown in the wizard and on the install screen, for what setup cannot do for
+# the user. Plain sentences, rendered as text, not markdown.
+notes:
+  - Finish the last step in the service's own UI.
+
+# A capability, never a peer's name. Optional and inert when unmatched.
+network:
+  join: vpn
+
+dirs:                # created under paths.config before the container boots
+  - myservice/cache
+
+reset:               # wiped on reconfigure, to replay a startup wizard
+  dirs:
+    - myservice
+
+# Fields the wizard renders. `type` is text, password, email or select.
+credentials:
+  - key: user
+    type: text
+    label: Username
+    default: admin              # prefilled, and correct as-is
+  - key: token
+    type: password
+    label: API Token
+    placeholder: 10.64.0.1/32   # shape only, when a default would be wrong
+  - key: region
+    type: select                # options belong here, never to the frontend
+    label: Region
+    default: eu
+    options:
+      - { value: eu, label: Europe }
+      - { value: us, label: United States }
+
+setup:
+  - name: wait_ready
+    type: wait_ready
+    label: Wait for API
+    url: http://localhost:8080/health
+
+  - name: configure
+    type: api_call
+    label: Configure service
+    url: http://localhost:8080/api/setup
+    method: POST
+    body:
+      username: "{{credentials.user}}"
+      password: "{{credentials.pass}}"
+
+# Polled and shown on the dashboard card. Read server-side, so the URL never
+# reaches the browser; anything that fails shows as a dash.
+info:
+  - name: exit_ip
+    label: Exit IP
+    url: http://localhost:8000/v1/publicip/ip
+    extract: public_ip      # dotted path into the JSON; omit for the whole body
+    refresh: 300            # seconds, default 60
+
+# Buttons the dashboard offers, POSTed to /services/:name/actions/:action.
+actions:
+  scan:
+    name: scan
+    label: Scan libraries
+    icon: refresh          # optional, see Action icons
+    type: api_call
+    url: http://localhost:8080/api/refresh
+    method: POST
+```
+
+> [!NOTE]
+> `actions:` does something and returns nothing. `info:` is something and does
+> nothing. Never merge the two.
+
+## Setup steps
+
+| Type | Description |
+|------|-------------|
+| `wait_ready` | Poll `url` until the service responds. `match`: keep polling until the body matches a regex |
+| `api_call` | HTTP request with retry, cookies, tokens, headers. `skipIf: {url, match}` probes first and skips when the work is already done |
+| `config_file` | Write `content` to `file` under `paths.config` (`skipIfExists`, default true) |
+| `extract_from_logs` | Pull a value out of container logs via regex |
+| `extract_from_config` | Pull a value out of a config file via regex |
+
+`config_file` steps run **before** `docker compose up` — a container reads its config
+at boot. Every other step runs after. The phase comes from the step type.
+
+Any step takes `if:`, which must resolve to `"true"`. A step that will not run never
+enters the status list either:
+
+```yaml
+- name: register_in_prowlarr
+  type: api_call
+  if: "{{services.prowlarr.enabled}}"
+```
+
+A list means all of them must hold:
+
+```yaml
+  if:
+    - "{{services.jellyfin.enabled}}"
+    - "{{services.sonarr.enabled}}"
+```
+
+## Requirements
+
+Declared by **category**, never by service name.
+
+```yaml
+requires:
+  - category: torrentClient
+    supports: [qbittorrent]     # optional: which members actually count
+    reason: Sonarr hands every download to a client — install one first.
+recommends:
+  - category: indexer
+    reason: Without an indexer, Sonarr has nothing to search.
+```
+
+| Key | Effect |
+|-----|--------|
+| `requires` | Blocks: the wizard refuses to advance, `POST /install/:name` answers 409 |
+| `recommends` | Warns only |
+| `supports` | Narrows the category to the peers this template was actually built against |
+| `reason` | The sentence the user reads |
+
+Use `supports` only when the wiring is not interchangeable: Sonarr's download-client
+step sends a qBittorrent-shaped body, so another client would be a different step.
+
+## Networking
+
+A service routes its traffic through another's tunnel by declaring a capability:
+
+```yaml
+# gluetun.yml                  # qbittorrent.yml
+network: { provides: vpn }     network: { join: vpn }
+```
+
+Both enabled, the joiner gives up its own network stack:
+
+```yaml
+gluetun:
+  ports: ["8001:8000", "8080:8080", "6881:6881"]   # the joiner's ports move here
+qbittorrent:
+  network_mode: "service:gluetun"
+  depends_on: { gluetun: { condition: service_healthy } }
+  # none of its own: a shared namespace cannot publish
+```
+
+With no provider enabled, a `join` is inert and the block renders verbatim.
+
+- **Host ports are unchanged**, only their owner — URLs and `wait_ready` on
+  `localhost:<port>` keep working.
+- **A joined container loses its DNS name.** Address it with `{{host.<service>}}`, in
+  `compose:` and in setup steps alike.
+- **A provider needs a `healthcheck`** — the joiner waits on `service_healthy`.
+- **Refused on a joiner**: `networks`, `hostname`, `links`, `dns`, `dns_search`,
+  `extra_hosts`. They belong to the shared namespace.
+
+## Variables
+
+| Variable | Source |
+|----------|--------|
+| `{{credentials.key}}` | Credential values from the wizard |
+| `{{internal.key}}` | Generated secrets, and values stored by previous steps |
+| `{{paths.config}}` `{{paths.media}}` `{{paths.torrents}}` | Host paths from the wizard |
+| `{{env.PUID}}` `{{env.PGID}}` `{{env.TZ}}` | Host wiring |
+| `{{host.<service>}}` | The container a peer must be addressed by (see Networking) |
+| `{{library.name}}` `{{library.type}}` | Current library in a `foreach: libraries` step |
+| `{{libraries.<type>_json}}` | All libraries of a type, as JSON |
+| `{{internal.<service>.<key>}}` | **Another** service's secret |
+| `{{credentials.<service>.<key>}}` | **Another** service's credential |
+| `{{services.<service>.enabled}}` | `"true"` / `"false"` |
+
+The last three reach across services: Sonarr reads `{{internal.prowlarr.api_key}}`. An
+entry resolving to empty (`FOO=`) is dropped from the compose file, so a blank optional
+credential falls back to the image's default.
+
+## `foreach`
+
+Repeats a step over a collection. `libraries` is the only source implemented, and
+`foreach: libraries` is shorthand for `foreach: { source: libraries }`. Every option
+lives **inside** `foreach`.
+
+```yaml
+- name: root_folder
+  type: api_call
+  foreach:
+    source: libraries
+    type: tvshows          # keep only libraries of that type
+  body:
+    path: "/media/{{library.name}}"
+```
+
+`map` supplies per-type values, injected as `{{library.<key>}}`:
+
+```yaml
+  foreach:
+    source: libraries
+    map:
+      movies:  { content_type: movie, agent: tv.plex.agents.movie }
+      tvshows: { content_type: show,  agent: tv.plex.agents.series }
+```
+
+## `api_call` options
+
+| Option | Description |
+|--------|-------------|
+| `contentType: form` | Send body as `application/x-www-form-urlencoded` |
+| `storeCookie` / `useCookie` | Save the response cookie, send it on later calls |
+| `storeToken: AccessToken` | Store a JSON field of the response as the token |
+| `useToken: true` | Send the stored token as `Authorization` |
+| `headers: {}` | Custom request headers |
+| `retryOn: [503]` | Status codes worth retrying (default `[503]`) |
+| `maxRetries: 10` | Attempts (default `10`) |
+| `ignoreStatus: [400]` | Treat these as success |
+| `merge: true` | Read the resource first, lay `body` over it, send the whole thing back |
+
+## Credential rules
+
+```yaml
+credentials:
+  - key: pass
+    type: password
+    label: Password
+    rules:
+      minLength: 6
+      maxLength: 50
+      pattern: "^[a-zA-Z0-9]+$"
+      message: Custom error message
+```
+
+## Action icons
+
+Optional and **case-sensitive**; an unknown name falls back to a generic glyph.
+`src/templates.test.ts` reads the list out of
+[`ActionIcon.tsx`](../packages/web/src/components/ui/ActionIcon.tsx).
+
+`refresh` (spins while running) · `play` · `stop` · `power` · `download` · `upload` ·
+`trash` · `search` · `key` · `open` · `check` · `cog`
