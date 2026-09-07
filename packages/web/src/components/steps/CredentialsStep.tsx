@@ -16,7 +16,9 @@ interface CredentialsStepProps {
 	onBack: () => void;
 }
 
-function generatePassword(length = 8): string {
+const PASSWORD_LENGTH = 20;
+
+function generatePassword(length = PASSWORD_LENGTH): string {
 	const chars = "abcdefghijkmnpqrstuvwxyz23456789";
 	const array = new Uint8Array(length);
 	crypto.getRandomValues(array);
@@ -149,11 +151,13 @@ export function CredentialsStep({
 												<button
 													type="button"
 													onClick={() => {
-														const minLen = field.rules?.minLength ?? 8;
+														const minLen = field.rules?.minLength ?? 0;
 														updateCredential(
 															svc.id,
 															field.key,
-															generatePassword(Math.max(minLen, 8)),
+															generatePassword(
+																Math.max(minLen, PASSWORD_LENGTH),
+															),
 														);
 													}}
 													className="mb-0.5 p-2 text-gray-400 hover:text-brand-400 transition-colors"
