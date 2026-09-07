@@ -34,6 +34,7 @@ COPY --from=build /src/packages/api/migrations ./migrations
 COPY --from=build /src/packages/web/dist ./public
 COPY --from=build /src/sql-wasm.wasm ./sql-wasm.wasm
 COPY templates ./templates
+COPY stacks ./stacks
 
 ENV NODE_ENV=production \
     PORT=3000 \
@@ -44,6 +45,7 @@ ENV NODE_ENV=production \
     STUPEFLIX_COMPOSE_FILE=/data/docker-compose.yml \
     STUPEFLIX_COMPOSE_PROJECT=stupeflix \
     STUPEFLIX_TEMPLATES_DIR=/app/templates \
+    STUPEFLIX_STACKS_DIR=/app/stacks \
     STUPEFLIX_WEB_DIR=/app/public \
     STUPEFLIX_SQL_WASM=/app/sql-wasm.wasm \
     STUPEFLIX_SERVICE_HOST=host.docker.internal
