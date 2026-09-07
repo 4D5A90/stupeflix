@@ -116,20 +116,28 @@ the container.
 
 ### Remote access
 
-Two optional containers, one Compose profile each, off by default.
+Stupeflix and the services it starts are reachable on your own network only. Two
+optional containers put them on a domain; neither starts unless you ask for it.
 
-| Profile | Container | How traffic gets in |
-|---------|-----------|---------------------|
-| `proxy` | Nginx Proxy Manager | Ports 80/443, forwarded on your router |
-| `tunnel` | cloudflared | An outbound tunnel — nothing opened |
+**Cloudflare Tunnel** (`--profile tunnel`) — an outbound connection to Cloudflare, so
+nothing is opened on your router and the routing lives in Cloudflare's dashboard.
 
-```bash
-docker compose --profile tunnel up -d      # or --profile proxy, or both
-```
+1. Create a [remotely-managed tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/),
+   copy its token into `CLOUDFLARE_TUNNEL_TOKEN` in `.env`.
+2. Add one public hostname per service, pointing at `host.docker.internal:<port>`.
+3. `docker compose --profile tunnel up -d`
 
-`tunnel` reads `CLOUDFLARE_TUNNEL_TOKEN` from `.env`. `proxy` alone also needs 80 and
-443 uncommented in [`docker-compose.yml`](docker-compose.yml) and forwarded on your
-router.
+**Nginx Proxy Manager** (`--profile proxy`) — a reverse proxy you host yourself: your
+router forwards 80/443 to it, and it terminates TLS with Let's Encrypt certificates.
+
+1. Uncomment 80 and 443 in [`docker-compose.yml`](docker-compose.yml), forward them on
+   your router.
+2. `docker compose --profile proxy up -d`
+3. In its admin UI on `:81` ([first login](https://nginxproxymanager.com/setup/)), add
+   one proxy host per subdomain, forwarding to `host.docker.internal:<port>`.
+
+**Both** — point a single wildcard hostname `*.example.com` at `npm:80` in the tunnel:
+80 and 443 stay closed on your router, and NPM handles every subdomain from there.
 
 ## What's inside
 
