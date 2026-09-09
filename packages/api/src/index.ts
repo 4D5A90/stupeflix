@@ -16,6 +16,7 @@ import {
 } from "./lib/env.js";
 import { getLibraryStats } from "./lib/library-stats.js";
 import {
+	SKIPPED,
 	getServiceMetas,
 	getTemplate,
 	getTemplateDefaults,
@@ -146,7 +147,9 @@ api.post("/services/:name/actions/:action", async (c) => {
 		return c.json({ error: "Action not supported for this service" }, 400);
 
 	const err = await runSetupStep(step, db, tpl.id);
-	return err ? c.json({ error: err }, 400) : c.json({ success: true });
+	return err && err !== SKIPPED
+		? c.json({ error: err }, 400)
+		: c.json({ success: true });
 });
 
 api.route("/settings", settingsRoutes(db));

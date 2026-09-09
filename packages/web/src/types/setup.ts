@@ -136,11 +136,24 @@ export interface SetupConfig {
 	services: Record<string, { enabled: boolean }>;
 }
 
-export type StepStatus = "pending" | "in_progress" | "completed" | "failed";
+/**
+ * `skipped` is a success that sent nothing: the step's probe found the work
+ * already done. It counts as done, and reads as done — the distinction only
+ * exists so a screen can say "already configured" instead of claiming a call
+ * that never happened.
+ */
+export type StepStatus =
+	| "pending"
+	| "in_progress"
+	| "completed"
+	| "skipped"
+	| "failed";
 
 export interface SetupStatus {
 	global: StepStatus;
 	steps: Record<string, StepStatus>;
+	/** What to call each step, straight from the template's `label:`. */
+	labels: Record<string, string>;
 	error: string | null;
 }
 

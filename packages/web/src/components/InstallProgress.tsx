@@ -8,11 +8,6 @@ interface InstallProgressProps {
 	onDone: () => void;
 }
 
-function formatLabel(stepKey: string, serviceId: string): string {
-	const name = stepKey.replace(`${serviceId}.`, "");
-	return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 export function InstallProgress({
 	serviceId,
 	serviceName,
@@ -20,11 +15,13 @@ export function InstallProgress({
 }: InstallProgressProps) {
 	const { data: status, isLoading } = useSetupStatus(true);
 
+	// The label comes from the template's `label:`, served with the status —
+	// title-casing the key here gave "Download Client" for "Connect qBittorrent".
 	const serviceSteps = Object.entries(status?.steps ?? {})
 		.filter(([key]) => key.startsWith(`${serviceId}.`))
 		.map(([key, stepStatus]) => ({
 			key,
-			label: formatLabel(key, serviceId),
+			label: status?.labels[key] ?? key,
 			status: stepStatus,
 		}));
 

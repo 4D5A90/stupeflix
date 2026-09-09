@@ -215,6 +215,16 @@ src/
     └── services.ts       # /services/* routes, incl. reconfigure and DELETE
 ```
 
+`GET /setup/status` returns `steps` **and `labels`** — the label each template
+declares for the step. The frontend has no other way to learn that `create_user`
+is "Create admin user"; deriving it from the key gave "Create User".
+
+A step whose `skipIf` probe finds the work already done is recorded `skipped`,
+not `completed`. It counts as done everywhere, but the two are not the same
+event: reporting a skip as a success is what let a stale peer hide behind a green
+tick, with no request ever sent. `runSetupStep` returns the `SKIPPED` symbol for
+it — checked before the truthiness test, since a symbol is truthy.
+
 `setup.ts` drives `setup-runner.ts` directly; installing, reconfiguring and
 removing **one** service all go through `lib/service-install.ts`. Keep that
 orchestration there rather than duplicating it into a route — a first install and

@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +28,7 @@ import {
 	stepEnabled,
 	stepKeys,
 	stepPhase,
+	stepRuns,
 } from "./setup-runner.js";
 
 const FIXTURES = fileURLToPath(new URL("../test/fixtures", import.meta.url));
@@ -109,6 +117,18 @@ describe("stepKeys", () => {
 		expect(stepKeys(db, template("alpha"))).toContain(
 			"alpha.add_library_Anime",
 		);
+	});
+});
+
+describe("stepRuns", () => {
+	it("carries the label the template declares, foreach included", () => {
+		const db = configuredDb();
+		const runs = stepRuns(db, template("beta"));
+		expect(runs.length).toBeGreaterThan(0);
+		for (const run of runs) {
+			expect(run.label).toBeTruthy();
+			expect(run.label).not.toBe(run.key);
+		}
 	});
 });
 
@@ -331,6 +351,21 @@ describe("runTemplateSteps", () => {
 		await runTemplateSteps(db, guarded, "pre_up");
 		expect(existsSync(join(dir, "skipped.conf"))).toBe(false);
 		expect(db.get("setup.status.alpha.optional")).toBeNull();
+	});
+
+	// A skip is a success that sent nothing. Reported as `completed`, it lets a
+	// screen tick a step green while no request ever left — which is what made
+	// stale peers impossible to spot.
+	it("records a step that had nothing to do as skipped", async () => {
+		mkdirSync(join(dir, "alpha"), { recursive: true });
+		writeFileSync(join(dir, "alpha/alpha.conf"), "hand written");
+
+		await runTemplateSteps(db, preUpOnly, "pre_up");
+
+		expect(db.get("setup.status.alpha.config")).toBe("skipped");
+		expect(readFileSync(join(dir, "alpha/alpha.conf"), "utf-8")).toBe(
+			"hand written",
+		);
 	});
 
 	it("marks the failing step and stops, so the UI can point at it", async () => {

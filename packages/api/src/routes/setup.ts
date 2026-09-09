@@ -11,6 +11,7 @@ import {
 	createMediaDirs,
 	createTemplateDirs,
 } from "../lib/helpers.js";
+import { ownershipConflict } from "../lib/instance.js";
 import { debug, error, log } from "../lib/logger.js";
 import { checkRequirements, requirementMessage } from "../lib/requirements.js";
 import { getEnabledTemplates, getTemplates } from "../lib/service-registry.js";
@@ -45,6 +46,19 @@ function getStatus(db: Db): Record<string, StepStatus> {
 		result[step] = (db.get(`setup.status.${step}`) as StepStatus) || "pending";
 	}
 	return result;
+}
+
+/**
+ * What to call each step on screen. The templates already carry it — without
+ * this the frontend can only title-case the key, and shows "Create User" where
+ * the template says "Create admin user".
+ */
+function getLabels(db: Db): Record<string, string> {
+	const labels: Record<string, string> = { ...GLOBAL_STEP_LABELS };
+	for (const tpl of getEnabledTemplates(db)) {
+		for (const run of stepRuns(db, tpl)) labels[run.key] = run.label;
+	}
+	return labels;
 }
 
 function resetStatus(db: Db) {
@@ -175,6 +189,10 @@ export function setupRoutes(db: Db) {
 				400,
 			);
 		}
+
+		// Refused before anything is written, so a wrong window changes nothing
+		const conflict = await ownershipConflict(db);
+		if (conflict) return c.json({ error: conflict }, 409);
 
 		if (body.paths) applyPaths(db, body.paths);
 		if (body.libraries) applyLibraries(db, body.libraries);

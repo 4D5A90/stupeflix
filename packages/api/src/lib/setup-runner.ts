@@ -5,14 +5,25 @@ import type {
 	ServiceTemplate,
 	SetupStepDef,
 } from "./service-registry.js";
-import { runSetupStep } from "./service-registry.js";
+import { SKIPPED, runSetupStep } from "./service-registry.js";
 import {
 	buildVars,
 	getLibraries,
 	resolveTemplateVars,
 } from "./template-vars.js";
 
-export type StepStatus = "pending" | "in_progress" | "completed" | "failed";
+/**
+ * `skipped` is a success that sent nothing: the step's `skipIf` probe found the
+ * work already done. It reads as done everywhere, but the distinction is what
+ * lets a screen say "already configured" instead of claiming a call it never
+ * made.
+ */
+export type StepStatus =
+	| "pending"
+	| "in_progress"
+	| "completed"
+	| "skipped"
+	| "failed";
 
 /**
  * A container reads its config file at boot, so the steps that write one run
@@ -91,11 +102,25 @@ function expandStep(
 		});
 }
 
-/** Every status key this template contributes, in display order. */
-export function stepKeys(db: Db, tpl: ServiceTemplate): string[] {
+/**
+ * Every status key this template contributes, with the label its template
+ * declares — the frontend has no other way to learn that `create_user` is
+ * "Create admin user".
+ */
+export function stepRuns(
+	db: Db,
+	tpl: ServiceTemplate,
+): { key: string; label: string }[] {
 	return tpl.setup
 		.filter((step) => stepEnabled(db, tpl, step))
-		.flatMap((step) => expandStep(db, tpl, step).map((run) => run.key));
+		.flatMap((step) =>
+			expandStep(db, tpl, step).map(({ key, label }) => ({ key, label })),
+		);
+}
+
+/** Every status key this template contributes, in display order. */
+export function stepKeys(db: Db, tpl: ServiceTemplate): string[] {
+	return stepRuns(db, tpl).map((run) => run.key);
 }
 
 /** Runs one phase of a template's setup. Throws on the first failing step. */
@@ -115,6 +140,13 @@ export async function runTemplateSteps(
 			log(`Running ${run.label}...`);
 
 			const err = await runSetupStep(step, db, tpl.id, run.vars);
+			// Checked before the truthiness test below: a symbol is truthy, and a
+			// skip is not a failure.
+			if (err === SKIPPED) {
+				setStepStatus(db, run.key, "skipped");
+				log(`${run.label} skipped: already configured`);
+				continue;
+			}
 			if (err) {
 				setStepStatus(db, run.key, "failed");
 				throw new Error(`${run.label}: ${err}`);

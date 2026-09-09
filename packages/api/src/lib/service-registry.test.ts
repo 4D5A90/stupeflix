@@ -21,6 +21,7 @@ import type { Db } from "../db.js";
 import { configuredDb } from "../test/fake-db.js";
 import { stepOfType, template } from "../test/helpers.js";
 import {
+	SKIPPED,
 	ensureSecrets,
 	getEnabledTemplates,
 	getGeneratedConfigFiles,
@@ -164,7 +165,9 @@ describe("runSetupStep: config_file", () => {
 	it("leaves an existing file alone by default", async () => {
 		writeFileSync(join(dir, "existing.conf"), "hand written");
 		const custom = { ...step, file: "existing.conf", content: "generated" };
-		expect(await runSetupStep(custom, db, "alpha")).toBeNull();
+		// Not null: nothing was written, and a caller must be able to tell that
+		// apart from a file this step produced.
+		expect(await runSetupStep(custom, db, "alpha")).toBe(SKIPPED);
 		expect(readFileSync(join(dir, "existing.conf"), "utf-8")).toBe(
 			"hand written",
 		);
@@ -289,7 +292,7 @@ describe("runSetupStep: skipIf", () => {
 		);
 		vi.stubGlobal("fetch", fetchMock);
 
-		await expect(runSetupStep(step, db, "alpha")).resolves.toBeNull();
+		await expect(runSetupStep(step, db, "alpha")).resolves.toBe(SKIPPED);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		// The probe is a GET; a POST here would mean a second library was created
 		expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();

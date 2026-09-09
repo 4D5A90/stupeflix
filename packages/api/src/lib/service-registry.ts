@@ -457,12 +457,23 @@ function stepHeaders(
 	return headers;
 }
 
+/**
+ * A step that had nothing to do: its probe found the work already done, so
+ * nothing was sent. Distinct from `null` on purpose — reporting a skip as a
+ * success is what makes a stale peer invisible: the screen ticks "Connect
+ * qBittorrent" green while no request ever left.
+ */
+export const SKIPPED = Symbol("skipped");
+
+/** An error message, `SKIPPED`, or `null` when the step really ran. */
+export type StepOutcome = string | typeof SKIPPED | null;
+
 export async function runSetupStep(
 	step: SetupStepDef,
 	db: Db,
 	serviceId: string,
 	extraVars?: Record<string, string>,
-): Promise<string | null> {
+): Promise<StepOutcome> {
 	const vars = {
 		...buildVars(db, serviceId),
 		// A step configures one service to reach another, so the address it writes
@@ -486,7 +497,7 @@ export async function runSetupStep(
 			});
 			if (res.ok && new RegExp(pattern).test(await res.text())) {
 				debug(`Skipping ${step.name}: ${probe} already matches /${pattern}/`);
-				return null;
+				return SKIPPED;
 			}
 		} catch {
 			// Probe unreachable: run the step and let it report its own failure
@@ -611,7 +622,7 @@ export async function runSetupStep(
 			);
 			if (step.skipIfExists !== false && existsSync(target)) {
 				debug(`${step.file} already exists, skipping`);
-				return null;
+				return SKIPPED;
 			}
 			try {
 				mkdirSync(dirname(target), { recursive: true });
