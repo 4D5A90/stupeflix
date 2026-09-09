@@ -1,6 +1,7 @@
 id: household
 name: Household
 description: A request portal, so the household asks from a phone instead of asking you
+emoji: "🏠"
 services:
   - qbittorrent
   - prowlarr

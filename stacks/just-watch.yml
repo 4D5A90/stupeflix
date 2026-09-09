@@ -1,6 +1,7 @@
 id: just-watch
 name: Just watch
 description: A torrent client and a media server, wired together
+emoji: "🍿"
 services:
   - qbittorrent
   - jellyfin

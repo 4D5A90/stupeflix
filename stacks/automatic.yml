@@ -1,9 +1,0 @@
-id: automatic
-name: Automatic
-description: Your downloaders watch your indexers and file what arrives
-services:
-  - qbittorrent
-  - prowlarr
-  - sonarr
-  - radarr
-  - jellyfin

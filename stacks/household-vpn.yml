@@ -1,6 +1,7 @@
 id: household-vpn
 name: Household + VPN
 description: A request portal, with the torrent client's traffic routed through your VPN provider
+emoji: "🛡️"
 services:
   - qbittorrent
   - prowlarr
