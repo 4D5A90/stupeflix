@@ -94,12 +94,34 @@ setup:
       Username: "{{credentials.user}}"
       Pw: "{{credentials.pass}}"
 
+  # The login above yields a session token, which expires — and once it has,
+  # every later call fails 401 in silence. An API key does not expire, so it is
+  # minted here while that session is still good, and everything after setup
+  # uses it instead. A reconfigure mints a second one rather than reusing it;
+  # both are valid, and Items.0 stays a key this template created.
+  - name: create_api_key
+    label: Create an API key
+    type: api_call
+    url: http://localhost:8096/Auth/Keys?App=Stupeflix
+    method: POST
+    useToken: true
+
+  - name: store_api_key
+    label: Store the API key
+    type: api_call
+    url: http://localhost:8096/Auth/Keys
+    method: GET
+    useToken: true
+    storeToken: Items.0.AccessToken
+    storeAs: api_key
+
   - name: scan_libraries
     label: Scan libraries
     type: api_call
     url: http://localhost:8096/Library/Refresh
     method: POST
-    useToken: true
+    headers:
+      X-Emby-Token: "{{internal.api_key}}"
 
 actions:
   scan:
@@ -109,5 +131,6 @@ actions:
     type: api_call
     url: http://localhost:8096/Library/Refresh
     method: POST
-    useToken: true
+    headers:
+      X-Emby-Token: "{{internal.api_key}}"
     maxRetries: 0

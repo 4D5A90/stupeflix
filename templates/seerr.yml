@@ -45,6 +45,15 @@ compose:
 dirs:
   - seerr
 
+# Seerr caches what it learns about its peers — each one's API key, and
+# Jellyfin's server id — inside its own settings. None of that survives a
+# reconfigure: the keys are reminted and Jellyfin's reset gives it a new
+# identity, so a settings file kept from the previous install points at servers
+# that no longer answer. It has to be rebuilt by the steps below, not preserved.
+reset:
+  dirs:
+    - seerr
+
 credentials:
   - key: email
     type: email

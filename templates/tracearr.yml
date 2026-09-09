@@ -1,0 +1,156 @@
+id: tracearr
+name: Tracearr
+description: Watch history and playback statistics across your media servers
+category: stats
+defaultEnabled: false
+container: tracearr
+port: 3005
+
+# Tracearr detects nothing on the network. `POST /api/v1/auth/jellyfin/connect-api-key`
+# does exist and takes a session cookie, so the connection could be automated —
+# but it wants a real Jellyfin API key, and the token stored by jellyfin.yml's
+# login is refused ("Invalid token") and cannot mint one either (POST /Auth/Keys
+# answers 401). Automating this means having Jellyfin create a key during its own
+# setup, the way Prowlarr's key already reaches Sonarr. Until then, by hand.
+notes:
+  - Open Tracearr and add your media server by hand — it does not detect
+    anything on the network. Jellyfin answers at http://jellyfin:8096 and Plex
+    at http://plex:32400 from inside the stack, and each wants its own API key,
+    taken from that server's own settings.
+  - Sign in with the address and password given here — Stupeflix creates that
+    administrator account for you on the first install.
+
+requires:
+  - category: mediaServer
+    reason: Tracearr reports on what a media server played — install Jellyfin
+      or Plex first.
+
+# The published image reads all three from the environment and starts without
+# them, on secrets it prints and forgets. Minting them here keeps a restart from
+# signing out every session.
+generate:
+  - key: jwt_secret
+    type: hex
+    length: 32
+  - key: cookie_secret
+    type: hex
+    length: 32
+  - key: db_password
+    type: hex
+    length: 16
+
+compose:
+  tracearr:
+    image: ghcr.io/connorgallopo/tracearr:latest
+    container_name: tracearr
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - TZ={{env.TZ}}
+      - DATABASE_URL=postgres://tracearr:{{internal.db_password}}@tracearr-db:5432/tracearr
+      - REDIS_URL=redis://tracearr-redis:6379
+      - JWT_SECRET={{internal.jwt_secret}}
+      - COOKIE_SECRET={{internal.cookie_secret}}
+    volumes:
+      - "{{paths.config}}/tracearr/backup:/data/backup"
+    ports:
+      - "3005:3000"
+    # Both are this template's own, so the wait costs nothing at first boot and
+    # spares Tracearr a crash loop against a database still running initdb.
+    depends_on:
+      tracearr-db:
+        condition: service_healthy
+      tracearr-redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # TimescaleDB rather than plain Postgres: Tracearr stores playback sessions as
+  # a hypertable, and the image carries the extension its migrations expect.
+  tracearr-db:
+    image: timescale/timescaledb-ha:pg18.4-ts2.29.1
+    container_name: tracearr-db
+    shm_size: 512mb
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    command: postgres -c timescaledb.license=timescale -c timescaledb.telemetry_level=off -c max_locks_per_transaction=4096
+    environment:
+      - POSTGRES_USER=tracearr
+      - POSTGRES_PASSWORD={{internal.db_password}}
+      - POSTGRES_DB=tracearr
+    # Named, not a bind mount: a PGDATA is opaque, it is never edited by hand and
+    # does not survive being copied between Postgres versions. Docker owns the
+    # permissions, which is what spares this a PUID that does not match uid 1000.
+    volumes:
+      - tracearr_postgres:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracearr"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  tracearr-redis:
+    image: redis:8-alpine
+    container_name: tracearr-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - tracearr_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+# Only the backup directory: it is the one thing here a human ever opens, and
+# the reason the engines' own storage can go to named volumes without losing
+# anything worth keeping — Tracearr writes its dumps in there.
+dirs:
+  - tracearr
+  - tracearr/backup
+
+volumes:
+  tracearr_postgres:
+  tracearr_redis:
+
+credentials:
+  - key: email
+    type: email
+    label: Admin Email
+    placeholder: you@example.com
+  - key: password
+    type: password
+    label: Admin Password
+    rules:
+      minLength: 8
+      message: Must be at least 8 characters
+
+setup:
+  - name: wait_ready
+    label: Wait for Tracearr
+    type: wait_ready
+    url: http://localhost:3005/health
+
+  # Sign-up is open until the first account exists, so this closes the window
+  # rather than leaving it to whoever opens the page first. A second run answers
+  # 400 USERNAME_IS_ALREADY_TAKEN, which is the state this step wants anyway —
+  # the field's own minLength keeps a short password from reaching the same code.
+  - name: create_admin
+    label: Create the administrator account
+    type: api_call
+    url: http://localhost:3005/api/v1/auth/sign-up/email
+    method: POST
+    # A install answered 403 MISSING_OR_NULL_ORIGIN here — the auth layer's CSRF
+    # check, which a browser satisfies for free and an api_call does not. A fresh
+    # instance does not reproduce it, so this header is the mitigation rather
+    # than a understood cause: it is accepted either way, and costs nothing.
+    headers:
+      Origin: http://localhost:3005
+    body:
+      name: admin
+      username: admin
+      email: "{{credentials.email}}"
+      password: "{{credentials.password}}"
+    ignoreStatus: [400]
