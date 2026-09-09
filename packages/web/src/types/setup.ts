@@ -41,6 +41,7 @@ export interface Stack {
 	id: string;
 	name: string;
 	description: string;
+	emoji?: string;
 	services: string[];
 }
 
@@ -125,6 +126,12 @@ export interface SetupConfig {
 		torrents: string;
 	};
 	libraries: Library[];
+	/**
+	 * Asked once, optional, and never sent anywhere on its own: it only seeds the
+	 * `email` credentials the templates declare, which are otherwise the same
+	 * address typed as many times as there are services asking for it.
+	 */
+	email?: string;
 	credentials: Record<string, Record<string, string>>;
 	services: Record<string, { enabled: boolean }>;
 }
@@ -138,6 +145,63 @@ export interface SetupStatus {
 }
 
 export type StepId = "paths" | "credentials" | "services" | "progress";
+
+/**
+ * 32 unambiguous characters — no `l`, `o`, `0` or `1`, since these get read off a
+ * screen and typed into a TV remote. The alphabet is a power of two on purpose:
+ * 256 divides by 32 exactly, so the modulo below introduces no bias.
+ *
+ * 20 of them is ~100 bits. The services this fills in are reachable from the
+ * internet once a tunnel is up, and a login page is an online guessing oracle,
+ * so the length has to survive that rather than merely look random.
+ */
+export const PASSWORD_LENGTH = 20;
+
+export function generatePassword(length = PASSWORD_LENGTH): string {
+	const chars = "abcdefghijkmnpqrstuvwxyz23456789";
+	const array = new Uint8Array(length);
+	crypto.getRandomValues(array);
+	return Array.from(array, (b) => chars[b % chars.length]).join("");
+}
+
+/** The length a generate button should produce for this field. */
+export function generatedLengthFor(field: CredentialField): number {
+	return Math.max(field.rules?.minLength ?? 0, PASSWORD_LENGTH);
+}
+
+export function validateField(
+	field: CredentialField,
+	value: string,
+): string | null {
+	if (!value) return null;
+	const rules = field.rules;
+	if (!rules) return null;
+	if (rules.minLength && value.length < rules.minLength) {
+		return rules.message ?? `Must be at least ${rules.minLength} characters`;
+	}
+	if (rules.maxLength && value.length > rules.maxLength) {
+		return rules.message ?? `Must be at most ${rules.maxLength} characters`;
+	}
+	if (rules.pattern && !new RegExp(rules.pattern).test(value)) {
+		return rules.message ?? "Invalid format";
+	}
+	return null;
+}
+
+/**
+ * Both install paths ask for the same fields, so both refuse to submit on the
+ * same grounds: nothing required left blank, and no rule broken.
+ */
+export function credentialsReady(
+	fields: CredentialField[],
+	values: Record<string, string>,
+): boolean {
+	return fields.every(
+		(f) =>
+			(f.required === false || values[f.key]) &&
+			!validateField(f, values[f.key] ?? ""),
+	);
+}
 
 export function buildDefaultConfig(registry: ServiceMeta[]): SetupConfig {
 	const services: Record<string, { enabled: boolean }> = {};
@@ -153,6 +217,7 @@ export function buildDefaultConfig(registry: ServiceMeta[]): SetupConfig {
 	}
 	return {
 		paths: { config: "", media: "", torrents: "" },
+		email: "",
 		libraries: [...DEFAULT_LIBRARIES],
 		credentials,
 		services,

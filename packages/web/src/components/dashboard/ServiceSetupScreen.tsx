@@ -1,5 +1,11 @@
 import { useState } from "react";
-import type { CredentialField, ServiceMeta } from "../../types/setup";
+import {
+	type CredentialField,
+	type ServiceMeta,
+	credentialsReady,
+	generatePassword,
+	generatedLengthFor,
+} from "../../types/setup";
 import { ServiceIcon, serviceTint } from "../ui/ServiceIcon";
 import { CATEGORY_LABELS } from "./categories";
 
@@ -202,6 +208,36 @@ export function ServiceSetupScreen({
 											className="flex-1 px-3 py-1.5 text-sm bg-ink-950 border border-white/[0.12] rounded-md text-gray-200 placeholder-gray-600 focus:outline-none focus:border-brand-500"
 										/>
 									)}
+									{field.type === "password" && field.generate !== false ? (
+										<button
+											type="button"
+											onClick={() =>
+												setCreds((prev) => ({
+													...prev,
+													[field.key]: generatePassword(
+														generatedLengthFor(field),
+													),
+												}))
+											}
+											title="Generate password"
+											className="shrink-0 p-1.5 text-gray-400 hover:text-brand-400 transition-colors"
+										>
+											<svg
+												aria-hidden="true"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												strokeWidth={2}
+												className="w-4 h-4"
+											>
+												<path
+													strokeLinecap="round"
+													strokeLinejoin="round"
+													d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+												/>
+											</svg>
+										</button>
+									) : null}
 								</div>
 							))}
 						</div>
@@ -212,7 +248,11 @@ export function ServiceSetupScreen({
 					<button
 						type="button"
 						onClick={handleSubmit}
-						disabled={busy || unmet.length > 0}
+						disabled={
+							busy ||
+							unmet.length > 0 ||
+							!credentialsReady(picked.credentials, creds)
+						}
 						className="w-full py-2 text-sm font-medium text-white bg-brand-600 rounded-md hover:bg-brand-500 transition-colors disabled:opacity-50"
 					>
 						{busy

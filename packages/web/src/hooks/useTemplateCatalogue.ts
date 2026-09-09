@@ -13,9 +13,13 @@ export function useTemplateCatalogue() {
 	const [open, setOpen] = useState(false);
 	const [reloaded, setReloaded] = useState<number | null>(null);
 
-	const invalidateTemplates = () => {
+	// `/templates/reload` rereads the stacks directory too, so a stack added or
+	// deleted on disk is already gone from the server's answer — leaving this
+	// cache in place is what used to make a restart look necessary.
+	const invalidateCatalogue = () => {
 		queryClient.invalidateQueries({ queryKey: ["templates"] });
 		queryClient.invalidateQueries({ queryKey: ["registry"] });
+		queryClient.invalidateQueries({ queryKey: ["stacks"] });
 	};
 
 	const reload = useMutation({
@@ -29,7 +33,7 @@ export function useTemplateCatalogue() {
 		// The confirmation is local state rather than `reload.isSuccess`, so how long
 		// it shows is decided here instead of by the mutation's lifecycle.
 		onSuccess: ({ count }) => {
-			invalidateTemplates();
+			invalidateCatalogue();
 			setReloaded(count);
 			setTimeout(() => setReloaded(null), 2000);
 		},
@@ -37,7 +41,7 @@ export function useTemplateCatalogue() {
 
 	const upload = useMutation({
 		mutationFn: api.uploadTemplate,
-		onSuccess: invalidateTemplates,
+		onSuccess: invalidateCatalogue,
 	});
 
 	return { open, setOpen, reloaded, reload, upload };

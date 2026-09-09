@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStacks } from "../../hooks/useStacks";
 import type {
 	ServiceMeta,
@@ -26,6 +26,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 	torrentClient: "Torrent Client",
 	vpn: "VPN",
 	seeder: "Seeder",
+	stats: "Statistics",
 };
 
 /**
@@ -39,6 +40,7 @@ const CATEGORY_ORDER = [
 	"mediaManager",
 	"indexer",
 	"torrentClient",
+	"stats",
 	"vpn",
 	"seeder",
 ];
@@ -202,17 +204,12 @@ export function ServicesStep({
 				</div>
 			) : (
 				<div className="space-y-5">
-					<div className="grid gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(215px,1fr))]">
-						{available.map((stack) => (
-							<StackCard
-								key={stack.id}
-								stack={stack}
-								registry={registry}
-								picked={stackId === stack.id}
-								onPick={() => pickStack(stack)}
-							/>
-						))}
-					</div>
+					<StackCarousel
+						stacks={available}
+						registry={registry}
+						pickedId={stackId}
+						onPick={pickStack}
+					/>
 
 					<div className="flex items-center gap-3.5">
 						<span className="h-px flex-1 bg-white/[0.07]" />
@@ -303,6 +300,107 @@ function ServiceRow({
 	);
 }
 
+/**
+ * Stacks scroll rather than wrap. A grid grew a row for every stack shipped,
+ * pushing the manual path — the one most people end on — below the fold. The
+ * track is a native scroller, so touch and trackpad already work; the arrows
+ * exist for the mouse, and hide when there is nothing to scroll to.
+ */
+function StackCarousel({
+	stacks,
+	registry,
+	pickedId,
+	onPick,
+}: {
+	stacks: Stack[];
+	registry: ServiceMeta[];
+	pickedId: string | null;
+	onPick: (stack: Stack) => void;
+}) {
+	const track = useRef<HTMLDivElement>(null);
+	const [atStart, setAtStart] = useState(true);
+	const [atEnd, setAtEnd] = useState(true);
+
+	const measure = useCallback(() => {
+		const el = track.current;
+		if (!el) return;
+		setAtStart(el.scrollLeft <= 1);
+		setAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
+	}, []);
+
+	// Also on resize: a window wide enough to show everything must drop the arrows.
+	useEffect(() => {
+		measure();
+		window.addEventListener("resize", measure);
+		return () => window.removeEventListener("resize", measure);
+	}, [measure]);
+
+	const page = (direction: -1 | 1) => {
+		const el = track.current;
+		if (!el) return;
+		el.scrollBy({ left: direction * el.clientWidth, behavior: "smooth" });
+	};
+
+	const hidden = atStart && atEnd;
+
+	return (
+		<div className="flex items-stretch gap-2">
+			<ScrollButton
+				direction="left"
+				hidden={hidden}
+				disabled={atStart}
+				onClick={() => page(-1)}
+			/>
+			<div
+				ref={track}
+				onScroll={measure}
+				className="flex flex-1 snap-x snap-mandatory items-stretch gap-2.5 overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+			>
+				{stacks.map((stack) => (
+					<StackCard
+						key={stack.id}
+						stack={stack}
+						registry={registry}
+						picked={pickedId === stack.id}
+						onPick={() => onPick(stack)}
+					/>
+				))}
+			</div>
+			<ScrollButton
+				direction="right"
+				hidden={hidden}
+				disabled={atEnd}
+				onClick={() => page(1)}
+			/>
+		</div>
+	);
+}
+
+function ScrollButton({
+	direction,
+	hidden,
+	disabled,
+	onClick,
+}: {
+	direction: "left" | "right";
+	hidden: boolean;
+	disabled: boolean;
+	onClick: () => void;
+}) {
+	if (hidden) return null;
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			disabled={disabled}
+			aria-label={direction === "left" ? "Previous stacks" : "Next stacks"}
+			className="shrink-0 self-center rounded-lg border border-white/[0.07] bg-ink-800 p-1.5 text-gray-400 transition-colors hover:border-white/[0.12] hover:text-gray-200 disabled:pointer-events-none disabled:opacity-25"
+		>
+			<Arrow className={direction === "left" ? "rotate-180" : ""} />
+		</button>
+	);
+}
+
 function StackCard({
 	stack,
 	registry,
@@ -319,7 +417,7 @@ function StackCard({
 			type="button"
 			onClick={onPick}
 			aria-pressed={picked}
-			className={`relative flex flex-col gap-2 rounded-xl border p-4 text-left transition-colors ${
+			className={`relative flex w-full shrink-0 snap-start flex-col gap-2 rounded-xl border p-3.5 text-left transition-colors sm:w-[calc((100%-0.625rem)/2)] md:w-[calc((100%-1.25rem)/3)] ${
 				picked
 					? "border-brand-500 bg-brand-600/10"
 					: "border-white/[0.07] bg-ink-800 hover:border-white/[0.12]"
@@ -328,26 +426,41 @@ function StackCard({
 			{/* Out of the flow: holding its width while invisible would leave a
 			    hole before every unselected title. */}
 			<Check
-				className={`absolute right-3.5 top-3.5 h-3.5 w-3.5 text-brand-400 ${
+				className={`absolute right-3 top-3 h-3.5 w-3.5 text-brand-400 ${
 					picked ? "" : "invisible"
 				}`}
 			/>
-			<span className="pr-6 text-sm font-semibold text-gray-100">
+			<span className="flex items-baseline gap-1.5 pr-6 text-sm font-semibold text-gray-100">
+				{stack.emoji ? (
+					<span aria-hidden="true" className="text-base leading-none">
+						{stack.emoji}
+					</span>
+				) : null}
 				{stack.name}
 			</span>
-			<span className="flex-1 text-xs leading-relaxed text-gray-500">
+			<span className="line-clamp-2 flex-1 text-xs leading-relaxed text-gray-500">
 				{stack.description}
 			</span>
-			<span className="flex flex-wrap gap-1">
-				{stack.services.map((id) => (
-					<span
-						key={id}
-						className="rounded bg-ink-700 px-1.5 py-0.5 font-mono text-[10px] text-gray-400"
-					>
-						{registry.find((s) => s.id === id)?.name ?? id}
-					</span>
-				))}
-			</span>
+			{/* The chip list is what made these cards tall, and it is only worth
+			    reading once a stack is in play. Folded it is a count; the click
+			    that selects is already the click that would expand, so there is no
+			    second control for it. */}
+			{picked ? (
+				<span className="flex flex-wrap gap-1">
+					{stack.services.map((id) => (
+						<span
+							key={id}
+							className="rounded bg-ink-700 px-1.5 py-0.5 font-mono text-[10px] text-gray-400"
+						>
+							{registry.find((s) => s.id === id)?.name ?? id}
+						</span>
+					))}
+				</span>
+			) : (
+				<span className="font-mono text-[10px] text-gray-600">
+					{stack.services.length} services
+				</span>
+			)}
 		</button>
 	);
 }

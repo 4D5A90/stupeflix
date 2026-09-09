@@ -282,6 +282,15 @@ export function PathsStep({
 					onChange={(e) => updatePath("torrents", e.target.value)}
 					disabled={useBasePath}
 				/>
+
+				<Input
+					label="Admin Email (optional)"
+					type="email"
+					autoComplete="email"
+					placeholder="admin@example.com"
+					value={config.email ?? ""}
+					onChange={(e) => onChange({ ...config, email: e.target.value })}
+				/>
 			</div>
 
 			<div className="flex justify-between">

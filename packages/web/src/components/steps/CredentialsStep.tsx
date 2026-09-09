@@ -1,8 +1,10 @@
 import { useCallback, useEffect } from "react";
-import type {
-	CredentialField,
-	ServiceMeta,
-	SetupConfig,
+import {
+	type ServiceMeta,
+	type SetupConfig,
+	generatePassword,
+	generatedLengthFor,
+	validateField,
 } from "../../types/setup";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -14,31 +16,6 @@ interface CredentialsStepProps {
 	onChange: (config: SetupConfig) => void;
 	onNext: () => void;
 	onBack: () => void;
-}
-
-const PASSWORD_LENGTH = 20;
-
-function generatePassword(length = PASSWORD_LENGTH): string {
-	const chars = "abcdefghijkmnpqrstuvwxyz23456789";
-	const array = new Uint8Array(length);
-	crypto.getRandomValues(array);
-	return Array.from(array, (b) => chars[b % chars.length]).join("");
-}
-
-function validateField(field: CredentialField, value: string): string | null {
-	if (!value) return null;
-	const rules = field.rules;
-	if (!rules) return null;
-	if (rules.minLength && value.length < rules.minLength) {
-		return rules.message ?? `Must be at least ${rules.minLength} characters`;
-	}
-	if (rules.maxLength && value.length > rules.maxLength) {
-		return rules.message ?? `Must be at most ${rules.maxLength} characters`;
-	}
-	if (rules.pattern && !new RegExp(rules.pattern).test(value)) {
-		return rules.message ?? "Invalid format";
-	}
-	return null;
 }
 
 export function CredentialsStep({
@@ -61,6 +38,42 @@ export function CredentialsStep({
 	const enabledWithCreds = registry.filter(
 		(svc) => config.services[svc.id]?.enabled && svc.credentials.length > 0,
 	);
+
+	// Every service asking for an address wants the same one. Seeded, not forced:
+	// a field already filled is left alone, so this can never undo a correction.
+	useEffect(() => {
+		const shared = config.email?.trim();
+		if (!shared) return;
+		let changed = false;
+		const credentials = { ...config.credentials };
+		for (const svc of enabledWithCreds) {
+			for (const field of svc.credentials) {
+				if (field.type !== "email") continue;
+				if (credentials[svc.id]?.[field.key]) continue;
+				credentials[svc.id] = { ...credentials[svc.id], [field.key]: shared };
+				changed = true;
+			}
+		}
+		if (changed) onChange({ ...config, credentials });
+	}, [config, enabledWithCreds, onChange]);
+
+	// In practice this holds one address. It is not there to offer a choice but to
+	// hand back the one already known, for a field the seeding above skipped
+	// because it was not empty, or that was cleared since.
+	const knownEmails = [
+		...new Set(
+			[
+				config.email,
+				...enabledWithCreds.flatMap((svc) =>
+					svc.credentials
+						.filter((f) => f.type === "email")
+						.map((f) => config.credentials[svc.id]?.[f.key]),
+				),
+			]
+				.map((v) => v?.trim())
+				.filter((v): v is string => Boolean(v)),
+		),
+	];
 
 	const allErrors: Record<string, Record<string, string | null>> = {};
 	for (const svc of enabledWithCreds) {
@@ -135,6 +148,16 @@ export function CredentialsStep({
 														type={
 															field.type === "text" ? undefined : field.type
 														}
+														suggestions={
+															field.type === "email" ? knownEmails : undefined
+														}
+														autoComplete={
+															field.type === "email"
+																? "email"
+																: field.type === "password"
+																	? "new-password"
+																	: undefined
+														}
 														placeholder={field.placeholder}
 														value={value}
 														onChange={(e) =>
@@ -151,13 +174,10 @@ export function CredentialsStep({
 												<button
 													type="button"
 													onClick={() => {
-														const minLen = field.rules?.minLength ?? 0;
 														updateCredential(
 															svc.id,
 															field.key,
-															generatePassword(
-																Math.max(minLen, PASSWORD_LENGTH),
-															),
+															generatePassword(generatedLengthFor(field)),
 														);
 													}}
 													className="mb-0.5 p-2 text-gray-400 hover:text-brand-400 transition-colors"

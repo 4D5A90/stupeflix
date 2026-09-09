@@ -1,7 +1,13 @@
-import type { InputHTMLAttributes, ReactNode } from "react";
+import { type InputHTMLAttributes, type ReactNode, useId } from "react";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 	label: string;
+	/**
+	 * Values offered as you type, through a native `datalist`. The browser draws
+	 * and filters the list itself, which is why there is no dropdown component
+	 * here: nothing to keep open, to close on blur, or to drive with arrow keys.
+	 */
+	suggestions?: string[];
 }
 
 const URL_REGEX = /([\w-]+\.(?:com|org|net|io|tv|dev)(?:\/[\w-]*)*)/g;
@@ -31,14 +37,29 @@ function renderLabel(label: string): ReactNode {
 	);
 }
 
-export function Input({ label, className = "", ...props }: InputProps) {
+export function Input({
+	label,
+	className = "",
+	suggestions,
+	...props
+}: InputProps) {
+	const listId = useId();
+	const offered = suggestions?.filter(Boolean) ?? [];
 	return (
 		<label className="block">
 			<span className="text-sm text-gray-400">{renderLabel(label)}</span>
 			<input
 				className={`mt-1 block w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent ${className}`}
+				list={offered.length > 0 ? listId : undefined}
 				{...props}
 			/>
+			{offered.length > 0 ? (
+				<datalist id={listId}>
+					{offered.map((value) => (
+						<option key={value} value={value} />
+					))}
+				</datalist>
+			) : null}
 		</label>
 	);
 }
