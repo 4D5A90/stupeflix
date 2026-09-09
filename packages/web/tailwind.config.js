@@ -16,6 +16,14 @@ export default {
 					800: "#171b26", // card, tile
 					700: "#1f2431", // icon tile inside a card
 				},
+				// Step outcomes in the setup matrix. Not Tailwind's stock green and
+				// red: those fight the rose, and `done` has to sit quiet behind a
+				// running step rather than compete with it.
+				step: {
+					idle: "#2b3140",
+					done: "#57d9a3",
+					fail: "#ff6b6b",
+				},
 				brand: {
 					200: "#fecdd3",
 					300: "#fda4af",

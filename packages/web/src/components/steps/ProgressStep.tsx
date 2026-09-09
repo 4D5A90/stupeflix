@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
 import type { ServiceMeta, SetupConfig, StepStatus } from "../../types/setup";
 import { Button } from "../ui/Button";
-import { StatusBadge } from "../ui/StatusBadge";
+import { StepMatrix } from "./StepMatrix";
 
 interface ProgressStepProps {
 	registry: ServiceMeta[];
@@ -13,73 +13,24 @@ interface ProgressStepProps {
 	onComplete?: () => void;
 }
 
-const GLOBAL_STEP_LABELS: Record<string, string> = {
-	compose: "Generate Docker Compose",
-	containers: "Start Containers",
-};
+const DONE: StepStatus[] = ["completed", "skipped"];
 
-function formatSubStep(name: string): string {
-	return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-interface StepGroup {
-	key: string;
-	label: string;
-	substeps: { key: string; label: string; status: StepStatus }[] | null;
-	status: StepStatus;
-}
-
-function groupSteps(
+/** Which step stopped the run, named the way the template names it. */
+function failure(
 	steps: Record<string, StepStatus>,
+	labels: Record<string, string>,
 	registry: ServiceMeta[],
-): StepGroup[] {
-	const groups: StepGroup[] = [];
-	const serviceSteps: Record<
-		string,
-		{ key: string; label: string; status: StepStatus }[]
-	> = {};
-
-	for (const [key, status] of Object.entries(steps)) {
-		if (!key.includes(".")) {
-			groups.push({
-				key,
-				label: GLOBAL_STEP_LABELS[key] ?? formatSubStep(key),
-				substeps: null,
-				status,
-			});
-		} else {
-			const [serviceId, stepName] = key.split(".", 2);
-			if (!serviceSteps[serviceId]) serviceSteps[serviceId] = [];
-			serviceSteps[serviceId].push({
-				key,
-				label: formatSubStep(stepName),
-				status,
-			});
-		}
-	}
-
-	for (const [serviceId, substeps] of Object.entries(serviceSteps)) {
-		const svc = registry.find((s) => s.id === serviceId);
-		const hasAnyFailed = substeps.some((s) => s.status === "failed");
-		const allCompleted = substeps.every((s) => s.status === "completed");
-		const hasInProgress = substeps.some((s) => s.status === "in_progress");
-		const groupStatus: StepStatus = hasAnyFailed
-			? "failed"
-			: allCompleted
-				? "completed"
-				: hasInProgress
-					? "in_progress"
-					: "pending";
-
-		groups.push({
-			key: serviceId,
-			label: svc?.name ?? serviceId,
-			substeps,
-			status: groupStatus,
-		});
-	}
-
-	return groups;
+): { service: string; label: string } | null {
+	const key = Object.keys(steps).find((k) => steps[k] === "failed");
+	if (!key) return null;
+	const dot = key.indexOf(".");
+	const id = dot === -1 ? null : key.slice(0, dot);
+	return {
+		service: id
+			? (registry.find((svc) => svc.id === id)?.name ?? id)
+			: "Docker",
+		label: labels[key] ?? key,
+	};
 }
 
 const loadingSpinner = (
@@ -87,24 +38,6 @@ const loadingSpinner = (
 		<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
 	</div>
 );
-
-function SuccessMessage({ onComplete }: { onComplete?: () => void }) {
-	return (
-		<div className="space-y-4">
-			<div className="p-4 bg-green-900/50 border border-green-700 rounded-lg">
-				<p className="text-green-300">
-					Your media stack is ready! Access your services at their respective
-					ports.
-				</p>
-			</div>
-			{onComplete ? (
-				<div className="flex justify-center">
-					<Button onClick={onComplete}>Go to Dashboard</Button>
-				</div>
-			) : null}
-		</div>
-	);
-}
 
 function Recap({
 	registry,
@@ -226,62 +159,101 @@ export function ProgressStep({
 	}
 
 	const stepValues = Object.values(status.steps);
+	const total = stepValues.length;
+	const done = stepValues.filter((s) => DONE.includes(s)).length;
 	const hasFailed = stepValues.some((s) => s === "failed");
-	const allCompleted =
-		stepValues.length > 0 && stepValues.every((s) => s === "completed");
-	const realStatus = hasFailed
-		? "failed"
-		: allCompleted
-			? "completed"
-			: "in_progress";
+	const allCompleted = total > 0 && done === total;
+	const running = Object.keys(status.steps).find(
+		(key) => status.steps[key] === "in_progress",
+	);
+	const failed = failure(status.steps, status.labels, registry);
 
-	const statusMessage =
-		realStatus === "in_progress"
-			? "Setting up your media stack..."
-			: realStatus === "completed"
-				? "Setup completed successfully!"
-				: "Setup failed. Check the error below.";
+	const message = hasFailed
+		? failed
+			? `Setup stopped — ${failed.service} could not finish`
+			: "Setup stopped."
+		: allCompleted
+			? "Setup completed successfully"
+			: running
+				? `${status.labels[running] ?? running}\u2026`
+				: "Setting up your media stack\u2026";
 
 	return (
-		<div className="space-y-6">
-			<div>
-				<h2 className="text-xl font-semibold mb-2">Setup Progress</h2>
-				<p className="text-gray-400 text-sm">{statusMessage}</p>
+		<div className="flex flex-col gap-4">
+			<div className="flex items-end justify-between gap-4">
+				<div className="min-w-0">
+					<h2 className="text-lg font-semibold">Setup Progress</h2>
+					<p
+						className={`text-sm mt-0.5 truncate ${hasFailed ? "text-brand-300" : "text-gray-400"}`}
+					>
+						{message}
+					</p>
+				</div>
+				<span className="text-sm font-mono text-gray-400 tabular-nums shrink-0">
+					{total ? Math.round((done / total) * 100) : 0}%
+				</span>
 			</div>
 
-			<div className="space-y-2">
-				{groupSteps(status.steps, registry).map((group) => (
-					<div key={group.key}>
-						<StatusBadge status={group.status} label={group.label} />
-						{group.substeps ? (
-							<div className="ml-8 mt-1 space-y-1">
-								{group.substeps.map((sub) => (
-									<StatusBadge
-										key={sub.key}
-										status={sub.status}
-										label={sub.label}
-										small
-									/>
-								))}
-							</div>
-						) : null}
+			<div className="h-1 rounded-full bg-step-idle overflow-hidden shrink-0">
+				<div
+					className={`h-full rounded-full transition-[width] duration-500 ${
+						hasFailed
+							? "bg-step-fail"
+							: allCompleted
+								? "bg-step-done"
+								: "bg-gradient-to-r from-brand-600 to-brand-400"
+					}`}
+					style={{ width: total ? `${(done / total) * 100}%` : "0%" }}
+				/>
+			</div>
+
+			<StepMatrix
+				registry={registry}
+				steps={status.steps}
+				labels={status.labels}
+			/>
+
+			{hasFailed ? (
+				<div className="flex items-center gap-4 p-4 rounded-xl bg-step-fail/[0.08] border border-step-fail/30">
+					<div className="flex-1 min-w-0 flex flex-col gap-1">
+						<h3 className="text-sm font-semibold text-step-fail">
+							{failed ? `${failed.service} · ${failed.label}` : "Setup failed"}
+						</h3>
+						{/* An *arr rejection is a JSON array of validations, not a
+						    sentence: it scrolls inside its box instead of pushing the
+						    matrix out of the screen. */}
+						<pre className="text-[11px] leading-relaxed font-mono text-gray-400 whitespace-pre-wrap break-words max-h-28 overflow-y-auto">
+							{status.error}
+						</pre>
 					</div>
-				))}
-			</div>
-
-			{status.error ? (
-				<div className="p-4 bg-red-900/50 border border-red-700 rounded-lg">
-					<p className="text-red-300 text-sm font-mono">{status.error}</p>
+					<Button onClick={onRestart}>Try again</Button>
 				</div>
 			) : null}
 
-			{realStatus === "completed" ? (
-				<SuccessMessage onComplete={onComplete} />
-			) : null}
-
-			{realStatus === "failed" ? (
-				<div className="flex justify-center">
-					<Button onClick={onRestart}>Try Again</Button>
+			{allCompleted ? (
+				<div className="flex items-center gap-4 p-4 rounded-xl bg-step-done/[0.07] border border-step-done/30">
+					<div className="flex-1 min-w-0 flex flex-col gap-1">
+						<h3 className="text-sm font-semibold text-step-done">
+							Your media stack is ready
+						</h3>
+						<div className="flex gap-4 text-[11px] font-mono text-gray-500 tabular-nums">
+							<span>
+								<b className="font-medium text-gray-400">{total}</b> steps
+							</span>
+							<span>
+								<b className="font-medium text-gray-400">
+									{
+										registry.filter((svc) => config.services[svc.id]?.enabled)
+											.length
+									}
+								</b>{" "}
+								services
+							</span>
+						</div>
+					</div>
+					{onComplete ? (
+						<Button onClick={onComplete}>Go to dashboard</Button>
+					) : null}
 				</div>
 			) : null}
 		</div>
