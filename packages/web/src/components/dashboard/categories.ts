@@ -6,4 +6,5 @@ export const CATEGORY_LABELS: Record<string, string> = {
 	mediaManager: "Manager",
 	requests: "Requests",
 	seeder: "Seeder",
+	stats: "Stats",
 };
