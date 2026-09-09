@@ -5,6 +5,7 @@ import type { Db } from "../db.js";
 import { configuredDb } from "../test/fake-db.js";
 import { generateCompose } from "./compose.js";
 import { PUID } from "./env.js";
+import { DB_LABEL, INSTANCE_LABEL } from "./instance.js";
 import { loadTemplates } from "./service-registry.js";
 
 const FIXTURES = fileURLToPath(new URL("../test/fixtures", import.meta.url));
@@ -154,5 +155,22 @@ describe("generateCompose", () => {
 		const db = configuredDb({ "services.alpha.enabled": true });
 		render(db);
 		expect(db.get("internal.zeta.token")).toBeNull();
+	});
+
+	// Two instances aim at the same fixed compose project, so a container has to
+	// say which database created it — otherwise a removal here collects the other
+	// one's services as orphans.
+	it("stamps every service with the database that generated it", () => {
+		const out = render(
+			configuredDb({
+				"services.alpha.enabled": true,
+				"services.zeta.enabled": true,
+				"instance.id": "abc",
+			}),
+		);
+		for (const service of Object.values(out.services)) {
+			expect(service.labels).toMatchObject({ [INSTANCE_LABEL]: "abc" });
+			expect(service.labels).toHaveProperty(DB_LABEL);
+		}
 	});
 });

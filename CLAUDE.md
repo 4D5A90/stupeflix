@@ -200,6 +200,7 @@ src/
 │   ├── compose.ts        # Merges the enabled templates' `compose:` blocks
 │   ├── network.ts        # provides/join topology, and the compose rewrite it implies
 │   ├── requirements.ts   # requires/recommends resolved by category, never by name
+│   ├── instance.ts       # Which database owns the containers — labels + the guard
 │   ├── stacks.ts         # stacks/*.yml — a named set of services, loaded like templates
 │   ├── service-install.ts # Install / reconfigure / remove one service
 │   ├── library-stats.ts  # Counts each library off the filesystem, plus disk
@@ -287,6 +288,15 @@ so everything path- or host-related goes through `lib/env.ts`:
 - The compose project is always `stupeflix`, never derived from the working
   directory: running from source and running the image must own the same
   containers, or they collide on `container_name`.
+- Which is why ownership is the **database**, not the directory — and Docker
+  records no such thing. `lib/instance.ts` writes it: every generated service
+  carries `com.stupeflix.instance` (an id minted once in the DB) and
+  `com.stupeflix.db` (its path, for the message). `ownershipConflict()` reads
+  those back before an install, reconfigure, removal or setup, and the route
+  answers 409 having changed nothing. Two instances on the same `data/` agree
+  and proceed; two on different ones are stopped — otherwise a removal here
+  collects the other's services as orphans and deletes them. A container with
+  no label predates the check and is adopted, then stamped by the next `up`.
 - The compose file lives next to the database (`data/`), so pointing an image at
   the dev server's `data/` directory shares the whole state.
 

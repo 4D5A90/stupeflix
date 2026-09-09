@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { Hono } from "hono";
 import type { Db } from "../db.js";
 import { compose } from "../lib/docker-cli.js";
+import { ownershipConflict } from "../lib/instance.js";
 import { readServiceInfo } from "../lib/service-info.js";
 import { removeService, runServiceInstall } from "../lib/service-install.js";
 import { getTemplate, getTemplates } from "../lib/service-registry.js";
@@ -98,6 +99,9 @@ export function servicesRoutes(db: Db) {
 		if (db.get("setup.global") === "in_progress")
 			return c.json({ error: "Setup already in progress" }, 409);
 
+		const conflict = await ownershipConflict(db);
+		if (conflict) return c.json({ error: conflict }, 409);
+
 		const body = await c.req.json().catch(() => ({}));
 		const credentials: Record<string, string> = body.credentials ?? {};
 		for (const [key, value] of Object.entries(credentials)) {
@@ -116,6 +120,11 @@ export function servicesRoutes(db: Db) {
 		if (!tpl) return c.json({ error: "Template not found" }, 404);
 		if (db.get("setup.global") === "in_progress")
 			return c.json({ error: "Setup in progress" }, 409);
+
+		// The destructive one: `--remove-orphans` would collect the services
+		// another instance installed, since the compose project is shared.
+		const conflict = await ownershipConflict(db);
+		if (conflict) return c.json({ error: conflict }, 409);
 
 		await removeService(db, tpl);
 		return c.json({ success: true });

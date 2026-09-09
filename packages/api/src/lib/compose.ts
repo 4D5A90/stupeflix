@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { stringify } from "yaml";
 import type { Db } from "../db.js";
 import { COMPOSE_FILE } from "./env.js";
+import { instanceLabels, stampInstance } from "./instance.js";
 import {
 	applyNetworkTopology,
 	networkHosts,
@@ -57,6 +58,10 @@ export function generateCompose(db: Db): string {
 	const topology = resolveNetworkTopology(getEnabledTemplates(db));
 	const hosts = networkHosts(getTemplates(), topology);
 
+	// Stamped on every service: the compose project is fixed, so this label is
+	// the only thing telling our containers from another instance's.
+	const labels = instanceLabels(db);
+
 	for (const tpl of getEnabledTemplates(db)) {
 		const vars = { ...buildVars(db, tpl.id), ...hosts };
 		const resolved = resolveTemplateVars(tpl.compose ?? {}, vars) as Record<
@@ -64,7 +69,7 @@ export function generateCompose(db: Db): string {
 			unknown
 		>;
 		for (const [name, service] of Object.entries(resolved)) {
-			services[name] = pruneEmptyEnv(service);
+			services[name] = stampInstance(pruneEmptyEnv(service), labels);
 		}
 		Object.assign(
 			volumes,

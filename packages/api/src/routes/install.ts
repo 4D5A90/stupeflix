@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Db } from "../db.js";
+import { ownershipConflict } from "../lib/instance.js";
 import { requirementMessage, unmetRequirements } from "../lib/requirements.js";
 import { runServiceInstall } from "../lib/service-install.js";
 import {
@@ -34,6 +35,9 @@ export function installRoutes(db: Db) {
 		if (unmet.length > 0) {
 			return c.json({ error: requirementMessage(unmet), unmet }, 409);
 		}
+
+		const conflict = await ownershipConflict(db);
+		if (conflict) return c.json({ error: conflict }, 409);
 
 		const body = await c.req.json().catch(() => ({}));
 		const credentials: Record<string, string> = body.credentials ?? {};

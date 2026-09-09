@@ -19,10 +19,17 @@ import {
 	runTemplateSteps,
 	setStepStatus,
 	stepKeys,
+	stepRuns,
 } from "../lib/setup-runner.js";
 import type { Library } from "../lib/template-vars.js";
 
 const execAsync = promisify(exec);
+
+/** The two steps no template owns: they are the runner's own. */
+const GLOBAL_STEP_LABELS: Record<string, string> = {
+	compose: "Generate Docker Compose",
+	containers: "Start containers",
+};
 
 function getSteps(db: Db): string[] {
 	const steps = ["compose", "containers"];
@@ -198,6 +205,7 @@ export function setupRoutes(db: Db) {
 		return c.json({
 			global,
 			steps,
+			labels: getLabels(db),
 			error: err,
 		});
 	});
