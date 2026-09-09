@@ -44,6 +44,7 @@ function pruneEmptyEnv(service: unknown): unknown {
  */
 export function generateCompose(db: Db): string {
 	const services: Record<string, unknown> = {};
+	const volumes: Record<string, unknown> = {};
 
 	// Every secret first, then every render: a template may reference another's
 	// generated key, so none of them can be minted lazily mid-loop.
@@ -65,9 +66,17 @@ export function generateCompose(db: Db): string {
 		for (const [name, service] of Object.entries(resolved)) {
 			services[name] = pruneEmptyEnv(service);
 		}
+		Object.assign(
+			volumes,
+			resolveTemplateVars(tpl.volumes ?? {}, vars) as Record<string, unknown>,
+		);
 	}
 
 	applyNetworkTopology(services, topology);
 
-	return stringify({ services });
+	// Omitted when empty rather than written as `volumes: {}`, so a stack of
+	// bind-mounting templates produces the file it always did.
+	return Object.keys(volumes).length > 0
+		? stringify({ services, volumes })
+		: stringify({ services });
 }

@@ -144,6 +144,12 @@ export interface SetupStepDef {
 	/** `config_file` only: leave an existing file alone (default true). */
 	skipIfExists?: boolean;
 	regex?: string;
+	/**
+	 * Destination under `internal.<service>.` for `extract_from_*` and for
+	 * `storeToken`, which defaults to `token`. A session token and a permanent
+	 * API key must not share a slot: the first expires, the second is what has
+	 * to outlive setup.
+	 */
 	storeAs?: string;
 	/**
 	 * `actions` only: which icon the dashboard draws on the button. Names are
@@ -217,12 +223,19 @@ export interface ServiceTemplate {
 	recommends?: Requirement[];
 	/** Compose services this template owns, verbatim, with template variables. */
 	compose: Record<string, unknown>;
+	/**
+	 * Named volumes this template's services reference. Reserved for storage a
+	 * database engine owns and nobody edits by hand — anything readable belongs
+	 * under `paths.config` as a bind mount, where a backup can reach it.
+	 */
+	volumes?: Record<string, unknown>;
 	generate?: SecretDef[];
 	/** Directories under `paths.config` created before the container starts. */
 	dirs?: string[];
 	/** Directories under `paths.config` wiped on reconfigure, to replay a startup wizard. */
 	reset?: { dirs?: string[] };
-	credentials: CredentialField[];
+	/** Absent when the service asks the user for nothing of its own. */
+	credentials?: CredentialField[];
 	setup: SetupStepDef[];
 	/** On-demand steps the dashboard can trigger after setup, e.g. `scan`. */
 	actions?: Record<string, SetupStepDef>;
@@ -331,7 +344,9 @@ export function getServiceMetas(): ServiceMeta[] {
 			notes: notes ?? [],
 			requires: requires ?? [],
 			recommends: recommends ?? [],
-			credentials,
+			// Like notes above: a service may ask the user for nothing, and the
+			// wizard builds its default config by reading this without a guard.
+			credentials: credentials ?? [],
 		}),
 	);
 }
@@ -552,7 +567,7 @@ export async function runSetupStep(
 								val = (val as Record<string, unknown>)?.[key];
 							}
 							if (typeof val === "string") {
-								db.set(`internal.${serviceId}.token`, val);
+								db.set(`internal.${serviceId}.${step.storeAs ?? "token"}`, val);
 								debug(`Stored token from ${step.storeToken}`);
 							}
 						} catch {

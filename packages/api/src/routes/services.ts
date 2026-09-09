@@ -35,7 +35,7 @@ export function servicesRoutes(db: Db) {
 							| string
 							| undefined;
 						if (stored) return stored;
-						return tpl.credentials.find((f) => f.key === key)?.default ?? "";
+						return tpl.credentials?.find((f) => f.key === key)?.default ?? "";
 					},
 				);
 			}

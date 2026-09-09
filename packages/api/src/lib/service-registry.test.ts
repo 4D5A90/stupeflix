@@ -52,6 +52,11 @@ describe("getServiceMetas", () => {
 		expect(beta?.notes).toEqual([]);
 	});
 
+	it("always ships credentials as an array, for a service that asks nothing", () => {
+		const eta = getServiceMetas().find((m) => m.id === "eta");
+		expect(eta?.credentials).toEqual([]);
+	});
+
 	it("passes a template's notes through", () => {
 		const alpha = getServiceMetas().find((m) => m.id === "alpha");
 		expect(alpha?.notes).toEqual(["Needs a manual step in its own UI."]);

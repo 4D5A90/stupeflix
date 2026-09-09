@@ -17,6 +17,11 @@ export interface Stack {
 	id: string;
 	name: string;
 	description: string;
+	/**
+	 * A literal glyph, not a name — unlike a template action's `icon:`, which is
+	 * looked up in `ActionIcon.tsx`. Nothing resolves this, the card prints it.
+	 */
+	emoji?: string;
 	/** Template ids, in no particular order. */
 	services: string[];
 }
