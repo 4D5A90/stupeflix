@@ -208,8 +208,11 @@ With no provider enabled, a `join` is inert and the block renders verbatim.
 
 - **Host ports are unchanged**, only their owner — URLs and `wait_ready` on
   `localhost:<port>` keep working.
-- **A joined container loses its DNS name.** Address it with `{{host.<service>}}`, in
-  `compose:` and in setup steps alike.
+- **A joined container loses its DNS name**, and the provider takes it as a
+  network alias so it answers anyway. Address a peer with `{{host.<service>}}`,
+  in `compose:` and in setup steps alike — it resolves to that service's own
+  container name whether it is tunnelled or not, which is what keeps an address
+  a peer stored yesterday valid today.
 - **A provider needs a `healthcheck`** — the joiner waits on `service_healthy`.
 - **Refused on a joiner**: `networks`, `hostname`, `links`, `dns`, `dns_search`,
   `extra_hosts`. They belong to the shared namespace.
@@ -222,7 +225,7 @@ With no provider enabled, a `join` is inert and the block renders verbatim.
 | `{{internal.key}}` | Generated secrets, and values stored by previous steps |
 | `{{paths.config}}` `{{paths.media}}` `{{paths.torrents}}` | Host paths from the wizard |
 | `{{env.PUID}}` `{{env.PGID}}` `{{env.TZ}}` | Host wiring |
-| `{{host.<service>}}` | The container a peer must be addressed by (see Networking) |
+| `{{host.<service>}}` | The name a peer must be addressed by — stable across topologies (see Networking) |
 | `{{library.name}}` `{{library.type}}` | Current library in a `foreach: libraries` step |
 | `{{libraries.<type>_json}}` | All libraries of a type, as JSON |
 | `{{internal.<service>.<key>}}` | **Another** service's secret |

@@ -82,13 +82,28 @@ describe("provider enabled", () => {
 	});
 
 	/**
-	 * The failure this whole `{{host.<id>}}` indirection exists to prevent: a
-	 * joined container has no DNS name of its own, so a peer addressing it by
-	 * name would silently lose it.
+	 * A joined container has no DNS name of its own — but the provider now
+	 * answers to it, so peers keep addressing it the same way whether the tunnel
+	 * is there or not. That is the whole point: an address a peer wrote into its
+	 * own database once must not depend on today's topology.
 	 */
-	it("redirects peers to the provider, since the joiner loses its own name", () => {
+	it("keeps the joiner's name working, tunnel or no tunnel", () => {
 		const { services } = render("vpn", "client", "peer");
-		expect(services.peer.environment).toEqual(["CLIENT_URL=http://vpn:9000"]);
+		expect(services.peer.environment).toEqual([
+			"CLIENT_URL=http://client:9000",
+		]);
+	});
+
+	it("lends the joiner's name to the provider as an alias", () => {
+		const { services } = render("vpn", "client");
+		expect(services.vpn.networks).toEqual({
+			default: { aliases: ["client"] },
+		});
+	});
+
+	it("gives the provider no alias when nobody joined it", () => {
+		const { services } = render("vpn", "peer");
+		expect(services.vpn.networks).toBeUndefined();
 	});
 });
 
@@ -119,6 +134,35 @@ describe("rejections", () => {
 		const services = joined({ expose: ["8080"] });
 		applyNetworkTopology(services, topology);
 		expect("expose" in services.client).toBe(false);
+	});
+
+	/**
+	 * The alias has to be merged into whatever the provider declared. The list
+	 * form has no room for one, and silently replacing it would change the
+	 * provider's connectivity — so say so instead.
+	 */
+	it("refuses a provider that declares `networks` as a list", () => {
+		const services = {
+			vpn: { networks: ["default"] } as Record<string, unknown>,
+			client: {} as Record<string, unknown>,
+		};
+		expect(() => applyNetworkTopology(services, topology)).toThrow(
+			/networks.*mapping/,
+		);
+	});
+
+	it("merges the alias into the networks a provider already declares", () => {
+		const services = {
+			vpn: { networks: { default: { aliases: ["tunnel"] } } } as Record<
+				string,
+				unknown
+			>,
+			client: {} as Record<string, unknown>,
+		};
+		applyNetworkTopology(services, topology);
+		expect(services.vpn.networks).toEqual({
+			default: { aliases: ["tunnel", "client"] },
+		});
 	});
 
 	it("refuses two providers of the same capability", () => {

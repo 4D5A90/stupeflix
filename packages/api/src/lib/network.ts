@@ -65,17 +65,24 @@ export function resolveNetworkTopology(
 }
 
 /**
- * The compose service other containers must address a template by. It is the
- * provider once a service has joined one, because a container sharing a
- * namespace has no DNS name of its own — this is what `{{host.<id>}}` resolves.
+ * The name other containers must address a template by — always its own, in
+ * every topology. A joined container has no DNS name of its own, so
+ * `applyNetworkTopology` lends that name to the provider as a network alias;
+ * this function is what guarantees the two agree.
+ *
+ * It resolves to the same string with or without a tunnel on purpose. A peer
+ * writes this address once into its own database — Sonarr's download client,
+ * Seerr's Sonarr entry — and nothing rewrites it later. Anything that changed
+ * when a tunnel appeared or disappeared would rot every stored copy, and no
+ * `skipIf` probe would notice.
  */
 export function networkHosts(
 	templates: ServiceTemplate[],
-	{ joins }: NetworkTopology,
+	_topology: NetworkTopology,
 ): Record<string, string> {
 	const hosts: Record<string, string> = {};
 	for (const tpl of templates) {
-		hosts[`host.${tpl.id}`] = joins.get(tpl.container) ?? tpl.container;
+		hosts[`host.${tpl.id}`] = tpl.container;
 	}
 	return hosts;
 }
@@ -140,6 +147,28 @@ export function applyNetworkTopology(
 		// Refused by the daemon, and a no-op annotation, so dropping it costs nothing
 		// biome-ignore lint/performance/noDelete: presence is the meaning here
 		delete joiner.expose;
+
+		// The provider answers to the joiner's name as well as its own, so
+		// `{{host.<id>}}` can stay put across topology changes. Only `default`
+		// exists in the generated file — no template declares a network.
+		const declared = owner.networks;
+		if (
+			declared !== undefined &&
+			(Array.isArray(declared) || typeof declared !== "object")
+		) {
+			throw new Error(
+				`"${provider}" lends its namespace to "${name}", so its "networks" must be a mapping the alias can be merged into.`,
+			);
+		}
+		const networks = (declared ?? {}) as Record<
+			string,
+			{ aliases?: string[] } | null
+		>;
+		const primary = networks.default ?? {};
+		owner.networks = {
+			...networks,
+			default: { ...primary, aliases: [...(primary.aliases ?? []), name] },
+		};
 
 		joiner.network_mode = `service:${provider}`;
 		// Starting before the tunnel is up would leak in the clear, so this is a

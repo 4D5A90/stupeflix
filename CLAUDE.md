@@ -149,15 +149,22 @@ not installed.
 `network:` is the same idea applied to topology instead of values, because a
 variable can fill a string but cannot move a YAML key. A service that `join`s a
 provider gives up its own network stack, so `lib/network.ts` moves its `ports`
-onto the provider, sets `network_mode` and `depends_on`. Two rules follow, and
-both are enforced by `src/templates.test.ts`:
+onto the provider, sets `network_mode` and `depends_on`, and **lends the joiner's
+name to the provider as a `default` network alias**. Two rules follow, and both
+are enforced by `src/templates.test.ts`:
 
-- **A joined container has no DNS name of its own.** Address it with
-  `{{host.<service>}}`, never by hardcoding the container name — that variable
-  resolves to the provider once it has joined. It resolves in **setup steps as
-  well as `compose:`**: a step wiring one service into another writes a
-  container's view of a container, so `sonarr.yml` gives Sonarr
-  `{{host.qbittorrent}}` and not `qbittorrent`.
+- **A joined container has no DNS name of its own — the alias gives it one
+  back.** Address a peer with `{{host.<service>}}`, never by hardcoding the
+  container name. That variable resolves to the service's **own** container name
+  in every topology, and the alias is what makes the name answer once the
+  service has joined a tunnel. The stability is the point: a peer writes that
+  address once into its own database (Sonarr's download client, Seerr's Sonarr
+  entry) and nothing rewrites it afterwards, so a value that changed when a
+  tunnel appeared or vanished would rot every stored copy in silence — no
+  `skipIf` probe would notice. It resolves in **setup steps as well as
+  `compose:`**: a step wiring one service into another writes a container's view
+  of a container, so `sonarr.yml` gives Sonarr `{{host.qbittorrent}}` and not
+  `qbittorrent`.
 - **Six keys are refused on a joiner** (`networks`, `hostname`, `links`, `dns`,
   `dns_search`, `extra_hosts`). They belong to the shared namespace, so moving
   them would change behaviour for the provider and every other joiner. Only
