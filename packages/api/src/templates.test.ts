@@ -37,6 +37,7 @@ const KNOWN_CATEGORIES = [
 	"mediaServer",
 	"requests",
 	"seeder",
+	"stats",
 	"vpn",
 ];
 
@@ -261,7 +262,7 @@ describe("every template", () => {
 	 */
 	it("gives every select its options, with the default among them", () => {
 		for (const tpl of templates) {
-			for (const field of tpl.credentials) {
+			for (const field of tpl.credentials ?? []) {
 				if (field.type !== "select") continue;
 				const values = (field.options ?? []).map((o) => o.value);
 				expect(
@@ -383,6 +384,62 @@ describe("across templates", () => {
 				).toBe(false);
 				seen.set(name, tpl.id);
 			}
+		}
+	});
+
+	/**
+	 * A named volume must be declared at the top level or `docker compose up`
+	 * refuses the whole file. The generator emits only what the templates
+	 * declare, so an undeclared reference breaks every service, not just its own.
+	 */
+	it("declares every named volume its services reference", () => {
+		for (const tpl of templates) {
+			const declared = new Set(Object.keys(tpl.volumes ?? {}));
+			for (const [name, service] of Object.entries(tpl.compose)) {
+				for (const v of (service as { volumes?: string[] }).volumes ?? []) {
+					const source = String(v).split(":")[0];
+					// Bind mounts declare nothing. `{{paths.media}}` is one before it
+					// resolves, and holds no slash yet — so it has to be skipped by
+					// shape, not by looking for a separator that is not there.
+					if (
+						source.includes("/") ||
+						source.startsWith(".") ||
+						source.includes("{{")
+					)
+						continue;
+					expect(declared.has(source), `${tpl.id}.${name}: ${source}`).toBe(
+						true,
+					);
+				}
+			}
+		}
+	});
+
+	it("keeps named volumes unique across templates", () => {
+		const seen = new Map<string, string>();
+		for (const tpl of templates) {
+			for (const name of Object.keys(tpl.volumes ?? {})) {
+				expect(seen.has(name), `${name}: ${seen.get(name)} and ${tpl.id}`).toBe(
+					false,
+				);
+				seen.set(name, tpl.id);
+			}
+		}
+	});
+
+	/**
+	 * The card lays the glyph beside the title, so one stack without it leaves a
+	 * ragged row. And an ASCII "icon" would be a name that nothing resolves —
+	 * this field is printed verbatim, never looked up.
+	 */
+	it("gives every stack a short, non-ASCII emoji", () => {
+		for (const stack of getStacks()) {
+			expect(stack.emoji, `${stack.id}`).toBeTruthy();
+			const glyph = stack.emoji ?? "";
+			// Generous enough for a ZWJ sequence, tight enough to refuse a word.
+			expect(glyph.length, `${stack.id}: ${glyph}`).toBeLessThanOrEqual(8);
+			// biome-ignore lint/suspicious/noControlCharactersInRegex: the point is to refuse ASCII
+			expect(/^[\x00-\x7F]*$/.test(glyph), `${stack.id}: ${glyph}`).toBe(false);
 		}
 	});
 

@@ -1,0 +1,23 @@
+# A service that asks the user for nothing: its account is created in its own UI.
+# Exists so the engine is exercised without a `credentials:` block at all, which
+# the wizard reads unguarded when it builds its default config.
+id: eta
+name: Eta
+description: Fixture service with no credentials of its own
+category: mediaServer
+defaultEnabled: false
+container: eta
+port: 2424
+
+compose:
+  eta:
+    image: example/eta:latest
+    container_name: eta
+    ports:
+      - "2424:2424"
+
+setup:
+  - name: wait_ready
+    label: Wait for Eta
+    type: wait_ready
+    url: http://localhost:2424/health
