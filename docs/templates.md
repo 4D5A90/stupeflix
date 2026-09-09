@@ -60,6 +60,15 @@ network:
 dirs:                # created under paths.config before the container boots
   - myservice/cache
 
+# Named volumes the services above reference. Reserved for storage an engine
+# owns and nobody opens by hand — a PGDATA, a Redis AOF. Docker owns their
+# permissions, which is what makes them immune to a PUID that does not match
+# the image's user. Everything a human reads, edits or backs up stays a bind
+# mount under paths.config: a named volume is invisible from the host, absent
+# from a backup of STUPEFLIX_ROOT, and gone after `down -v`.
+volumes:
+  myservice_db:
+
 reset:               # wiped on reconfigure, to replay a startup wizard
   dirs:
     - myservice
