@@ -103,16 +103,40 @@ export function ServiceIcon({ id }: { id: string }) {
 }
 
 /**
- * Ten slots around the whole wheel, 36° apart. A continuous hue was the wrong
- * shape: hashing cannot guarantee separation, and two services landing 6° apart
- * look like a mistake. Quantised, two ids either share a colour outright —
- * which reads as a coincidence — or differ by at least 36°, which reads.
+ * Each service's tint, picked rather than derived.
  *
- * No hue is reserved. State is a labelled badge on the other side of the card,
- * so a red or green square behind an icon is not mistaken for it.
+ * Hashing an id into ten hue slots looked principled and was not: eleven
+ * services over ten slots collide by construction — Jellyfin, Seerr and the
+ * runner all landed on 108°, qBittorrent, Radarr and Tracearr all on 288°. No
+ * amount of saturation fixes two tiles that are the same colour.
+ *
+ * So the hues are chosen, with two rules. Services next to each other in a list
+ * — the wizard's matrix and the dashboard are both in alphabetical order — are
+ * far apart on the wheel. And `tone` splits the pairs that still land close:
+ * `bright` and `deep` differ in saturation and lightness, so a 30° gap reads as
+ * two colours instead of one. Brand hues are honoured where they were free
+ * (Jellyfin violet, qBittorrent azure, Radarr gold) and dropped where they were
+ * not — the icon carries the identity, the tile only has to separate.
+ *
+ * No hue is reserved: state is a labelled badge elsewhere on the card, so a
+ * green or red tile behind a glyph is not mistaken for one.
  */
+const TINTS: Record<string, { hue: number; tone: "bright" | "deep" }> = {
+	gluetun: { hue: 340, tone: "bright" },
+	jellyfin: { hue: 262, tone: "deep" },
+	joal: { hue: 65, tone: "bright" },
+	plex: { hue: 25, tone: "deep" },
+	prowlarr: { hue: 130, tone: "bright" },
+	qbittorrent: { hue: 210, tone: "deep" },
+	radarr: { hue: 45, tone: "bright" },
+	seerr: { hue: 315, tone: "deep" },
+	sonarr: { hue: 180, tone: "bright" },
+	tracearr: { hue: 95, tone: "deep" },
+};
+
 const HUE_SLOTS = 10;
 
+/** For an id no tint names — a template added without one, so it still reads. */
 function hueOf(id: string): number {
 	let hash = 0;
 	// Math.imul, not `*`: the multiplier overflows double precision, so a plain
@@ -126,11 +150,16 @@ export function serviceTint(id: string): {
 	backgroundColor: string;
 	color: string;
 } {
-	const hue = hueOf(id);
-	// The glyph carries most of the identity; the square behind it only has to
-	// separate the tile from the card, so it stays well below the text contrast.
-	return {
-		backgroundColor: `hsl(${hue} 65% 58% / 0.15)`,
-		color: `hsl(${hue} 40% 70%)`,
-	};
+	const tint = TINTS[id] ?? { hue: hueOf(id), tone: "bright" as const };
+	// The glyph carries the hue; the square behind it only separates the tile
+	// from the card, so it stays well below the glyph's contrast.
+	return tint.tone === "deep"
+		? {
+				backgroundColor: `hsl(${tint.hue} 58% 46% / 0.22)`,
+				color: `hsl(${tint.hue} 56% 64%)`,
+			}
+		: {
+				backgroundColor: `hsl(${tint.hue} 70% 60% / 0.18)`,
+				color: `hsl(${tint.hue} 74% 72%)`,
+			};
 }
