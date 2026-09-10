@@ -337,8 +337,17 @@ so everything path- or host-related goes through `lib/env.ts`:
   ground muddies everything.
 - Changing `tailwind.config.js` needs a dev-server restart — Vite does not pick it
   up hot, and `@apply` with a new token fails the PostCSS build until it does.
-- New icons come from Heroicons outline paths. Hand-drawn SVG reads as noise at
-  the 14px these render at.
+- New icons come from Heroicons outline paths, or the service's own logo where
+  one exists (simple-icons). Hand-drawn SVG reads as noise at the 14px these
+  render at.
+- **A service's glyph is a file, not code**: `web/src/assets/icons/<id>.svg`,
+  found by filename. `ServiceIcon` globs the directory at build time, so adding a
+  service is dropping its `.svg` beside the others and touching nothing else —
+  the same invariant the API holds for `templates/`. Author it with
+  `fill="currentColor"` or `stroke="currentColor"` so the tile's tint reaches it,
+  and `templates.test.ts` fails on a template with no icon, or an icon with no
+  template. Names starting with `_` are the frontend's own (`_default`,
+  `_runner`) and are exempt.
 
 ## Linting Rules (`pnpm lint`)
 

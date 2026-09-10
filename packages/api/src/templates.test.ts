@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -247,6 +247,32 @@ describe("every template", () => {
 				if (!action.icon) continue;
 				expect(known, `${tpl.id} action "${id}"`).toContain(action.icon);
 			}
+		}
+	});
+
+	/**
+	 * The dashboard draws `src/icons/<id>.svg`, picked by filename alone —
+	 * so a template without one falls back to a blank circle nobody notices in
+	 * review. Adding a service means dropping its glyph beside the others.
+	 */
+	it("gives every template an icon file", () => {
+		const dir = resolve(import.meta.dirname, "../../web/src/icons");
+		const drawn = new Set(
+			readdirSync(dir)
+				.filter((f) => f.endsWith(".svg"))
+				.map((f) => f.replace(".svg", "")),
+		);
+		for (const tpl of templates) {
+			expect(drawn, `template "${tpl.id}"`).toContain(tpl.id);
+		}
+		// And nothing left behind: an icon for a service that no longer exists is
+		// dead weight nobody will think to delete.
+		for (const id of drawn) {
+			if (id.startsWith("_")) continue;
+			expect(
+				templates.map((t) => t.id),
+				`icon "${id}.svg"`,
+			).toContain(id);
 		}
 	});
 
