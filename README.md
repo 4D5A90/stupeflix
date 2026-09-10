@@ -303,11 +303,17 @@ STUPEFLIX_TEMPLATES_DIR=/tmp/sfx/templates \
 STUPEFLIX_DB_PATH=/tmp/sfx/data/stupeflix.db \
 STUPEFLIX_COMPOSE_FILE=/tmp/sfx/data/docker-compose.yml \
 STUPEFLIX_COMPOSE_PROJECT=stupeflix-e2e \
+STUPEFLIX_TOKEN=e2e-token \
 PORT=3999 pnpm --filter api dev
 ```
 
-That starts the API alone: drive it with `POST /setup/complete` and poll
-`GET /setup/status`.
+That starts the API alone, with the wizard nowhere in sight, so every route answers at
+the root as well as under `/api`. Drive it with `POST /setup/complete` and poll
+`GET /setup/status`, carrying the token on every call:
+
+```bash
+curl -H "Authorization: Bearer e2e-token" http://localhost:3999/setup/status
+```
 
 </details>
 
@@ -316,8 +322,9 @@ That starts the API alone: drive it with `POST /setup/complete` and poll
 **[Writing a service template](docs/templates.md)** — the full YAML schema: setup steps,
 requirements, networking, variables, `foreach`, actions and readouts.
 
-**API** — every route is served at the root (dev, where Vite strips `/api`) and under
-`/api` (packaged image).
+**API** — every route is served under `/api`, and also at the root when the API serves
+nothing else on the port (dev, where Vite strips the prefix when proxying). All of them
+except `GET /health` need `Authorization: Bearer <token>`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|

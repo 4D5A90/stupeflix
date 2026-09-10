@@ -256,10 +256,18 @@ app.onError((err, c) => {
 	return c.json({ error: "Internal error" }, 500);
 });
 
-// Mounted twice: at the root for `pnpm dev` (Vite strips the /api prefix when proxying),
-// and under /api for the packaged build where the API also serves the frontend.
-app.route("/", api);
+/*
+ * Always under /api. Also at the root when this port serves nothing else —
+ * `pnpm dev`, where Vite strips the prefix when proxying, and the throwaway-
+ * stack recipe in the README, which drives the API directly.
+ *
+ * The condition is not cosmetic. `api.use("*", tokenGate(…))` matches every
+ * path, including the ones `api` has no route for, so a root mount sitting in
+ * front of `serveStatic` answers 401 for `index.html` itself — locking the
+ * screen that asks for the token.
+ */
 app.route("/api", api);
+if (!WEB_DIR) app.route("/", api);
 
 if (WEB_DIR) {
 	app.use("/*", serveStatic({ root: WEB_DIR }));
