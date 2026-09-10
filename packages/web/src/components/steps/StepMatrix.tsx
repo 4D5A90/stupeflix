@@ -165,8 +165,10 @@ export function StepMatrix({ registry, steps, labels }: StepMatrixProps) {
 
 						<span
 							className={`text-xs font-mono truncate ${
+								// Hovering names a step, it does not flag one: the accent is
+								// reserved for what needs attention.
 								hover
-									? "text-brand-300"
+									? "text-white"
 									: state === "failed"
 										? "text-step-fail"
 										: state === "running"
