@@ -1,4 +1,3 @@
-import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -7,6 +6,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { initDb } from "./db.js";
 import { accessToken, tokenGate } from "./lib/auth.js";
+import { runDockerSync } from "./lib/docker-cli.js";
 import {
 	HOST,
 	PORT,
@@ -115,10 +115,12 @@ api.get("/status", (c) => {
 
 	for (const tpl of getTemplates()) {
 		try {
-			containers[tpl.id] = execSync(
-				`docker inspect -f '{{.State.Status}}' ${tpl.container} 2>/dev/null`,
-				{ encoding: "utf-8" },
-			).trim();
+			containers[tpl.id] = runDockerSync([
+				"inspect",
+				"-f",
+				"{{.State.Status}}",
+				tpl.container,
+			]).trim();
 		} catch {
 			containers[tpl.id] = "not_found";
 		}

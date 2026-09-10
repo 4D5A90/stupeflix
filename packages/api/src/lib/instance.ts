@@ -1,11 +1,8 @@
-import { exec } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { promisify } from "node:util";
 import type { Db } from "../db.js";
+import { runDocker } from "./docker-cli.js";
 import { COMPOSE_PROJECT, DB_PATH } from "./env.js";
-
-const execAsync = promisify(exec);
 
 /**
  * Who created a container, written where Docker can be asked.
@@ -96,10 +93,10 @@ export function conflictMessage(foreign: ContainerOwner): string {
 	].join(" ");
 }
 
-function ownersCommand(): string {
+function ownersCommand(): string[] {
 	const format = `{{.Label "${INSTANCE_LABEL}"}}${SEPARATOR}{{.Label "${DB_LABEL}"}}`;
 	const filter = `label=com.docker.compose.project=${COMPOSE_PROJECT}`;
-	return `docker ps -a --filter ${filter} --format '${format}'`;
+	return ["ps", "-a", "--filter", filter, "--format", format];
 }
 
 /**
@@ -112,7 +109,7 @@ function ownersCommand(): string {
 export async function ownershipConflict(db: Db): Promise<string | null> {
 	let owners: ContainerOwner[];
 	try {
-		const { stdout } = await execAsync(ownersCommand());
+		const { stdout } = await runDocker(ownersCommand());
 		owners = parseOwners(stdout);
 	} catch {
 		return null;

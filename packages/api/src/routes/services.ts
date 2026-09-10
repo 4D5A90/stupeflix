@@ -1,7 +1,6 @@
-import { execSync } from "node:child_process";
 import { Hono } from "hono";
 import type { Db } from "../db.js";
-import { compose } from "../lib/docker-cli.js";
+import { runComposeSync, runDockerSync } from "../lib/docker-cli.js";
 import { ownershipConflict } from "../lib/instance.js";
 import { readServiceInfo } from "../lib/service-info.js";
 import { removeService, runServiceInstall } from "../lib/service-install.js";
@@ -10,15 +9,42 @@ import { setStepStatus, stepKeys } from "../lib/setup-runner.js";
 
 function getContainerStatus(container: string): string {
 	try {
-		return execSync(
-			`docker inspect -f '{{.State.Status}}' ${container} 2>/dev/null`,
-			{
-				encoding: "utf-8",
-			},
-		).trim();
+		return runDockerSync([
+			"inspect",
+			"-f",
+			"{{.State.Status}}",
+			container,
+		]).trim();
 	} catch {
 		return "not_found";
 	}
+}
+
+/**
+ * The container these fixed verbs act on.
+ *
+ * Resolving the path param through `getTemplate` is what the reconfigure,
+ * delete and info routes already did, and what these four did not: the raw
+ * param used to reach the command line. It stays a check of its own even now
+ * that nothing is shelled out — driving a container this install does not own
+ * is not something the API should offer either.
+ */
+function containerOf(name: string): string | null {
+	return getTemplate(name)?.container ?? null;
+}
+
+/**
+ * `--tail` takes a count. Anything else is a caller error, not a value to pass
+ * on and let docker rule about.
+ */
+function tailLines(raw: string | undefined): number | null {
+	const text = raw ?? "100";
+	// Digits and nothing else. `Number.parseInt` reads a prefix and drops the
+	// rest, so it accepts `1e3` as 1 and `100; rm -rf /` as 100 — a value that
+	// looks validated and is not.
+	if (!/^\d+$/.test(text)) return null;
+	const lines = Number(text);
+	return lines > 0 && lines <= 10000 ? lines : null;
 }
 
 export function servicesRoutes(db: Db) {
@@ -68,20 +94,23 @@ export function servicesRoutes(db: Db) {
 	});
 
 	app.post("/:name/start", (c) => {
-		const name = c.req.param("name");
-		execSync(compose(`start ${name}`), { stdio: "inherit" });
+		const container = containerOf(c.req.param("name"));
+		if (!container) return c.json({ error: "Template not found" }, 404);
+		runComposeSync(["start", container], { inherit: true });
 		return c.json({ success: true });
 	});
 
 	app.post("/:name/stop", (c) => {
-		const name = c.req.param("name");
-		execSync(compose(`stop ${name}`), { stdio: "inherit" });
+		const container = containerOf(c.req.param("name"));
+		if (!container) return c.json({ error: "Template not found" }, 404);
+		runComposeSync(["stop", container], { inherit: true });
 		return c.json({ success: true });
 	});
 
 	app.post("/:name/restart", (c) => {
-		const name = c.req.param("name");
-		execSync(compose(`restart ${name}`), { stdio: "inherit" });
+		const container = containerOf(c.req.param("name"));
+		if (!container) return c.json({ error: "Template not found" }, 404);
+		runComposeSync(["restart", container], { inherit: true });
 		return c.json({ success: true });
 	});
 
@@ -138,11 +167,11 @@ export function servicesRoutes(db: Db) {
 	});
 
 	app.get("/:name/logs", (c) => {
-		const name = c.req.param("name");
-		const lines = c.req.query("lines") ?? "100";
-		const logs = execSync(compose(`logs --tail=${lines} ${name}`), {
-			encoding: "utf-8",
-		});
+		const container = containerOf(c.req.param("name"));
+		if (!container) return c.json({ error: "Template not found" }, 404);
+		const lines = tailLines(c.req.query("lines"));
+		if (lines === null) return c.json({ error: "Invalid line count" }, 400);
+		const logs = runComposeSync(["logs", "--tail", String(lines), container]);
 		return c.json({ logs });
 	});
 

@@ -1,10 +1,8 @@
-import { exec } from "node:child_process";
 import { existsSync } from "node:fs";
-import { promisify } from "node:util";
 import { Hono } from "hono";
 import type { Db } from "../db.js";
 import { writeCompose } from "../lib/compose.js";
-import { compose } from "../lib/docker-cli.js";
+import { runCompose } from "../lib/docker-cli.js";
 import { COMPOSE_FILE } from "../lib/env.js";
 import {
 	cleanConfigs,
@@ -23,8 +21,6 @@ import {
 	stepRuns,
 } from "../lib/setup-runner.js";
 import type { Library } from "../lib/template-vars.js";
-
-const execAsync = promisify(exec);
 
 /** The two steps no template owns: they are the runner's own. */
 const GLOBAL_STEP_LABELS: Record<string, string> = {
@@ -77,7 +73,7 @@ async function runSetup(db: Db) {
 		if (existsSync(COMPOSE_FILE)) {
 			log("Stopping previous containers...");
 			try {
-				await execAsync(compose("down --timeout 10"));
+				await runCompose(["down", "--timeout", "10"]);
 				log("Previous containers stopped");
 			} catch (e) {
 				debug("docker compose down warning", e);
@@ -100,7 +96,7 @@ async function runSetup(db: Db) {
 		// Start containers
 		setStepStatus(db, "containers", "in_progress");
 		log("Starting containers...");
-		const { stdout, stderr } = await execAsync(compose("up -d"));
+		const { stdout, stderr } = await runCompose(["up", "-d"]);
 		debug("docker compose up", { stdout, stderr });
 		setStepStatus(db, "containers", "completed");
 

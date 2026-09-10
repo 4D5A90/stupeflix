@@ -1,4 +1,3 @@
-import { execSync } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
 	existsSync,
@@ -10,7 +9,7 @@ import {
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import type { Db } from "../db.js";
-import { compose } from "./docker-cli.js";
+import { runComposeSync } from "./docker-cli.js";
 import { serviceUrl } from "./env.js";
 import { debug, log, error as logError } from "./logger.js";
 import { networkHosts, resolveNetworkTopology } from "./network.js";
@@ -642,8 +641,9 @@ export async function runSetupStep(
 				return "extract_from_logs requires container, regex, and storeAs";
 			}
 			try {
-				const logs = execSync(compose(`logs ${step.container} 2>&1`), {
-					encoding: "utf-8",
+				// Both streams: an image may log its temporary password to either.
+				const logs = runComposeSync(["logs", step.container], {
+					mergeStderr: true,
 				});
 				const match = logs.match(new RegExp(step.regex));
 				if (!match?.[1]) {
