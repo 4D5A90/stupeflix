@@ -149,6 +149,46 @@ function applyServices(db: Db, services: Record<string, { enabled: boolean }>) {
 	}
 }
 
+interface SetupBody {
+	paths?: { config: string; media: string; torrents: string };
+	libraries?: Library[];
+	credentials?: Record<string, Record<string, string>>;
+	services?: Record<string, { enabled: boolean }>;
+}
+
+/**
+ * The database as it *would* be with this configuration applied — reads only.
+ *
+ * The summary screen has to show the very steps the runner will take, and the
+ * step list depends on the config (which services, how many libraries, which
+ * `if:` conditions hold). Writing the config to answer that would be worse than
+ * useless: the user can still press Back, and the dashboard reads the same keys
+ * to decide what is installed.
+ */
+function withConfig(db: Db, body: SetupBody): Db {
+	const patch = new Map<string, unknown>();
+	if (body.paths) {
+		patch.set("paths.config", body.paths.config);
+		patch.set("paths.media", body.paths.media);
+		patch.set("paths.torrents", body.paths.torrents);
+	}
+	if (body.libraries) patch.set("libraries", JSON.stringify(body.libraries));
+	for (const [id, fields] of Object.entries(body.credentials ?? {})) {
+		for (const [key, value] of Object.entries(fields)) {
+			patch.set(`credentials.${id}.${key}`, value);
+		}
+	}
+	for (const [id, cfg] of Object.entries(body.services ?? {})) {
+		patch.set(`services.${id}.enabled`, cfg.enabled);
+	}
+	return {
+		get: (key) => (patch.has(key) ? patch.get(key) : db.get(key)),
+		all: () => ({ ...db.all(), ...Object.fromEntries(patch) }),
+		set: () => {},
+		delete: () => {},
+	};
+}
+
 export function setupRoutes(db: Db) {
 	const app = new Hono();
 
@@ -213,6 +253,19 @@ export function setupRoutes(db: Db) {
 		runSetup(db);
 
 		return c.json({ success: true, message: "Setup started" });
+	});
+
+	/**
+	 * What the run would look like, without starting it: the same keys and the
+	 * same labels the status endpoint will serve once it has, so the summary can
+	 * draw the exact grid the next screen animates.
+	 */
+	app.post("/preview", async (c) => {
+		const body = (await c.req.json().catch(() => ({}))) as SetupBody;
+		const view = withConfig(db, body);
+		const steps: Record<string, StepStatus> = {};
+		for (const key of getSteps(view)) steps[key] = "pending";
+		return c.json({ steps, labels: getLabels(view) });
 	});
 
 	app.get("/status", (c) => {

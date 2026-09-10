@@ -108,6 +108,13 @@ export const api = {
 			body: JSON.stringify(config),
 		}),
 
+	/** What the run would do, so the summary can draw the grid it will animate. */
+	previewSetup: (config: SetupConfig) =>
+		request<Pick<SetupStatus, "steps" | "labels">>("/setup/preview", {
+			method: "POST",
+			body: JSON.stringify(config),
+		}),
+
 	getStatus: () => request<SetupStatus>("/setup/status"),
 
 	getAppStatus: () => request<AppStatus>("/status"),

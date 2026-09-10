@@ -222,6 +222,12 @@ src/
     └── services.ts       # /services/* routes, incl. reconfigure and DELETE
 ```
 
+`POST /setup/preview` answers what a configuration *would* run — the same keys
+and labels the status endpoint will serve — computed against a read-only overlay
+of the database. It writes nothing on purpose: the summary screen it feeds is one
+the user can still back out of, and those keys are what the dashboard reads to
+decide what is installed.
+
 `GET /setup/status` returns `steps` **and `labels`** — the label each template
 declares for the step. The frontend has no other way to learn that `create_user`
 is "Create admin user"; deriving it from the key gave "Create User".
@@ -292,7 +298,8 @@ src/
 │   ├── Wizard.tsx    # Main wizard container
 │   ├── Dashboard.tsx # Library tiles, service cards, add/reconfigure screens
 │   ├── StepIndicator.tsx
-│   ├── steps/        # PathsStep, CredentialsStep, ServicesStep, ProgressStep
+│   ├── steps/        # PathsStep, CredentialsStep, ServicesStep, ProgressStep,
+│   │             #   StepMatrix, SetupPreflight
 │   └── ui/           # Button, Input, Select, Toggle, StatusBadge, ActionIcon
 └── types/setup.ts    # TypeScript interfaces
 ```

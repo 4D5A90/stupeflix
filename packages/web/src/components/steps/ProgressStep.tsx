@@ -1,7 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { api } from "../../api/client";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
 import type { ServiceMeta, SetupConfig, StepStatus } from "../../types/setup";
 import { Button } from "../ui/Button";
+import { SetupPreflight } from "./SetupPreflight";
 import { StepMatrix } from "./StepMatrix";
 
 interface ProgressStepProps {
@@ -39,81 +42,6 @@ const loadingSpinner = (
 	</div>
 );
 
-function Recap({
-	registry,
-	config,
-}: { registry: ServiceMeta[]; config: SetupConfig }) {
-	const enabledServices = registry.filter(
-		(svc) => config.services[svc.id]?.enabled,
-	);
-
-	const enabledWithCreds = enabledServices.filter(
-		(svc) => svc.credentials.length > 0,
-	);
-
-	return (
-		<div className="space-y-4">
-			<div className="p-4 bg-gray-800 border border-gray-700 rounded-lg space-y-2">
-				<h3 className="text-sm font-medium text-gray-300">Paths</h3>
-				<div className="text-sm space-y-1">
-					<p className="text-gray-400">
-						Config: <span className="text-gray-100">{config.paths.config}</span>
-					</p>
-					<p className="text-gray-400">
-						Media: <span className="text-gray-100">{config.paths.media}</span>
-					</p>
-					{config.libraries.map((lib, i) => (
-						<p key={lib.name} className="text-gray-500 text-xs ml-4">
-							{i < config.libraries.length - 1 ? "├── " : "└── "}
-							<span className="text-gray-300">{lib.name}/</span>
-						</p>
-					))}
-					<p className="text-gray-400">
-						Torrents:{" "}
-						<span className="text-gray-100">{config.paths.torrents}</span>
-					</p>
-				</div>
-			</div>
-
-			<div className="p-4 bg-gray-800 border border-gray-700 rounded-lg space-y-2">
-				<h3 className="text-sm font-medium text-gray-300">Services</h3>
-				<div className="flex flex-wrap gap-2">
-					{enabledServices.map((svc) => (
-						<span
-							key={svc.id}
-							className="px-2 py-1 text-sm bg-brand-600/20 text-brand-300 border border-brand-500/30 rounded"
-						>
-							{svc.name}
-						</span>
-					))}
-				</div>
-			</div>
-
-			{enabledWithCreds.length > 0 ? (
-				<div className="p-4 bg-gray-800 border border-gray-700 rounded-lg space-y-2">
-					<h3 className="text-sm font-medium text-gray-300">Credentials</h3>
-					<div className="text-sm space-y-1">
-						{enabledWithCreds.map((svc) => {
-							const displayField = svc.credentials.find(
-								(f) => f.type === "email" || f.type === "text",
-							);
-							const displayValue = displayField
-								? config.credentials[svc.id]?.[displayField.key]
-								: undefined;
-							return displayValue ? (
-								<p key={svc.id} className="text-gray-400">
-									{svc.name}:{" "}
-									<span className="text-gray-100">{displayValue}</span>
-								</p>
-							) : null;
-						})}
-					</div>
-				</div>
-			) : null}
-		</div>
-	);
-}
-
 export function ProgressStep({
 	registry,
 	config,
@@ -124,65 +52,52 @@ export function ProgressStep({
 }: ProgressStepProps) {
 	const [started, setStarted] = useState(false);
 	const { data: status, isLoading } = useSetupStatus(started);
+	// The step list depends on the whole configuration — which services, how many
+	// libraries, which conditions hold — so the server works it out rather than
+	// the browser guessing. It writes nothing: this screen can still be left.
+	const { data: preview } = useQuery({
+		queryKey: ["setup-preview", config],
+		queryFn: () => api.previewSetup(config),
+		enabled: !started,
+	});
 
-	if (!started) {
-		return (
-			<div className="space-y-6">
-				<div>
-					<h2 className="text-xl font-semibold mb-2">Summary</h2>
-					<p className="text-gray-400 text-sm">
-						Review your configuration before starting the setup.
-					</p>
-				</div>
-
-				<Recap registry={registry} config={config} />
-
-				<div className="flex justify-between">
-					<Button variant="secondary" onClick={onBack}>
-						Back
-					</Button>
-					<Button
-						onClick={() => {
-							setStarted(true);
-							onStart();
-						}}
-					>
-						Start Setup
-					</Button>
-				</div>
-			</div>
-		);
-	}
-
-	if (isLoading || !status || status.global === "pending") {
+	// Before the run, the grid is drawn from the preview; after, from the status.
+	// Same component, same position in the tree, so React keeps the very same DOM
+	// nodes: pressing the button does not rebuild a screen, it lights this one.
+	const source = started ? status : preview;
+	if (!source || (started && (isLoading || status?.global === "pending"))) {
 		return loadingSpinner;
 	}
 
-	const stepValues = Object.values(status.steps);
+	const stepValues = Object.values(source.steps);
 	const total = stepValues.length;
 	const done = stepValues.filter((s) => DONE.includes(s)).length;
 	const hasFailed = stepValues.some((s) => s === "failed");
-	const allCompleted = total > 0 && done === total;
-	const running = Object.keys(status.steps).find(
-		(key) => status.steps[key] === "in_progress",
+	const allCompleted = started && total > 0 && done === total;
+	const running = Object.keys(source.steps).find(
+		(key) => source.steps[key] === "in_progress",
 	);
-	const failed = failure(status.steps, status.labels, registry);
+	const failed = failure(source.steps, source.labels, registry);
 
-	const message = hasFailed
-		? failed
-			? `Setup stopped — ${failed.service} could not finish`
-			: "Setup stopped."
-		: allCompleted
-			? "Setup completed successfully"
-			: running
-				? `${status.labels[running] ?? running}\u2026`
-				: "Setting up your media stack\u2026";
+	const message = !started
+		? "Review your configuration before starting the setup."
+		: hasFailed
+			? failed
+				? `Setup stopped — ${failed.service} could not finish`
+				: "Setup stopped."
+			: allCompleted
+				? "Setup completed successfully"
+				: running
+					? `${source.labels[running] ?? running}\u2026`
+					: "Setting up your media stack\u2026";
 
 	return (
 		<div className="flex flex-col gap-4">
 			<div className="flex items-end justify-between gap-4">
 				<div className="min-w-0">
-					<h2 className="text-lg font-semibold">Setup Progress</h2>
+					<h2 className="text-lg font-semibold">
+						{started ? "Setup Progress" : "Summary"}
+					</h2>
 					<p
 						className={`text-sm mt-0.5 truncate ${hasFailed ? "text-brand-300" : "text-gray-400"}`}
 					>
@@ -190,7 +105,9 @@ export function ProgressStep({
 					</p>
 				</div>
 				<span className="text-sm font-mono text-gray-400 tabular-nums shrink-0">
-					{total ? Math.round((done / total) * 100) : 0}%
+					{started
+						? `${total ? Math.round((done / total) * 100) : 0}%`
+						: `${total} steps`}
 				</span>
 			</div>
 
@@ -209,9 +126,39 @@ export function ProgressStep({
 
 			<StepMatrix
 				registry={registry}
-				steps={status.steps}
-				labels={status.labels}
+				steps={source.steps}
+				labels={source.labels}
 			/>
+
+			{/* Everything that stops being true the moment the run starts. It sits
+			    under the grid, so when it goes the grid does not move. */}
+			<div
+				className={`grid transition-all duration-500 ${
+					started
+						? "grid-rows-[0fr] opacity-0 -mt-4 pointer-events-none"
+						: "grid-rows-[1fr] opacity-100"
+				}`}
+			>
+				<div className="overflow-hidden">
+					<SetupPreflight registry={registry} config={config} />
+				</div>
+			</div>
+
+			{!started ? (
+				<div className="flex justify-between">
+					<Button variant="secondary" onClick={onBack}>
+						Back
+					</Button>
+					<Button
+						onClick={() => {
+							setStarted(true);
+							onStart();
+						}}
+					>
+						Start Setup
+					</Button>
+				</div>
+			) : null}
 
 			{hasFailed ? (
 				<div className="flex items-center gap-4 p-4 rounded-xl bg-step-fail/[0.08] border border-step-fail/30">
@@ -223,7 +170,7 @@ export function ProgressStep({
 						    sentence: it scrolls inside its box instead of pushing the
 						    matrix out of the screen. */}
 						<pre className="text-[11px] leading-relaxed font-mono text-gray-400 whitespace-pre-wrap break-words max-h-28 overflow-y-auto">
-							{status.error}
+							{status?.error}
 						</pre>
 					</div>
 					<Button onClick={onRestart}>Try again</Button>

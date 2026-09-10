@@ -103,7 +103,9 @@ function readout(cells: Cell[]): string {
 	const done = cells.filter(
 		(c) => c.status === "completed" || c.status === "skipped",
 	).length;
-	if (done === 0) return "—";
+	// Before it starts, a row says how much work it is — which is what makes the
+	// same grid readable on the summary screen, where nothing has run yet.
+	if (done === 0) return `${cells.length} step${cells.length > 1 ? "s" : ""}`;
 	return `${done} step${done > 1 ? "s" : ""} done`;
 }
 
