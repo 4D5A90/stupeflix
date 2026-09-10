@@ -19,6 +19,30 @@ const OPEN_PATHS = new Set(["/health", "/api/health"]);
 export const TOKEN_KEY = "auth.token";
 
 /**
+ * What `hono/bearer-auth` will parse out of an `Authorization` header — base64
+ * and base64url, and nothing else.
+ *
+ * A token outside it is rejected by the *parser*, so the correct token answers
+ * 400 and the operator is locked out by their own configuration, with a status
+ * code that says nothing about why. Caught here instead: once, at boot, loudly.
+ * `openssl rand -base64 32` produces a conforming one.
+ */
+const TOKEN_SHAPE = /^[A-Za-z0-9._~+/-]+=*$/;
+
+/** Minted tokens are 32 bytes; a hand-written one guards the same door. */
+const MIN_LENGTH = 16;
+
+export function tokenProblem(token: string): string | null {
+	if (token.length < MIN_LENGTH) {
+		return `must be at least ${MIN_LENGTH} characters`;
+	}
+	if (!TOKEN_SHAPE.test(token)) {
+		return "may only contain letters, digits and . _ ~ + / - =";
+	}
+	return null;
+}
+
+/**
  * The token this instance answers to.
  *
  * Kept in the database rather than minted per process: one that changed on every
@@ -27,7 +51,12 @@ export const TOKEN_KEY = "auth.token";
  * `STUPEFLIX_TOKEN` overrides it for a deployment that manages its own secrets.
  */
 export function accessToken(db: Db): string {
-	if (TOKEN) return TOKEN;
+	if (TOKEN) {
+		const problem = tokenProblem(TOKEN);
+		// Refusing to start beats starting unreachable: this runs before serve().
+		if (problem) throw new Error(`STUPEFLIX_TOKEN ${problem}`);
+		return TOKEN;
+	}
 	const stored = db.get(TOKEN_KEY) as string | null;
 	if (stored) return stored;
 	const minted = randomBytes(32).toString("base64url");

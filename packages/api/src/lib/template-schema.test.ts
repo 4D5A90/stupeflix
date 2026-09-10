@@ -54,13 +54,13 @@ describe("paths a template hands to join()", () => {
 		// This one is the sharpest edge in the engine: `dropConfig` empties every
 		// reset directory with rmSync({ recursive: true, force: true }).
 		expect(validateTemplate(template({ reset: { dirs: ["../.."] } }))).toEqual([
-			'reset.dirs[0]: entry must not climb out with "..", got "../.."',
+			'reset.dirs[0] must not climb out with "..", got "../.."',
 		]);
 	});
 
 	it("refuses an absolute dirs entry", () => {
 		expect(validateTemplate(template({ dirs: ["/etc"] }))).toEqual([
-			'dirs[0]: entry must be relative, got "/etc"',
+			'dirs[0] must be relative, got "/etc"',
 		]);
 	});
 
@@ -185,9 +185,107 @@ describe("the compose guard", () => {
 		expect(validateTemplate(value)).toEqual([]);
 	});
 
+	it("refuses a bind mount that climbs back out of its root", () => {
+		// A prefix is not containment, and this is the bypass the first version
+		// shipped with: the string starts under {{paths.media}} and resolves at
+		// the Docker socket, which compose hands to the daemon verbatim.
+		for (const root of ["config", "media", "torrents"]) {
+			const mount = `{{paths.${root}}}/../../../../var/run/docker.sock:/sock`;
+			expect(
+				validateTemplate(withService({ volumes: [mount] })).join(),
+				mount,
+			).toMatch(/climbs back out of/);
+		}
+		expect(
+			validateTemplate(
+				withService({ volumes: ["{{paths.config}}/../../../:/host"] }),
+			).join(),
+		).toMatch(/climbs back out of/);
+	});
+
+	it("checks the long syntax too", () => {
+		const bind = { type: "bind", source: "/var/run/docker.sock", target: "/s" };
+		expect(validateTemplate(withService({ volumes: [bind] })).join()).toMatch(
+			/is neither a declared volume/,
+		);
+	});
+
 	it("refuses a named volume nobody declared", () => {
 		expect(
 			validateTemplate(withService({ volumes: ["orphan:/data"] })).join(),
 		).toMatch(/"orphan" is neither/);
+	});
+});
+
+describe("a validator that must never throw", () => {
+	/*
+	 * Its answer becomes a 400 with the reasons in it. An exception instead is a
+	 * 500 that says nothing — and on the load path, a server that will not boot.
+	 * The upload route hands it whatever YAML parsed to.
+	 */
+	const HOSTILE: unknown[] = [
+		null,
+		undefined,
+		0,
+		"",
+		[],
+		[1, 2],
+		{ compose: { a: { cap_add: {} } } },
+		{ compose: { a: { devices: "not a list" } } },
+		{ compose: { a: { volumes: {} } } },
+		{ compose: "no" },
+		{ compose: { a: null } },
+		{ setup: "no" },
+		{ setup: [null, 3, "x"] },
+		{ actions: [] },
+		{ actions: { a: 3 } },
+		{ credentials: "no" },
+		{ credentials: [null] },
+		{ reset: "no" },
+		{ reset: { dirs: "no" } },
+		{ dirs: {} },
+		{ info: "no" },
+		{ notes: [3] },
+		{ requires: "no" },
+		{ generate: [7] },
+		{ network: [] },
+		{ volumes: [] },
+		{ id: 3, container: false, port: "80", webUiPath: 9 },
+	];
+
+	for (const [i, value] of HOSTILE.entries()) {
+		it(`answers rather than throwing (${i})`, () => {
+			const problems = validateTemplate(value);
+			expect(Array.isArray(problems)).toBe(true);
+			expect(problems.length).toBeGreaterThan(0);
+		});
+	}
+});
+
+describe("names that reach an allowlist", () => {
+	it("refuses a container that is really a host", () => {
+		// `containerNames()` feeds lib/service-url.ts. A dotted name there is a
+		// host the engine would then agree to fetch.
+		for (const container of [
+			"169.254.169.254",
+			"metadata.example.com",
+			"evil.com",
+		]) {
+			expect(
+				validateTemplate(template({ container })).join(),
+				container,
+			).toMatch(/container must match/);
+		}
+	});
+
+	it("still takes the names the shipped templates use", () => {
+		for (const container of [
+			"gluetun",
+			"qbittorrent",
+			"tracearr-db",
+			"joal_1",
+		]) {
+			expect(validateTemplate(template({ container })), container).toEqual([]);
+		}
 	});
 });

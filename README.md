@@ -315,6 +315,13 @@ the root as well as under `/api`. Drive it with `POST /setup/complete` and poll
 curl -H "Authorization: Bearer e2e-token" http://localhost:3999/setup/status
 ```
 
+> [!WARNING]
+> If you also remap a **port** to dodge a stack already running, move the service's
+> own port with it — `WEBUI_PORT`, the port inside `config_file`, and the step URLs.
+> Publishing `18080:8080` alone leaves the service listening on 8080 while the `Host`
+> header says 18080, and qBittorrent (among others) refuses the request over it:
+> `Invalid Host header, port mismatch`. It reads as a broken template and is not one.
+
 </details>
 
 ## Reference

@@ -345,11 +345,19 @@ describe("every template", () => {
 
 		for (const tpl of templates) {
 			for (const text of handBuilt(tpl)) {
-				for (const m of text.matchAll(/\{\{credentials\.(\w+)\}\}/g)) {
-					const field = tpl.credentials?.find((f) => f.key === m[1]);
+				// Both spellings: `{{credentials.key}}` is this template's own field,
+				// `{{credentials.service.key}}` is a peer's — and a peer's value is
+				// spliced into this template's document just the same.
+				for (const m of text.matchAll(
+					/\{\{credentials\.(\w+)(?:\.(\w+))?\}\}/g,
+				)) {
+					const [owner, key] = m[2]
+						? [templates.find((t) => t.id === m[1]), m[2]]
+						: [tpl, m[1]];
+					const field = owner?.credentials?.find((f) => f.key === key);
 					expect(
 						field?.rules?.pattern,
-						`${tpl.id}: {{credentials.${m[1]}}} is written into a document verbatim`,
+						`${tpl.id}: ${m[0]} is written into a document verbatim`,
 					).toBeTruthy();
 				}
 			}

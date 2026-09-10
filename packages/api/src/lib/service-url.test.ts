@@ -52,6 +52,14 @@ describe("serviceUrl", () => {
 		}
 	});
 
+	it("rewrites the IPv6 loopback literal, brackets and all", () => {
+		// `new URL("http://[::1]/").hostname` keeps the brackets, unlike every
+		// other host it returns — so the set has to carry them too.
+		expect(serviceUrl("http://[::1]:8096/System", CONTAINERS)).toBe(
+			`http://${SERVICE_HOST}:8096/System`,
+		);
+	});
+
 	it("passes an empty URL through, for the steps that have none", () => {
 		expect(serviceUrl("", CONTAINERS)).toBe("");
 	});
