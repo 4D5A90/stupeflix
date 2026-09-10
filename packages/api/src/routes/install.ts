@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Db } from "../db.js";
+import { credentialProblems } from "../lib/credential-rules.js";
 import { ownershipConflict } from "../lib/instance.js";
 import { requirementMessage, unmetRequirements } from "../lib/requirements.js";
 import { runServiceInstall } from "../lib/service-install.js";
@@ -41,6 +42,14 @@ export function installRoutes(db: Db) {
 
 		const body = await c.req.json().catch(() => ({}));
 		const credentials: Record<string, string> = body.credentials ?? {};
+
+		// Checked against what the template declares, before anything is stored:
+		// the wizard checks the same rules as you type, but that copy is the
+		// affordance and this one is the contract.
+		const problems = credentialProblems(tpl, credentials);
+		if (problems.length > 0) {
+			return c.json({ error: problems.join("; "), problems }, 400);
+		}
 
 		for (const [key, value] of Object.entries(credentials)) {
 			db.set(`credentials.${name}.${key}`, value);

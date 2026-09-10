@@ -71,3 +71,40 @@ describe("POST /setup/preview", () => {
 		expect(keys.some((k) => k.endsWith("_Movies"))).toBe(false);
 	});
 });
+
+describe("POST /setup/paths", () => {
+	async function post(paths: unknown) {
+		return setupRoutes(configuredDb()).request("/paths", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(paths),
+		});
+	}
+
+	it("stores three absolute paths", async () => {
+		const res = await post({
+			config: "/srv/config",
+			media: "/srv/media",
+			torrents: "/srv/torrents",
+		});
+		expect(res.status).toBe(200);
+	});
+
+	it("refuses a path a reconfigure would then empty", async () => {
+		// `cleanServiceConfig` deletes recursively under paths.config.
+		const res = await post({
+			config: "/etc/../",
+			media: "/srv/media",
+			torrents: "/srv/torrents",
+		});
+		expect(res.status).toBe(400);
+		expect(((await res.json()) as { error: string }).error).toContain(
+			"paths.config",
+		);
+	});
+
+	it("refuses a relative path and a missing one", async () => {
+		expect((await post({ config: "config" })).status).toBe(400);
+		expect((await post(null)).status).toBe(400);
+	});
+});

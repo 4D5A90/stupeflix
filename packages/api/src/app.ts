@@ -1,0 +1,272 @@
+import { existsSync, writeFileSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { HTTPException } from "hono/http-exception";
+import { logger } from "hono/logger";
+import { secureHeaders } from "hono/secure-headers";
+import { parse } from "yaml";
+import type { Db } from "./db.js";
+import { accessToken, tokenGate } from "./lib/auth.js";
+import { containerStatus } from "./lib/container-status.js";
+import { ROOT, SERVICE_HOST, WEB_DIR } from "./lib/env.js";
+import { getLibraryStats } from "./lib/library-stats.js";
+import {
+	SKIPPED,
+	getServiceMetas,
+	getTemplate,
+	getTemplateFiles,
+	getTemplates,
+	getTemplatesDir,
+	reloadTemplates,
+	runSetupStep,
+} from "./lib/service-registry.js";
+import { getStacks, reloadStacks } from "./lib/stacks.js";
+import { validateTemplate } from "./lib/template-schema.js";
+import { dockerRoutes } from "./routes/docker.js";
+import { installRoutes } from "./routes/install.js";
+import { servicesRoutes } from "./routes/services.js";
+import { settingsRoutes } from "./routes/settings.js";
+import { setupRoutes } from "./routes/setup.js";
+
+/**
+ * The whole HTTP surface, assembled.
+ *
+ * Separate from `index.ts` so the wiring can be exercised without a port: the
+ * one regression this hardening pass shipped was a mount that put the token gate
+ * in front of the wizard's own `index.html`, and nothing could see it but a
+ * browser. `webDir` is a parameter for the same reason — the two mount modes are
+ * different code paths and both need reaching.
+ */
+export function createApp(db: Db, webDir: string | undefined = WEB_DIR): Hono {
+	const api = new Hono();
+
+	// Before every route below, and on `api` rather than on the outer app: `api` is
+	// mounted at both prefixes, and the outer app also serves the wizard — gating
+	// that would gate the screen that asks for the token.
+	api.use("*", tokenGate(accessToken(db)));
+
+	// After the gate, so an anonymous request is refused before its body is read.
+	// A template is a few kB; nothing else this API takes has a body at all.
+	api.use(
+		"*",
+		bodyLimit({
+			maxSize: 1024 * 1024,
+			onError: (c) => c.json({ error: "Payload too large" }, 413),
+		}),
+	);
+
+	api.get("/health", (c) => c.json({ status: "ok" }));
+
+	/** Runtime environment, so the wizard can prefill paths when a host root is mounted. */
+	api.get("/runtime", (c) => c.json({ root: ROOT, serviceHost: SERVICE_HOST }));
+
+	api.get("/registry", (c) => c.json(getServiceMetas()));
+
+	// Its own route rather than a key inside /registry: a stack is not a service,
+	// and the wizard asks one question of this list — is it empty.
+	api.get("/stacks", (c) => c.json(getStacks()));
+
+	/**
+	 * Filesystem view of the libraries, so the dashboard can lead with what the user
+	 * has rather than with which containers happen to run. Read from disk on purpose:
+	 * it stays true with every media server stopped, and picks no canonical one.
+	 */
+	api.get("/library/stats", (c) => c.json(getLibraryStats(db)));
+
+	api.get("/templates", (c) => {
+		const files = getTemplateFiles();
+		const templates = getTemplates().map((t) => ({
+			id: t.id,
+			name: t.name,
+			category: t.category,
+			file:
+				files.find((f) => f.replace(/\.ya?ml$/, "") === t.id) ?? `${t.id}.yml`,
+		}));
+		return c.json(templates);
+	});
+
+	api.post("/templates/reload", (c) => {
+		reloadTemplates();
+		reloadStacks();
+		return c.json({ success: true, count: getTemplates().length });
+	});
+
+	/**
+	 * Uploading a template is uploading code: it declares the containers this API
+	 * starts and the requests it makes on the operator's behalf.
+	 *
+	 * So the multipart filename is reduced to a basename and matched against a
+	 * shape — `resolve(dir, "../../../etc/cron.d/x.yml")` used to be honoured — and
+	 * the content is validated *before* anything is written. A refused template must
+	 * leave nothing on disk: the loader would otherwise pick it up on the next boot.
+	 */
+	api.post("/templates/upload", async (c) => {
+		const body = await c.req.parseBody();
+		const file = body.file;
+		if (!(file instanceof File)) {
+			return c.json({ error: "No file provided" }, 400);
+		}
+		const name = basename(file.name);
+		if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$/.test(name)) {
+			return c.json({ error: "File must be named <id>.yml" }, 400);
+		}
+		const dir = resolve(getTemplatesDir());
+		const target = join(dir, name);
+		// The shape above already forbids a separator; this is the invariant itself,
+		// and it is what stays true if that expression is ever loosened.
+		if (!target.startsWith(dir + sep)) {
+			return c.json({ error: "File must be named <id>.yml" }, 400);
+		}
+
+		// Refused rather than replaced: nothing here can tell a template the image
+		// shipped from one an operator uploaded, and quietly rewriting `jellyfin.yml`
+		// with a `compose:` block of someone else's choosing is the whole attack.
+		if (existsSync(target)) {
+			return c.json({ error: `${name} already exists` }, 409);
+		}
+
+		const content = await file.text();
+		let parsed: unknown;
+		try {
+			parsed = parse(content);
+		} catch (e) {
+			const detail = e instanceof Error ? e.message : String(e);
+			return c.json({ error: `Not valid YAML: ${detail}` }, 400);
+		}
+		const problems = validateTemplate(parsed);
+		if (problems.length > 0) {
+			return c.json({ error: problems.join("; "), problems }, 400);
+		}
+
+		writeFileSync(target, content);
+		reloadTemplates();
+		return c.json({ success: true, count: getTemplates().length });
+	});
+
+	api.get("/status", (c) => {
+		const containers: Record<string, string> = {};
+		for (const tpl of getTemplates()) {
+			containers[tpl.id] = containerStatus(tpl.container);
+		}
+		return c.json({ setup_completed: db.get("setup.completed"), containers });
+	});
+
+	/**
+	 * Every stored credential, for the dashboard's copy-password button. Behind the
+	 * token like everything else — the operator reading their own qBittorrent
+	 * password is the point; anyone else reading it was the bug.
+	 *
+	 * Built on null-prototype objects: the service id is a key segment a caller
+	 * chooses, and `result["__proto__"]` used to be truthy, so the field beneath it
+	 * landed on `Object.prototype` for the whole process.
+	 */
+	api.get("/credentials", (c) => {
+		const all = db.all();
+		const result: Record<string, Record<string, string>> = Object.create(null);
+		for (const [key, value] of Object.entries(all)) {
+			if (!key.startsWith("credentials.") || typeof value !== "string")
+				continue;
+			const [, serviceId, field] = key.split(".");
+			if (!serviceId || !field) continue;
+			if (!Object.hasOwn(result, serviceId))
+				result[serviceId] = Object.create(null);
+			result[serviceId][field] = value;
+		}
+		return c.json(result);
+	});
+
+	/**
+	 * Runs a template-declared action (`actions.<name>`) — no service is named here.
+	 * The `/actions/` segment keeps these clear of the fixed container verbs
+	 * (`start`, `stop`, `restart`, `logs`) served under /services.
+	 */
+	api.post("/services/:name/actions/:action", async (c) => {
+		const tpl = getTemplate(c.req.param("name"));
+		if (!tpl) return c.json({ error: "Service not found" }, 404);
+
+		const step = tpl.actions?.[c.req.param("action")];
+		if (!step)
+			return c.json({ error: "Action not supported for this service" }, 400);
+
+		const err = await runSetupStep(step, db, tpl.id);
+		return err && err !== SKIPPED
+			? c.json({ error: err }, 400)
+			: c.json({ success: true });
+	});
+
+	api.route("/settings", settingsRoutes(db));
+	api.route("/setup", setupRoutes(db));
+	api.route("/docker", dockerRoutes(db));
+	api.route("/services", servicesRoutes(db));
+	api.route("/install", installRoutes(db));
+
+	const app = new Hono();
+
+	app.use("*", logger());
+
+	/*
+	 * No `cors()`. The browser is same-origin in both mounts — Vite proxies /api in
+	 * dev, the image serves the wizard itself in production — so the wildcard it
+	 * used to install bought nothing and handed every website the operator visits a
+	 * working client for this API.
+	 *
+	 * No `csrf()` either, and that is a decision rather than an omission: the gate
+	 * is a bearer token, and a cross-origin page cannot set an `Authorization`
+	 * header without a preflight this API never answers. A forged form POST arrives
+	 * without the token and is refused as 401 like any other anonymous request.
+	 * Adding the middleware would only refuse `curl -d` for having no Origin — see
+	 * the README's throwaway-stack recipe, which drives the API by hand.
+	 */
+	app.use(
+		"*",
+		secureHeaders({
+			contentSecurityPolicy: {
+				defaultSrc: ["'self'"],
+				scriptSrc: ["'self'"],
+				// Four components size a bar or a grid from a value only known at
+				// render time (`LibraryTiles.tsx:74`, `ProgressStep.tsx:132`); those
+				// are style attributes, and a CSP without this refuses them.
+				styleSrc: ["'self'", "'unsafe-inline'"],
+				// Vite inlines the smaller service icons as data URIs.
+				imgSrc: ["'self'", "data:"],
+				connectSrc: ["'self'"],
+				objectSrc: ["'none'"],
+				baseUri: ["'self'"],
+				formAction: ["'self'"],
+				frameAncestors: ["'none'"],
+			},
+		}),
+	);
+
+	app.onError((err, c) => {
+		console.error(err);
+		// An HTTPException carries a status and a message a route meant to send; an
+		// unexpected throw carries whatever the runtime put in it — for a failed
+		// `docker compose`, the whole command line and the host paths in it.
+		if (err instanceof HTTPException) return err.getResponse();
+		return c.json({ error: "Internal error" }, 500);
+	});
+
+	/*
+	 * Always under /api. Also at the root when this port serves nothing else —
+	 * `pnpm dev`, where Vite strips the prefix when proxying, and the throwaway-
+	 * stack recipe in the README, which drives the API directly.
+	 *
+	 * The condition is not cosmetic. `api.use("*", tokenGate(…))` matches every
+	 * path, including the ones `api` has no route for, so a root mount sitting in
+	 * front of `serveStatic` answers 401 for `index.html` itself — locking the
+	 * screen that asks for the token.
+	 */
+	app.route("/api", api);
+	if (!webDir) app.route("/", api);
+
+	if (webDir) {
+		app.use("/*", serveStatic({ root: webDir }));
+		// SPA fallback — any unmatched route renders the wizard
+		app.get("*", serveStatic({ path: "index.html", root: webDir }));
+	}
+
+	return app;
+}

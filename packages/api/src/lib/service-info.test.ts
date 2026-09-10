@@ -15,7 +15,7 @@ const tpl = { id: "alpha" } as ServiceTemplate;
 const field = (extra: Partial<InfoField> = {}): InfoField => ({
 	name: "ip",
 	label: "Exit IP",
-	url: "http://service.test/v1/publicip/ip",
+	url: "http://localhost:1111/v1/publicip/ip",
 	...extra,
 });
 

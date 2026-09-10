@@ -103,7 +103,9 @@ export function resolveTemplateVars(
 ): unknown {
 	if (typeof value === "string") {
 		return value.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (match, key: string) => {
-			if (key in vars) return vars[key];
+			// `hasOwn`, not `in`: the latter walks the prototype chain, so
+			// `{{constructor}}` resolved to a function's source text.
+			if (Object.hasOwn(vars, key)) return vars[key];
 			debug(`Unresolved template variable ${match}`);
 			return "";
 		});

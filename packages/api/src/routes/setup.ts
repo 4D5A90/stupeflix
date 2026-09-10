@@ -1,10 +1,9 @@
-import { exec } from "node:child_process";
 import { existsSync } from "node:fs";
-import { promisify } from "node:util";
 import { Hono } from "hono";
 import type { Db } from "../db.js";
 import { writeCompose } from "../lib/compose.js";
-import { compose } from "../lib/docker-cli.js";
+import { credentialProblems } from "../lib/credential-rules.js";
+import { runCompose } from "../lib/docker-cli.js";
 import { COMPOSE_FILE } from "../lib/env.js";
 import {
 	cleanConfigs,
@@ -14,7 +13,12 @@ import {
 import { ownershipConflict } from "../lib/instance.js";
 import { debug, error, log } from "../lib/logger.js";
 import { checkRequirements, requirementMessage } from "../lib/requirements.js";
-import { getEnabledTemplates, getTemplates } from "../lib/service-registry.js";
+import { libraryNameProblem, pathProblem } from "../lib/safe-path.js";
+import {
+	getEnabledTemplates,
+	getTemplate,
+	getTemplates,
+} from "../lib/service-registry.js";
 import {
 	type StepStatus,
 	runTemplateSteps,
@@ -23,8 +27,6 @@ import {
 	stepRuns,
 } from "../lib/setup-runner.js";
 import type { Library } from "../lib/template-vars.js";
-
-const execAsync = promisify(exec);
 
 /** The two steps no template owns: they are the runner's own. */
 const GLOBAL_STEP_LABELS: Record<string, string> = {
@@ -77,7 +79,7 @@ async function runSetup(db: Db) {
 		if (existsSync(COMPOSE_FILE)) {
 			log("Stopping previous containers...");
 			try {
-				await execAsync(compose("down --timeout 10"));
+				await runCompose(["down", "--timeout", "10"]);
 				log("Previous containers stopped");
 			} catch (e) {
 				debug("docker compose down warning", e);
@@ -100,7 +102,7 @@ async function runSetup(db: Db) {
 		// Start containers
 		setStepStatus(db, "containers", "in_progress");
 		log("Starting containers...");
-		const { stdout, stderr } = await execAsync(compose("up -d"));
+		const { stdout, stderr } = await runCompose(["up", "-d"]);
 		debug("docker compose up", { stdout, stderr });
 		setStepStatus(db, "containers", "completed");
 
@@ -117,6 +119,55 @@ async function runSetup(db: Db) {
 		db.set("setup.global", "failed");
 		db.set("setup.error", e instanceof Error ? e.message : String(e));
 	}
+}
+
+/**
+ * Why this set of paths cannot be stored, or null.
+ *
+ * Checked before it is written, and written nowhere else: these three are the
+ * base of every `join()` the engine performs and the source of every bind mount
+ * in the generated compose file. `paths.config = /etc` turns the next
+ * reconfigure into a recursive delete of `/etc`.
+ */
+function pathsProblem(paths: unknown): string | null {
+	if (typeof paths !== "object" || paths === null) return "Missing paths";
+	const values = paths as Record<string, unknown>;
+	for (const key of ["config", "media", "torrents"] as const) {
+		const problem = pathProblem(values[key]);
+		if (problem) return `paths.${key} ${problem}`;
+	}
+	return null;
+}
+
+/**
+ * Why this credential map cannot be stored, or null.
+ *
+ * The service id is checked as well as the fields: it becomes the middle of
+ * `credentials.<id>.<key>`, so an unknown one writes a setting nothing reads
+ * and no screen shows.
+ */
+function credentialsProblem(credentials: unknown): string | null {
+	if (typeof credentials !== "object" || credentials === null) {
+		return "credentials must be a mapping";
+	}
+	for (const [id, fields] of Object.entries(credentials)) {
+		const tpl = getTemplate(id);
+		if (!tpl) return `${id} is not a service`;
+		const problems = credentialProblems(tpl, fields);
+		if (problems.length > 0) return problems.join("; ");
+	}
+	return null;
+}
+
+/** Why this library list cannot be stored, or null. */
+function librariesProblem(libraries: unknown): string | null {
+	if (!Array.isArray(libraries)) return "libraries must be a list";
+	for (const library of libraries) {
+		const name = (library as Library | undefined)?.name;
+		const problem = libraryNameProblem(name);
+		if (problem) return `library name ${problem}`;
+	}
+	return null;
 }
 
 function applyPaths(
@@ -193,12 +244,18 @@ export function setupRoutes(db: Db) {
 	const app = new Hono();
 
 	app.post("/paths", async (c) => {
-		applyPaths(db, await c.req.json());
+		const paths = await c.req.json().catch(() => null);
+		const problem = pathsProblem(paths);
+		if (problem) return c.json({ error: problem }, 400);
+		applyPaths(db, paths);
 		return c.json({ success: true });
 	});
 
 	app.post("/credentials", async (c) => {
-		applyCredentials(db, await c.req.json());
+		const credentials = await c.req.json().catch(() => null);
+		const problem = credentialsProblem(credentials);
+		if (problem) return c.json({ error: problem }, 400);
+		applyCredentials(db, credentials);
 		return c.json({ success: true });
 	});
 
@@ -233,6 +290,21 @@ export function setupRoutes(db: Db) {
 		// Refused before anything is written, so a wrong window changes nothing
 		const conflict = await ownershipConflict(db);
 		if (conflict) return c.json({ error: conflict }, 409);
+
+		// Both checked before either is written, so a refused configuration is not
+		// half-stored — the same reason the requirements check runs above.
+		if (body.paths) {
+			const problem = pathsProblem(body.paths);
+			if (problem) return c.json({ error: problem }, 400);
+		}
+		if (body.libraries) {
+			const problem = librariesProblem(body.libraries);
+			if (problem) return c.json({ error: problem }, 400);
+		}
+		if (body.credentials) {
+			const problem = credentialsProblem(body.credentials);
+			if (problem) return c.json({ error: problem }, 400);
+		}
 
 		if (body.paths) applyPaths(db, body.paths);
 		if (body.libraries) applyLibraries(db, body.libraries);

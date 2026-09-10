@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import type { Db } from "./db.js";
 import { generateCompose } from "./lib/compose.js";
 import { networkHosts } from "./lib/network.js";
@@ -15,6 +16,7 @@ import {
 import type { ServiceTemplate } from "./lib/service-registry.js";
 import { foreachSpec } from "./lib/setup-runner.js";
 import { getStacks, loadStacks } from "./lib/stacks.js";
+import { validateTemplate } from "./lib/template-schema.js";
 import { buildVars } from "./lib/template-vars.js";
 import { fakeDb } from "./test/fake-db.js";
 
@@ -87,6 +89,22 @@ function runtimeVars(tpl: ServiceTemplate): string[] {
 }
 
 describe("every template", () => {
+	/*
+	 * The loader now drops a file it cannot validate instead of crashing, which
+	 * is the right behaviour for an upload and the wrong one to discover here:
+	 * a shipped template refused at load would simply be absent, and every other
+	 * assertion below would pass over its silence. So count the files, then read
+	 * the reasons.
+	 */
+	it("is loaded, having passed the runtime validator", () => {
+		const files = readdirSync(TEMPLATES).filter((f) => /\.ya?ml$/.test(f));
+		for (const file of files) {
+			const parsed = parse(readFileSync(resolve(TEMPLATES, file), "utf-8"));
+			expect(validateTemplate(parsed), file).toEqual([]);
+		}
+		expect(templates).toHaveLength(files.length);
+	});
+
 	it("declares the fields the engine needs", () => {
 		for (const tpl of templates) {
 			expect(tpl.id, `${tpl.id}: id`).toMatch(/^[a-z0-9-]+$/);
@@ -281,6 +299,71 @@ describe("every template", () => {
 	 * contents — but an empty one renders a dead field, and a default outside it
 	 * silently submits a value the service will reject.
 	 */
+	/*
+	 * The engine substitutes `{{...}}` and escapes for nothing, so a credential
+	 * spliced into a document a template builds by hand — an INI file, a JSON
+	 * body written as a string — can end that document and start another. A
+	 * `pattern` is the only thing standing in the way, and the API now enforces
+	 * the ones a template declares (`lib/credential-rules.ts`).
+	 *
+	 * A structured `body:` is exempt on purpose: it is handed to
+	 * `JSON.stringify` or `URLSearchParams`, which quote for you.
+	 */
+	it("gives a pattern to every credential it splices into a document", () => {
+		/**
+		 * Is this string a document the template wrote itself?
+		 *
+		 * A body value like `"{{credentials.user}}"` is one field of a mapping
+		 * the runner hands to `JSON.stringify`, which quotes it. The same field
+		 * inside `\'{"web_ui_username":"{{credentials.user}}"}\'` is not: that
+		 * string *is* the JSON, and nothing will quote anything inside it. What
+		 * separates them is punctuation of its own, once the placeholders are
+		 * taken out.
+		 */
+		function isDocument(text: string): boolean {
+			return /[{}"[\]]/.test(text.replace(/\{\{[^}]*\}\}/g, ""));
+		}
+
+		/** Strings a template writes verbatim, as opposed to encoding. */
+		function handBuilt(tpl: ServiceTemplate): string[] {
+			const strings: string[] = [];
+			for (const step of [...tpl.setup, ...Object.values(tpl.actions ?? {})]) {
+				// A config file is a document by definition — INI, JSON, XML.
+				if (step.type === "config_file" && step.content) {
+					strings.push(step.content);
+				}
+				for (const value of Object.values(
+					(step.body as Record<string, unknown>) ?? {},
+				)) {
+					if (typeof value === "string" && isDocument(value)) {
+						strings.push(value);
+					}
+				}
+			}
+			return strings;
+		}
+
+		for (const tpl of templates) {
+			for (const text of handBuilt(tpl)) {
+				// Both spellings: `{{credentials.key}}` is this template's own field,
+				// `{{credentials.service.key}}` is a peer's — and a peer's value is
+				// spliced into this template's document just the same.
+				for (const m of text.matchAll(
+					/\{\{credentials\.(\w+)(?:\.(\w+))?\}\}/g,
+				)) {
+					const [owner, key] = m[2]
+						? [templates.find((t) => t.id === m[1]), m[2]]
+						: [tpl, m[1]];
+					const field = owner?.credentials?.find((f) => f.key === key);
+					expect(
+						field?.rules?.pattern,
+						`${tpl.id}: ${m[0]} is written into a document verbatim`,
+					).toBeTruthy();
+				}
+			}
+		}
+	});
+
 	it("gives every select its options, with the default among them", () => {
 		for (const tpl of templates) {
 			for (const field of tpl.credentials ?? []) {

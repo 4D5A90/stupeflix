@@ -1,16 +1,12 @@
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import type { Db } from "../db.js";
 import { writeCompose } from "./compose.js";
-import { compose } from "./docker-cli.js";
+import { runCompose } from "./docker-cli.js";
 import { cleanServiceConfig, createTemplateDirs } from "./helpers.js";
 import { log, error as logError } from "./logger.js";
 import { affectedServices, resolveNetworkTopology } from "./network.js";
 import { getEnabledTemplates } from "./service-registry.js";
 import type { ServiceTemplate } from "./service-registry.js";
 import { runTemplateSteps } from "./setup-runner.js";
-
-const execAsync = promisify(exec);
 
 interface InstallOptions {
 	/**
@@ -40,7 +36,7 @@ export async function runServiceInstall(
 		if (reset) {
 			// The container holds its config open, so stop it before dropping files
 			try {
-				await execAsync(compose(`stop ${tpl.container}`));
+				await runCompose(["stop", tpl.container]);
 			} catch {}
 			cleanServiceConfig(db, tpl);
 		}
@@ -57,14 +53,17 @@ export async function runServiceInstall(
 		);
 		if (joiners.length > 0) {
 			try {
-				await execAsync(compose(`stop ${joiners.join(" ")}`));
+				await runCompose(["stop", ...joiners]);
 			} catch {}
 		}
 		// Recreate on a reset: an unchanged definition would otherwise be left
 		// running, still holding the config we just replaced
-		await execAsync(
-			compose(`up -d ${reset ? "--force-recreate " : ""}${all.join(" ")}`),
-		);
+		await runCompose([
+			"up",
+			"-d",
+			...(reset ? ["--force-recreate"] : []),
+			...all,
+		]);
 		await runTemplateSteps(db, tpl, "post_up");
 
 		db.set("setup.global", "completed");
@@ -78,9 +77,29 @@ export async function runServiceInstall(
 		db.set("setup.global", "failed");
 		db.set("setup.error", e instanceof Error ? e.message : String(e));
 		try {
-			await execAsync(compose(`stop ${tpl.container}`));
+			await runCompose(["stop", tpl.container]);
 		} catch {}
 	}
+}
+
+/**
+ * The command that collects the containers the compose file no longer declares.
+ *
+ * Two shapes, because Compose reads the *file* and not the project. With
+ * services left, `up -d --remove-orphans` reconciles: it starts what is declared
+ * and removes what is not. With none left the file is `services: {}`, and `up`
+ * refuses it outright — *no service selected*, exit 1 — which used to leave the
+ * last service running while the API reported it removed.
+ *
+ * A bare `down` is not the answer either: on that same empty file it finds
+ * nothing to act on and exits 0 having done nothing. `--remove-orphans` is what
+ * makes it collect the containers the file stopped declaring, which by then is
+ * all of them.
+ */
+export function removalCommand(remaining: number): string[] {
+	return remaining > 0
+		? ["up", "-d", "--remove-orphans"]
+		: ["down", "--remove-orphans"];
 }
 
 /**
@@ -90,8 +109,10 @@ export async function runServiceInstall(
  * — a service and its database, say — come down whole, with no per-service
  * knowledge here.
  *
- * The service's directory under `paths.config` is deliberately left alone: it is
- * the user's settings, and reinstalling should find them again.
+ * Named volumes survive: neither form carries `-v`, so a template's database
+ * keeps its data, the same way the service's directory under `paths.config` is
+ * deliberately left alone — it is the user's settings, and reinstalling should
+ * find them again.
  */
 export async function removeService(
 	db: Db,
@@ -99,6 +120,6 @@ export async function removeService(
 ): Promise<void> {
 	db.set(`services.${tpl.id}.enabled`, false);
 	writeCompose(db);
-	await execAsync(compose("up -d --remove-orphans"));
+	await runCompose(removalCommand(getEnabledTemplates(db).length));
 	log(`[remove] ${tpl.id} removed`);
 }

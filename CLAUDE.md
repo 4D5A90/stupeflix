@@ -91,7 +91,13 @@ Each template defines:
 - `network`: `{ provides }` lends this service's network namespace, `{ join }`
   asks for one. Neither side names the other, and an unmatched `join` is inert —
   see `lib/network.ts`
-- `credentials`: fields the frontend renders in the Credentials step. `type` is
+- `credentials`: fields the frontend renders in the Credentials step. Their
+  `rules:` are enforced by the API (`lib/credential-rules.ts`), the wizard's copy
+  being the affordance — the same arrangement `requires` has. Give a `pattern` to
+  any field spliced into a document the template writes by hand (a `config_file`
+  body, an `api_call` body given as a JSON *string*): the engine substitutes
+  `{{...}}` and escapes for nothing, and `templates.test.ts` refuses a template
+  that does not. `type` is
   `text`, `password`, `email` or `select` — a `select` carries its own `options`,
   so the wizard never learns what a VPN provider is. Use `default:` only for a
   value that is right as-is; when only the *shape* is knowable, use
@@ -132,6 +138,17 @@ Each template defines:
   `label` is the button's text, and optional `icon` picks its glyph from
   `web/src/components/ui/ActionIcon.tsx` — names are case-sensitive and listed in
   the README; an unknown one silently falls back to the default
+
+A template is **root-equivalent code**: its `compose:` block reaches
+`docker compose up` verbatim, and its `setup:` steps write files and call hosts.
+So `lib/template-schema.ts` validates every `.yml` at load — shipped or uploaded
+— and a file that will not validate is skipped and logged rather than taking the
+boot down with it. It refuses the compose keys that hand over the host
+(`privileged`, `pid`, `security_opt`, `network_mode`…), bounds `cap_add` to
+`NET_ADMIN` and `devices` to `/dev/net/tun` and `/dev/dri` because gluetun and a
+transcoding media server genuinely need those, and confines every bind-mount
+source under `{{paths.*}}` — a *prefix* is not containment, so `..` in the tail
+is refused too. `docs/templates.md` states the rules a template author reads.
 
 **No file under `src/` names a service.** Adding one is dropping a `.yml` in
 `templates/` and nothing else — that invariant is the point of the design, so
@@ -196,17 +213,24 @@ region entirely.
 
 ```
 src/
-├── index.ts              # Entry point - loads templates, Hono server, serves the web build
+├── index.ts              # Bootstrap only - load templates, open the DB, listen
+├── app.ts                # The whole HTTP surface, assembled; testable without a port
 ├── db.ts                 # sql.js SQLite wrapper (per-service defaults come from templates)
 ├── lib/
 │   ├── env.ts            # Runtime config (paths, service host, PUID/PGID/TZ) from env vars
-│   ├── docker-cli.ts     # `docker compose` command builder (file + project name)
+│   ├── auth.ts           # The access token, and the gate in front of every route
+│   ├── docker-cli.ts     # `docker` as an argv array — the one place, and no shell
+│   ├── container-status.ts # One `docker ps` for every container, memoised ~1s
 │   ├── template-vars.ts  # Builds and resolves {{...}} — the only place vars are defined
+│   ├── template-schema.ts # What a `.yml` must be before it becomes root-equivalent code
 │   ├── service-registry.ts # Loads YAML templates, mints secrets, runs setup steps
 │   ├── setup-runner.ts   # Phases (pre_up/post_up), foreach expansion, step statuses
 │   ├── compose.ts        # Merges the enabled templates' `compose:` blocks
 │   ├── network.ts        # provides/join topology, and the compose rewrite it implies
 │   ├── requirements.ts   # requires/recommends resolved by category, never by name
+│   ├── credential-rules.ts # The `rules:` a template declares, enforced server-side
+│   ├── safe-path.ts      # join + the proof it did not climb out; the wizard's paths
+│   ├── service-url.ts    # The hosts a template may name, and the localhost rewrite
 │   ├── instance.ts       # Which database owns the containers — labels + the guard
 │   ├── stacks.ts         # stacks/*.yml — a named set of services, loaded like templates
 │   ├── service-install.ts # Install / reconfigure / remove one service
@@ -221,6 +245,18 @@ src/
     ├── docker.ts         # /docker/* routes
     └── services.ts       # /services/* routes, incl. reconfigure and DELETE
 ```
+
+**Every route needs a bearer token**, except `GET /health` — the healthcheck
+polls it from outside the app and has no way to carry one. The gate is mounted on
+the `api` router, not the outer app, and `app.ts` mounts `api` at the root *only*
+when nothing else is served on the port: `api.use("*")` matches every path,
+including the ones `api` has no route for, so a root mount in front of
+`serveStatic` answers 401 for the wizard's own `index.html`.
+
+The token is minted on first boot and kept in the database, or pinned by
+`STUPEFLIX_TOKEN`. A pinned one is checked at boot against what an
+`Authorization` header can carry, and the server refuses to start rather than
+start unreachable.
 
 `POST /setup/preview` answers what a configuration *would* run — the same keys
 and labels the status endpoint will serve — computed against a read-only overlay
@@ -313,8 +349,12 @@ so everything path- or host-related goes through `lib/env.ts`:
   `STUPEFLIX_ROOT` bind mount, which also prefills the wizard (`GET /runtime`).
 - Service containers publish on the host, so template URLs (`http://localhost:8096`)
   are rewritten to `STUPEFLIX_SERVICE_HOST` by `serviceUrl()`.
-- Never call `docker compose` directly: use `compose()` from `lib/docker-cli.ts`,
-  which pins `-f <generated file>` and the project name.
+- Never call `docker` directly, and never build a command as a string: use
+  `runCompose` / `runComposeSync` / `runDockerSync` from `lib/docker-cli.ts`.
+  They pin `-f <generated file>` and the project name, and they take an **argv
+  array** through `execFile` — no shell is involved anywhere in that module, so
+  a container name or a `--tail` value cannot end one command and start another.
+  That property is why the module exists; a string built at a call site loses it.
 - The compose project is always `stupeflix`, never derived from the working
   directory: running from source and running the image must own the same
   containers, or they collide on `container_name`.
@@ -332,6 +372,9 @@ so everything path- or host-related goes through `lib/env.ts`:
 
 ## Key Files
 
+- `docs/adr/` - Decisions that shape the rest, and what each makes unnecessary.
+  Read these before reversing something that looks like an oversight — the bearer
+  token, the missing `csrf()`, the root `USER`, the argv-only Docker layer
 - `templates/*.yml` - Service definitions (credentials, setup pipeline)
 - `packages/api/src/lib/service-registry.ts` - Template loader and setup step runner
 - `packages/api/src/routes/setup.ts` - Async setup with status polling

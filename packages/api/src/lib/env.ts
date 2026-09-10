@@ -52,8 +52,15 @@ export const TZ = fromEnv("TZ") ?? "Europe/Paris";
 
 export const PORT = Number(fromEnv("PORT") ?? 3000);
 
-/** Rewrites a template URL so it points at the host running the service containers. */
-export function serviceUrl(url: string): string {
-	// Force IPv4 — containers listen on 0.0.0.0, but localhost may resolve to ::1
-	return url.replace(/:\/\/(localhost|127\.0\.0\.1)/, `://${SERVICE_HOST}`);
-}
+/**
+ * Interface the server binds. All of them by default: this is an assistant you
+ * open from another machine, and it is the access token — not the topology —
+ * that closes the door. Pin it to `127.0.0.1` to put the door back.
+ */
+export const HOST = fromEnv("HOST") ?? "0.0.0.0";
+
+/**
+ * Access token, when the deployment manages its own secrets. Left unset, one is
+ * minted on first boot and kept in the database — see `lib/auth.ts`.
+ */
+export const TOKEN = fromEnv("STUPEFLIX_TOKEN");

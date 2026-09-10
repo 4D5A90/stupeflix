@@ -12,6 +12,7 @@ green, and it appears in the wizard. No file under `packages/api/src` names a se
 [`foreach`](#foreach) ·
 [`api_call` options](#api_call-options) ·
 [Credential rules](#credential-rules) ·
+[What a template may declare](#what-a-template-may-declare) ·
 [Action icons](#action-icons)
 
 ## Anatomy
@@ -289,6 +290,65 @@ credentials:
       pattern: "^[a-zA-Z0-9]+$"
       message: Custom error message
 ```
+
+Enforced by the API on every credential write (`lib/credential-rules.ts`), and
+mirrored in the wizard so it can answer as you type. The API is the authority;
+change the two together. A `select` is held to its own `options` the same way,
+and a field with no `rules:` is still capped at 512 characters.
+
+**The engine escapes for nothing.** A `{{credentials.x}}` is substituted
+verbatim, so a value spliced into a document the template writes itself — a
+`config_file` body, or an `api_call` body given as a JSON *string* rather than a
+mapping — can close that document and open another. Give those fields a
+`pattern`; `templates.test.ts` refuses a template that does not.
+
+A structured `body:` needs none of this: the runner hands it to `JSON.stringify`
+or `URLSearchParams`, which quote for you. Prefer that shape.
+
+## What a template may declare
+
+A template is code with root's reach: its `compose:` block is merged into the
+file `docker compose up` executes, and its `setup:` steps write files and call
+hosts. `lib/template-schema.ts` checks every `.yml` at load — the one the image
+ships and the one someone uploads alike — and a file it refuses is skipped with
+its reasons in the log, rather than loaded.
+
+**Refused outright**, because they hand a container the host it runs on:
+
+`privileged` · `pid` · `ipc` · `uts` · `userns_mode` · `security_opt` ·
+`cgroup_parent` · `sysctls` · `network_mode`
+
+`network_mode` is on the list for a second reason: the engine sets it itself when
+a service joins a tunnel, so a template setting it would be silently overwritten
+or silently win.
+
+**Bounded rather than refused**, because two services genuinely need them:
+
+| Key | Allowed |
+|-----|---------|
+| `cap_add` | `NET_ADMIN` — a VPN container raising a WireGuard interface |
+| `devices` | `/dev/net/tun`, `/dev/dri` — the tunnel, and GPU transcoding |
+
+**Bind mounts start under a wizard path**: `{{paths.config}}`, `{{paths.media}}`
+or `{{paths.torrents}}`, and they stay there — a `..` in the tail is refused, since
+a prefix is not containment and Compose passes the string to the daemon untouched.
+Anything else must be a named volume the template declares in `volumes:`.
+
+**Paths stay relative and stay put.** `file:`, `dirs:` and `reset.dirs:` may not
+be absolute and may not contain `..`. `reset.dirs` is the sharpest of the three:
+its contents are deleted recursively on a reconfigure.
+
+**Names are names.** `id`, `container:` and a step's `container:` match
+`^[A-Za-z0-9][A-Za-z0-9_-]*$` — no dots, because a container name is also an
+address the engine agrees to fetch, and `metadata.example.com` is not a service
+you run.
+
+**Patterns are short.** `regex`, `match`, `skipIf.match` and a credential's
+`rules.pattern` are capped at 200 characters: they are compiled and run against a
+service's output.
+
+Needing something this list forbids is a conversation, not a workaround — the
+list lives in one file and changing it is a reviewed change.
 
 ## Action icons
 

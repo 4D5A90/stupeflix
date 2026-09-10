@@ -7,14 +7,51 @@ import type {
 
 const BASE_URL = "/api";
 
+const TOKEN_KEY = "stupeflix.token";
+
+/**
+ * Thrown on a 401, so the app can ask for the token again instead of rendering
+ * the refusal as a failed query. `request()` collapses every other failure to a
+ * plain `Error`, and the status code is exactly what that shape loses.
+ */
+export class Unauthorized extends Error {
+	constructor() {
+		super("Unauthorized");
+		this.name = "Unauthorized";
+	}
+}
+
+let token = localStorage.getItem(TOKEN_KEY) ?? "";
+
+export function setToken(value: string): void {
+	token = value;
+	localStorage.setItem(TOKEN_KEY, value);
+}
+
+export function clearToken(): void {
+	token = "";
+	localStorage.removeItem(TOKEN_KEY);
+}
+
+export function hasToken(): boolean {
+	return token !== "";
+}
+
+/** Carried by every call — `uploadTemplate` included, since it skips `request`. */
+function authHeaders(): Record<string, string> {
+	return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
 	const res = await fetch(`${BASE_URL}${path}`, {
 		...options,
 		headers: {
 			"Content-Type": "application/json",
+			...authHeaders(),
 			...options?.headers,
 		},
 	});
+	if (res.status === 401) throw new Unauthorized();
 	if (!res.ok) {
 		const error = await res.json().catch(() => ({}));
 		// The API answers `{ error }`; a template's own wording travels in there,
@@ -141,8 +178,13 @@ export const api = {
 		form.append("file", file);
 		return fetch(`${BASE_URL}/templates/upload`, {
 			method: "POST",
+			// No Content-Type: the browser sets the multipart boundary itself. That
+			// is why this one call bypasses `request()`, and why it has to repeat
+			// the token header rather than inherit it.
+			headers: authHeaders(),
 			body: form,
 		}).then((res) => {
+			if (res.status === 401) throw new Unauthorized();
 			if (!res.ok) throw new Error("Upload failed");
 			return res.json() as Promise<{ success: boolean; count: number }>;
 		});

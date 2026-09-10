@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import type { Db } from "../db.js";
-import { debug, log } from "./logger.js";
+import { debug, log, error as logError } from "./logger.js";
+import { underRoot } from "./safe-path.js";
 import type { ServiceTemplate } from "./service-registry.js";
 import {
 	getGeneratedConfigFiles,
@@ -14,7 +14,7 @@ import { getLibraries } from "./template-vars.js";
 export function createMediaDirs(db: Db): void {
 	const mediaPath = db.get("paths.media") as string;
 	for (const lib of getLibraries(db)) {
-		mkdirSync(join(mediaPath, lib.name), { recursive: true });
+		mkdirSync(underRoot(mediaPath, lib.name), { recursive: true });
 	}
 	log("Media directories created");
 }
@@ -24,7 +24,7 @@ export function createTemplateDirs(db: Db, tpl: ServiceTemplate): void {
 	const configPath = db.get("paths.config") as string;
 	if (!configPath) return;
 	for (const dir of tpl.dirs ?? []) {
-		mkdirSync(join(configPath, dir), { recursive: true });
+		mkdirSync(underRoot(configPath, dir), { recursive: true });
 	}
 }
 
@@ -50,13 +50,26 @@ export function cleanServiceConfig(db: Db, tpl: ServiceTemplate): void {
 	dropConfig(db, getTemplateConfigFiles(db, tpl), getTemplateResetDirs(tpl));
 }
 
+/** The path, or null after saying why it was left alone. */
+function contained(base: string, tail: string): string | null {
+	try {
+		return underRoot(base, tail);
+	} catch {
+		logError(`Refusing to touch ${tail}: outside ${base}`);
+		return null;
+	}
+}
+
 function dropConfig(db: Db, files: string[], dirs: string[]): void {
 	const configPath = db.get("paths.config") as string;
 	if (!configPath) return;
 
 	for (const file of files) {
-		const path = join(configPath, file);
-		if (!existsSync(path)) continue;
+		// Every path here is checked before it is used, because this function is
+		// the only one that deletes. A template's `file:` is validated at load,
+		// but it carries `{{...}}` that only expand at this point.
+		const path = contained(configPath, file);
+		if (!path || !existsSync(path)) continue;
 		debug(`Removing ${path}`);
 		rmSync(path, { force: true });
 	}
@@ -67,12 +80,12 @@ function dropConfig(db: Db, files: string[], dirs: string[]): void {
 	// one that was deleted — Jellyfin comes up unable to create `/config/data`,
 	// and `wait_ready` then times out on an API that will never answer.
 	for (const dir of dirs) {
-		const path = join(configPath, dir);
-		if (!existsSync(path)) continue;
+		const path = contained(configPath, dir);
+		if (!path || !existsSync(path)) continue;
 		debug(`Emptying ${path}`);
 		// readdir, not a shell glob: dotfiles are contents too.
 		for (const entry of readdirSync(path)) {
-			rmSync(join(path, entry), { recursive: true, force: true });
+			rmSync(underRoot(path, entry), { recursive: true, force: true });
 		}
 	}
 }
