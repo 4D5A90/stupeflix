@@ -10,10 +10,10 @@ import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import type { Db } from "../db.js";
 import { runComposeSync } from "./docker-cli.js";
-import { serviceUrl } from "./env.js";
 import { debug, log, error as logError } from "./logger.js";
 import { networkHosts, resolveNetworkTopology } from "./network.js";
 import { underRoot } from "./safe-path.js";
+import { isOwnHost, serviceUrl } from "./service-url.js";
 import { validateTemplate } from "./template-schema.js";
 import { buildVars, resolveTemplateVars } from "./template-vars.js";
 
@@ -312,6 +312,11 @@ export function getTemplateFiles(): string[] {
 	);
 }
 
+/** Every container this install declares — the hosts a template may name. */
+export function containerNames(): string[] {
+	return templates.map((t) => t.container);
+}
+
 export function getTemplates(): ServiceTemplate[] {
 	return templates;
 }
@@ -421,6 +426,17 @@ export function getTemplateResetDirs(tpl: ServiceTemplate): string[] {
  * body has to match too, which is how a template waits for a service to reach a
  * state instead of merely accepting connections.
  */
+/**
+ * How long one request may take. Without these the 120 s budget below is only
+ * checked *between* attempts, so a peer that accepts a connection and then says
+ * nothing holds the whole run until the socket gives up on its own.
+ */
+const PROBE_TIMEOUT_MS = 5000;
+const CALL_TIMEOUT_MS = 30000;
+
+/** A response body is only ever matched against a pattern this far in. */
+const MAX_MATCH_BYTES = 64 * 1024;
+
 async function waitForService(
 	url: string,
 	match?: string,
@@ -430,11 +446,14 @@ async function waitForService(
 	const pattern = match ? new RegExp(match) : null;
 	while (Date.now() - start < maxWait) {
 		try {
-			const res = await fetch(url);
+			const res = await fetch(url, {
+				signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+			});
 			// Any HTTP response means the service is up (even 401/403)
 			if (res.status > 0) {
 				if (!pattern) return true;
-				if (pattern.test(await res.text())) return true;
+				if (pattern.test((await res.text()).slice(0, MAX_MATCH_BYTES)))
+					return true;
 			}
 		} catch {
 			// connection refused = not ready yet
@@ -477,12 +496,20 @@ function errorDetail(
 	return `${method} ${bare} returned ${status}: ${trimmed}`;
 }
 
-/** A step's declared headers, plus the stored cookie/token it opts into. */
+/**
+ * A step's declared headers, plus the stored cookie/token it opts into.
+ *
+ * `useCookie` and `useToken` say "send the session this service gave us", so
+ * they are only honoured when the request is going back to that service. A
+ * template naming a peer and asking for its neighbour's session would be
+ * handing one service's credentials to another.
+ */
 function stepHeaders(
 	step: SetupStepDef,
 	db: Db,
 	serviceId: string,
 	vars: Record<string, string>,
+	url: string,
 ): Record<string, string> {
 	const headers: Record<string, string> = step.headers
 		? Object.fromEntries(
@@ -492,11 +519,12 @@ function stepHeaders(
 				]),
 			)
 		: {};
-	if (step.useCookie) {
+	const own = isOwnHost(url, getTemplate(serviceId)?.container ?? serviceId);
+	if (step.useCookie && own) {
 		const cookie = db.get(`internal.${serviceId}.cookie`) as string;
 		if (cookie) headers.Cookie = cookie;
 	}
-	if (step.useToken) {
+	if (step.useToken && own) {
 		const token = db.get(`internal.${serviceId}.token`) as string;
 		if (token) headers.Authorization = `MediaBrowser Token="${token}"`;
 	}
@@ -528,20 +556,39 @@ export async function runSetupStep(
 		...networkHosts(templates, resolveNetworkTopology(getEnabledTemplates(db))),
 		...extraVars,
 	};
-	const url =
-		serviceUrl(resolveTemplateVars(step.url ?? "", vars) as string) ||
-		undefined;
+	// Both URLs resolved through the allowlist, and a refusal is the step's
+	// error rather than a throw: a template naming somewhere it has no business
+	// reaching should say so on the screen the operator is watching.
+	let url: string | undefined;
+	let probe: string | undefined;
+	try {
+		url =
+			serviceUrl(
+				resolveTemplateVars(step.url ?? "", vars) as string,
+				containerNames(),
+			) || undefined;
+		if (step.skipIf) {
+			probe = serviceUrl(
+				resolveTemplateVars(step.skipIf.url, vars) as string,
+				containerNames(),
+			);
+		}
+	} catch (e) {
+		return e instanceof Error ? e.message : String(e);
+	}
 
-	if (step.skipIf) {
-		const probe = serviceUrl(
-			resolveTemplateVars(step.skipIf.url, vars) as string,
-		);
+	if (probe && step.skipIf) {
 		const pattern = resolveTemplateVars(step.skipIf.match, vars) as string;
 		try {
 			const res = await fetch(probe, {
-				headers: stepHeaders(step, db, serviceId, vars),
+				headers: stepHeaders(step, db, serviceId, vars, probe),
+				signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
 			});
-			if (res.ok && new RegExp(pattern).test(await res.text())) {
+			// A bounded prefix, not the whole body: the pattern is expanded from
+			// template variables before it is compiled, so a credential can end up
+			// being the regex, and a media server's response can be megabytes.
+			const body = (await res.text()).slice(0, MAX_MATCH_BYTES);
+			if (res.ok && new RegExp(pattern).test(body)) {
 				debug(`Skipping ${step.name}: ${probe} already matches /${pattern}/`);
 				return SKIPPED;
 			}
@@ -572,7 +619,8 @@ export async function runSetupStep(
 			if (step.merge && resolved) {
 				try {
 					const current = await fetch(url, {
-						headers: stepHeaders(step, db, serviceId, vars),
+						headers: stepHeaders(step, db, serviceId, vars, url),
+						signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
 					});
 					if (!current.ok) {
 						return `${url} returned ${current.status} while reading it to merge`;
@@ -607,13 +655,18 @@ export async function runSetupStep(
 			const maxRetries = step.maxRetries ?? 10;
 			for (let attempt = 0; attempt <= maxRetries; attempt++) {
 				try {
-					const headers = stepHeaders(step, db, serviceId, vars);
+					const headers = stepHeaders(step, db, serviceId, vars, url);
 					if (contentType) headers["Content-Type"] = contentType;
 					debug(`${method} ${url}`, {
 						headers: redactHeaders(headers),
 						hasBody: !!body,
 					});
-					const res = await fetch(url, { method, headers, body });
+					const res = await fetch(url, {
+						method,
+						headers,
+						body,
+						signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+					});
 					if (step.storeCookie) {
 						const cookie = res.headers.get("set-cookie");
 						if (cookie) db.set(`internal.${serviceId}.cookie`, cookie);

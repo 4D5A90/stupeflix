@@ -64,9 +64,3 @@ export const HOST = fromEnv("HOST") ?? "0.0.0.0";
  * minted on first boot and kept in the database — see `lib/auth.ts`.
  */
 export const TOKEN = fromEnv("STUPEFLIX_TOKEN");
-
-/** Rewrites a template URL so it points at the host running the service containers. */
-export function serviceUrl(url: string): string {
-	// Force IPv4 — containers listen on 0.0.0.0, but localhost may resolve to ::1
-	return url.replace(/:\/\/(localhost|127\.0\.0\.1)/, `://${SERVICE_HOST}`);
-}

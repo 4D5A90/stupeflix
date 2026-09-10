@@ -197,7 +197,7 @@ describe("runSetupStep: wait_ready", () => {
 		name: "wait_ready",
 		label: "Wait",
 		type: "wait_ready",
-		url: "http://service.test/identity",
+		url: "http://localhost:1111/identity",
 	};
 	let db: Db;
 
@@ -266,11 +266,11 @@ describe("runSetupStep: skipIf", () => {
 		name: "add_library",
 		label: "Add library",
 		type: "api_call",
-		url: "http://service.test/library/sections",
+		url: "http://localhost:1111/library/sections",
 		method: "POST",
 		headers: { "X-Token": "{{credentials.alpha.user}}" },
 		skipIf: {
-			url: "http://service.test/library/sections",
+			url: "http://localhost:1111/library/sections",
 			match: 'title="Movies"',
 		},
 	};

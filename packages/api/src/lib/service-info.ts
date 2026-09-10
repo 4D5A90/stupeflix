@@ -1,6 +1,7 @@
 import type { Db } from "../db.js";
-import { serviceUrl } from "./env.js";
+import { containerNames } from "./service-registry.js";
 import type { InfoField, ServiceTemplate } from "./service-registry.js";
+import { serviceUrl } from "./service-url.js";
 import { buildVars, resolveTemplateVars } from "./template-vars.js";
 
 /**
@@ -33,8 +34,13 @@ export async function readInfoField(
 	field: InfoField,
 ): Promise<string | null> {
 	const vars = buildVars(db, tpl.id);
-	const url = serviceUrl(resolveTemplateVars(field.url, vars) as string);
 	try {
+		// Inside the try: a template naming a host this install does not run reads
+		// as a dash, like any other readout that could not be taken.
+		const url = serviceUrl(
+			resolveTemplateVars(field.url, vars) as string,
+			containerNames(),
+		);
 		const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
 		if (!res.ok) return null;
 		if (!field.extract) return (await res.text()).trim() || null;
