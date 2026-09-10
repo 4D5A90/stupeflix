@@ -2,8 +2,8 @@ import { resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { secureHeaders } from "hono/secure-headers";
 import { initDb } from "./db.js";
 import { accessToken, tokenGate } from "./lib/auth.js";
 import { runDockerSync } from "./lib/docker-cli.js";
@@ -171,7 +171,40 @@ api.route("/install", installRoutes(db));
 const app = new Hono();
 
 app.use("*", logger());
-app.use("*", cors());
+
+/*
+ * No `cors()`. The browser is same-origin in both mounts — Vite proxies /api in
+ * dev, the image serves the wizard itself in production — so the wildcard it
+ * used to install bought nothing and handed every website the operator visits a
+ * working client for this API.
+ *
+ * No `csrf()` either, and that is a decision rather than an omission: the gate
+ * is a bearer token, and a cross-origin page cannot set an `Authorization`
+ * header without a preflight this API never answers. A forged form POST arrives
+ * without the token and is refused as 401 like any other anonymous request.
+ * Adding the middleware would only refuse `curl -d` for having no Origin — see
+ * the README's throwaway-stack recipe, which drives the API by hand.
+ */
+app.use(
+	"*",
+	secureHeaders({
+		contentSecurityPolicy: {
+			defaultSrc: ["'self'"],
+			scriptSrc: ["'self'"],
+			// Four components size a bar or a grid from a value only known at
+			// render time (`LibraryTiles.tsx:74`, `ProgressStep.tsx:132`); those
+			// are style attributes, and a CSP without this refuses them.
+			styleSrc: ["'self'", "'unsafe-inline'"],
+			// Vite inlines the smaller service icons as data URIs.
+			imgSrc: ["'self'", "data:"],
+			connectSrc: ["'self'"],
+			objectSrc: ["'none'"],
+			baseUri: ["'self'"],
+			formAction: ["'self'"],
+			frameAncestors: ["'none'"],
+		},
+	}),
+);
 
 app.onError((err, c) => {
 	console.error(err);
