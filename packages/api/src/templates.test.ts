@@ -251,24 +251,19 @@ describe("every template", () => {
 	});
 
 	/**
-	 * The dashboard draws `src/icons/<id>.svg`, picked by filename alone —
-	 * so a template without one falls back to a blank circle nobody notices in
-	 * review. Adding a service means dropping its glyph beside the others.
+	 * Deliberately one-way. A template without an icon is fine — `ServiceIcon`
+	 * falls back, and a service dropped into a running install has no business
+	 * failing a build. An icon whose template is gone is just dead weight, and
+	 * nothing else will ever point it out.
 	 */
-	it("gives every template an icon file", () => {
+	it("keeps no icon for a service that no longer exists", () => {
 		const dir = resolve(import.meta.dirname, "../../web/src/icons");
-		const drawn = new Set(
-			readdirSync(dir)
-				.filter((f) => f.endsWith(".svg"))
-				.map((f) => f.replace(".svg", "")),
-		);
-		for (const tpl of templates) {
-			expect(drawn, `template "${tpl.id}"`).toContain(tpl.id);
-		}
-		// And nothing left behind: an icon for a service that no longer exists is
-		// dead weight nobody will think to delete.
+		const drawn = readdirSync(dir)
+			.filter((f) => f.endsWith(".svg"))
+			.map((f) => f.replace(".svg", ""))
+			// `_default` and `_runner` are the frontend's own, not services.
+			.filter((id) => !id.startsWith("_"));
 		for (const id of drawn) {
-			if (id.startsWith("_")) continue;
 			expect(
 				templates.map((t) => t.id),
 				`icon "${id}.svg"`,

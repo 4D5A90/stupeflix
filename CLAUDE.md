@@ -345,9 +345,11 @@ so everything path- or host-related goes through `lib/env.ts`:
   service is dropping its `.svg` beside the others and touching nothing else —
   the same invariant the API holds for `templates/`. Author it with
   `fill="currentColor"` or `stroke="currentColor"` so the tile's tint reaches it,
-  and `templates.test.ts` fails on a template with no icon, or an icon with no
-  template. Names starting with `_` are the frontend's own (`_default`,
-  `_runner`) and are exempt.
+  and `ServiceIcon` falls back to `_default.svg` for a service that has none —
+  a template dropped into a running install must never fail on a missing glyph.
+  The gate runs the other way only: `templates.test.ts` fails on an icon whose
+  template is gone, since nothing else would ever point that file out. Names
+  starting with `_` are the frontend's own and are exempt.
 
 ## Linting Rules (`pnpm lint`)
 
