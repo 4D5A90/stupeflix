@@ -25,7 +25,12 @@ each one through its own API — libraries created, keys exchanged, services poi
 each other. Then it stays up as a dashboard.
 
 Every service is a YAML file in [`templates/`](templates), loaded at runtime — no
-service is named in the code.
+service is named in the code. Adding one is dropping a `.yml` there, plus its
+logo as `packages/web/src/icons/<id>.svg`; [dashboardicons.com](https://dashboardicons.com)
+has a mark for every self-hosted app in this stack. Take the **monochrome**
+variant and set `fill="currentColor"` on its root, so the icon picks up the
+service's colour — a service with no icon still works, it just gets a plain
+circle.
 
 ## Getting started
 
@@ -237,6 +242,7 @@ stupeflix/
 │   │   └── routes/     # setup, install, services, settings, docker
 │   └── web/src/
 │       ├── components/ # Wizard.tsx, Dashboard.tsx, steps/, dashboard/, ui/
+│       ├── icons/      # One <service-id>.svg per service, found by filename
 │       └── hooks/      # React Query hooks
 └── data/               # SQLite DB + generated docker-compose.yml
 ```
