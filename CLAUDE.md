@@ -350,6 +350,14 @@ so everything path- or host-related goes through `lib/env.ts`:
   ground muddies everything.
 - Changing `tailwind.config.js` needs a dev-server restart — Vite does not pick it
   up hot, and `@apply` with a new token fails the PostCSS build until it does.
+- **Anything that opens or closes uses `ui/Collapse`.** It measures its content
+  and animates to that height through the Web Animations API. Both shortcuts
+  were tried and both fail: a `max-height` cap crosses space the content never
+  occupies and snaps at the end, and `grid-template-rows: 1fr → 0fr` starts no
+  animation at all — the collapse it produced only looked smooth because an
+  opacity fade ran beside it. Never hide the box with `visibility: hidden`
+  either: an element that is not rendered cannot animate, so the closed state is
+  zero height plus `inert`.
 - Service logos come from **[dashboardicons.com](https://dashboardicons.com)**,
   which carries every self-hosted app in this stack; simple-icons has the
   monochrome marks for a few (Sonarr, Radarr). Anything else — a category, an
