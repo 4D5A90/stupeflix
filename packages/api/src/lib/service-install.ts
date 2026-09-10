@@ -83,14 +83,36 @@ export async function runServiceInstall(
 }
 
 /**
+ * The command that collects the containers the compose file no longer declares.
+ *
+ * Two shapes, because Compose reads the *file* and not the project. With
+ * services left, `up -d --remove-orphans` reconciles: it starts what is declared
+ * and removes what is not. With none left the file is `services: {}`, and `up`
+ * refuses it outright — *no service selected*, exit 1 — which used to leave the
+ * last service running while the API reported it removed.
+ *
+ * A bare `down` is not the answer either: on that same empty file it finds
+ * nothing to act on and exits 0 having done nothing. `--remove-orphans` is what
+ * makes it collect the containers the file stopped declaring, which by then is
+ * all of them.
+ */
+export function removalCommand(remaining: number): string[] {
+	return remaining > 0
+		? ["up", "-d", "--remove-orphans"]
+		: ["down", "--remove-orphans"];
+}
+
+/**
  * Drops a service: disable it, rewrite the compose file without it, and let
  * Docker collect what is no longer declared. Going through `--remove-orphans`
  * rather than naming containers is what makes a template owning several of them
  * — a service and its database, say — come down whole, with no per-service
  * knowledge here.
  *
- * The service's directory under `paths.config` is deliberately left alone: it is
- * the user's settings, and reinstalling should find them again.
+ * Named volumes survive: neither form carries `-v`, so a template's database
+ * keeps its data, the same way the service's directory under `paths.config` is
+ * deliberately left alone — it is the user's settings, and reinstalling should
+ * find them again.
  */
 export async function removeService(
 	db: Db,
@@ -98,6 +120,6 @@ export async function removeService(
 ): Promise<void> {
 	db.set(`services.${tpl.id}.enabled`, false);
 	writeCompose(db);
-	await runCompose(["up", "-d", "--remove-orphans"]);
+	await runCompose(removalCommand(getEnabledTemplates(db).length));
 	log(`[remove] ${tpl.id} removed`);
 }
