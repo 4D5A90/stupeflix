@@ -10,7 +10,7 @@ import { StepMatrix } from "./StepMatrix";
 interface ProgressStepProps {
 	registry: ServiceMeta[];
 	config: SetupConfig;
-	onStart: () => void;
+	onStart: () => Promise<unknown>;
 	onBack: () => void;
 	onRestart: () => void;
 	onComplete?: () => void;
@@ -50,8 +50,13 @@ export function ProgressStep({
 	onRestart,
 	onComplete,
 }: ProgressStepProps) {
+	// Two flags, not one. `started` is the screen: the pre-flight goes, the grid
+	// stays. `launched` is the server: only once the run has been accepted are
+	// its statuses this run's — before that, `/setup/status` still answers with
+	// the previous one, and polling it paints a finished run for a frame.
 	const [started, setStarted] = useState(false);
-	const { data: status, isLoading } = useSetupStatus(started);
+	const [launched, setLaunched] = useState(false);
+	const { data: status, isLoading } = useSetupStatus(launched);
 	// The step list depends on the whole configuration — which services, how many
 	// libraries, which conditions hold — so the server works it out rather than
 	// the browser guessing. It writes nothing: this screen can still be left.
@@ -64,19 +69,22 @@ export function ProgressStep({
 	// Before the run, the grid is drawn from the preview; after, from the status.
 	// Same component, same position in the tree, so React keeps the very same DOM
 	// nodes: pressing the button does not rebuild a screen, it lights this one.
-	const source = started ? status : preview;
-	if (!source || (started && (isLoading || status?.global === "pending"))) {
-		return loadingSpinner;
-	}
+	// The cold grid stands in until the first real status arrives, so the wait
+	// shows the same rows rather than a spinner where the grid was.
+	const source = launched ? (status ?? preview) : preview;
+	if (!source) return loadingSpinner;
+	const live = launched && Boolean(status) && !isLoading;
 
 	const stepValues = Object.values(source.steps);
 	const total = stepValues.length;
-	const done = stepValues.filter((s) => DONE.includes(s)).length;
-	const hasFailed = stepValues.some((s) => s === "failed");
-	const allCompleted = started && total > 0 && done === total;
-	const running = Object.keys(source.steps).find(
-		(key) => source.steps[key] === "in_progress",
-	);
+	const done = live ? stepValues.filter((s) => DONE.includes(s)).length : 0;
+	const hasFailed = live && stepValues.some((s) => s === "failed");
+	const allCompleted = live && total > 0 && done === total;
+	const running = live
+		? Object.keys(source.steps).find(
+				(key) => source.steps[key] === "in_progress",
+			)
+		: undefined;
 	const failed = failure(source.steps, source.labels, registry);
 
 	const message = !started
@@ -150,9 +158,10 @@ export function ProgressStep({
 						Back
 					</Button>
 					<Button
-						onClick={() => {
+						onClick={async () => {
 							setStarted(true);
-							onStart();
+							await onStart();
+							setLaunched(true);
 						}}
 					>
 						Start Setup

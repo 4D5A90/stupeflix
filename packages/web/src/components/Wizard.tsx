@@ -47,9 +47,12 @@ export function Wizard({ onComplete }: WizardProps) {
 	const goToCredentials = useCallback(() => setStep("credentials"), []);
 	const goToProgress = useCallback(() => setStep("progress"), []);
 
-	const handleStartSetup = useCallback(() => {
-		startSetup.mutate(activeConfig);
-	}, [activeConfig, startSetup]);
+	// Awaited by the progress screen: until this resolves the server still holds
+	// the previous run's statuses, and polling would paint them.
+	const handleStartSetup = useCallback(
+		() => startSetup.mutateAsync(activeConfig),
+		[activeConfig, startSetup],
+	);
 
 	const handleRestart = useCallback(() => {
 		setStep("paths");
