@@ -118,9 +118,11 @@ the container.
 | `STUPEFLIX_COMPOSE_PROJECT` | `stupeflix` | Compose project name |
 | `STUPEFLIX_TEMPLATES_DIR` | `/app/templates` | Service templates |
 | `STUPEFLIX_STACKS_DIR` | `/app/stacks` | Shipped stacks; unset simply removes the fork in the wizard |
+| `STUPEFLIX_TOKEN` | *(minted)* | Access token for the wizard and the API; left unset, one is minted on first boot and printed at startup |
 | `PUID` / `PGID` | `1000` | Ownership applied to the service containers |
 | `TZ` | `Europe/Paris` | Timezone handed to the service containers |
 | `PORT` | `3000` | HTTP port (API + wizard) |
+| `HOST` | `0.0.0.0` | Interface the server binds; `127.0.0.1` keeps it off the network |
 
 > [!WARNING]
 > Match `PUID`/`PGID` to the user owning `STUPEFLIX_ROOT`. A mismatch rewrites the
@@ -130,6 +132,23 @@ the container.
 > **On Windows, run it from inside WSL 2** and keep `STUPEFLIX_ROOT` on the WSL 2
 > filesystem, not under `/mnt/c/...` — the daemon resolves that path a second time when
 > creating the service containers.
+
+### Access token
+
+Every API route except the healthcheck needs a bearer token, and the wizard asks for it
+once. Unset, one is minted on first boot, kept in the database so it survives a restart,
+and printed in the log:
+
+```bash
+docker logs stupeflix | grep 'Access token'
+```
+
+Set `STUPEFLIX_TOKEN` to pin your own instead — the minted one is then ignored. Driving
+the API by hand means carrying it:
+
+```bash
+curl -H "Authorization: Bearer $STUPEFLIX_TOKEN" http://localhost:3000/api/status
+```
 
 ### Remote access
 
@@ -168,8 +187,9 @@ docker compose --profile proxy --profile tunnel up -d
    origin back on your IP, where a scanner finds it through its TLS certificate.
 3. **Aim the wildcard at `http://npm:80` only.** Pointed at a service, it hands that one every
    subdomain you own.
-4. **Give a proxy host to Jellyfin, Plex or Seerr, and to nothing else.** Sonarr, Radarr,
-   Prowlarr, qBittorrent and Stupeflix have no login of their own, and stay on the LAN.
+4. **Give a proxy host to Jellyfin, Plex, Seerr or Stupeflix, and to nothing else.**
+   Sonarr, Radarr and Prowlarr run with authentication disabled for local addresses and
+   have no login to offer a stranger; they stay on the LAN.
 
 ## What's inside
 

@@ -6,12 +6,15 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { initDb } from "./db.js";
+import { accessToken, tokenGate } from "./lib/auth.js";
 import {
+	HOST,
 	PORT,
 	ROOT,
 	SERVICE_HOST,
 	STACKS_DIR,
 	TEMPLATES_DIR,
+	TOKEN,
 	WEB_DIR,
 } from "./lib/env.js";
 import { getLibraryStats } from "./lib/library-stats.js";
@@ -48,6 +51,11 @@ if (db.get("setup.global") === "in_progress") {
 }
 
 const api = new Hono();
+
+// Before every route below, and on `api` rather than on the outer app: `api` is
+// mounted at both prefixes, and the outer app also serves the wizard — gating
+// that would gate the screen that asks for the token.
+api.use("*", tokenGate(accessToken(db)));
 
 api.get("/health", (c) => c.json({ status: "ok" }));
 
@@ -179,5 +187,10 @@ if (WEB_DIR) {
 	app.get("*", serveStatic({ path: "index.html", root: WEB_DIR }));
 }
 
-serve({ fetch: app.fetch, port: PORT });
+serve({ fetch: app.fetch, port: PORT, hostname: HOST });
 console.log(`Stupeflix running on http://localhost:${PORT}`);
+console.log(
+	TOKEN
+		? "Access token: pinned by STUPEFLIX_TOKEN"
+		: `Access token: ${accessToken(db)}`,
+);

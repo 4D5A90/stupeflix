@@ -16,6 +16,8 @@ services:
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
       TZ: ${TZ:-Europe/Paris}
+      # Empty means "mint one and print it at startup", which is the default path.
+      STUPEFLIX_TOKEN: ${STUPEFLIX_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

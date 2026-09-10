@@ -4,12 +4,21 @@ import {
 	useQuery,
 } from "@tanstack/react-query";
 import { useState } from "react";
-import { api } from "./api/client";
+import { Unauthorized, api, hasToken } from "./api/client";
 import { Dashboard } from "./components/Dashboard";
 import { InstallProgress } from "./components/InstallProgress";
+import { Unlock } from "./components/Unlock";
 import { Wizard } from "./components/Wizard";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+	defaultOptions: {
+		queries: {
+			// A refused token is an answer, not a hiccup: retrying it three times
+			// only delays the one screen that can do something about it.
+			retry: (count, error) => !(error instanceof Unauthorized) && count < 3,
+		},
+	},
+});
 
 const logo = (
 	<img src="/logo.png" alt="Stupeflix" className="h-24 mb-2 logo-spin" />
@@ -23,10 +32,31 @@ interface InstallState {
 function AppContent() {
 	const [forceWizard, setForceWizard] = useState(false);
 	const [installing, setInstalling] = useState<InstallState | null>(null);
-	const { data, isLoading } = useQuery({
+	const [unlocked, setUnlocked] = useState(hasToken());
+	const { data, isLoading, error } = useQuery({
 		queryKey: ["app-status"],
 		queryFn: api.getAppStatus,
+		enabled: unlocked,
 	});
+
+	// Its own shell, narrower than the app's: one field does not want 896px.
+	if (!unlocked || error instanceof Unauthorized) {
+		return (
+			<div className="min-h-screen flex items-start justify-center p-4 pt-8">
+				<div className="w-full max-w-md">
+					<div className="flex flex-col items-center mb-8">{logo}</div>
+					<div className="bg-ink-900 rounded-xl p-6 shadow-xl ring-1 ring-white/5">
+						<Unlock
+							onUnlocked={() => {
+								setUnlocked(true);
+								queryClient.invalidateQueries();
+							}}
+						/>
+					</div>
+				</div>
+			</div>
+		);
+	}
 
 	if (isLoading) {
 		return (
