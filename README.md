@@ -34,12 +34,15 @@ circle.
 
 ## What it looks like
 
-| | |
+| The dashboard | Adding a service |
 |---|---|
-| **The dashboard** — the stack once it is up, with what each service can do from here | **Adding a service** — its own notes and credentials, read from the template |
 | ![Dashboard](docs/screenshots/dashboard.jpg) | ![Add a service](docs/screenshots/add-service.jpg) |
-| **Stacks** — a set that works together, or pick services one by one | **Services** — what a service needs blocks, what it merely likes only warns |
+| The stack once it is up, with what each service can do from here | Its own notes and credentials, read straight from the template |
+
+| Stacks | Services |
+|---|---|
 | ![Stacks](docs/screenshots/wizard-stacks.jpg) | ![Services](docs/screenshots/wizard-services.jpg) |
+| A set that works together, or pick services one by one | What a service needs blocks, what it merely likes only warns |
 
 ## Getting started
 
