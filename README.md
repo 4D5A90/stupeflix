@@ -32,6 +32,19 @@ variant and set `fill="currentColor"` on its root, so the icon picks up the
 service's colour — a service with no icon still works, it just gets a plain
 circle.
 
+## What it looks like
+
+| | |
+|---|---|
+| **The dashboard** — the stack once it is up, with what each service can do from here | **Adding a service** — its own notes and credentials, read from the template |
+| ![Dashboard](docs/screenshots/dashboard.jpg) | ![Add a service](docs/screenshots/add-service.jpg) |
+| **1 · Storage paths** — one base path fills the rest, and the libraries below it | **2 · Stacks** — a set that works together, or pick services one by one |
+| ![Storage paths](docs/screenshots/wizard-paths.jpg) | ![Stacks](docs/screenshots/wizard-stacks.jpg) |
+| **2 · Services** — what a service needs blocks, what it merely likes only warns | **3 · Credentials** — only the services that ask for them, passwords generated on request |
+| ![Services](docs/screenshots/wizard-services.jpg) | ![Credentials](docs/screenshots/wizard-credentials.jpg) |
+| **4 · Summary** — the whole configuration before anything is written | |
+| ![Summary](docs/screenshots/wizard-summary.jpg) | |
+
 ## Getting started
 
 ### Prerequisites
