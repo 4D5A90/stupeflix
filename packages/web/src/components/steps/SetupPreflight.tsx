@@ -193,8 +193,11 @@ function Credentials({ accounts }: { accounts: Account[] }) {
 							{!account.hasSecret ? null : revealed ? (
 								<span className="text-brand-300">{account.secret}</span>
 							) : (
-								<span className="text-gray-600 tracking-widest">
-									••••••••••
+								// One dot per character, in the same mono face and with no
+								// added tracking: revealing must not resize the column, or
+								// every value in the list shifts sideways as it opens.
+								<span className="text-gray-600">
+									{"\u2022".repeat(account.secret?.length ?? 0)}
 								</span>
 							)}
 						</span>
