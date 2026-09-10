@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { initDb } from "./db.js";
@@ -208,7 +209,11 @@ app.use(
 
 app.onError((err, c) => {
 	console.error(err);
-	return c.json({ error: err.message }, 500);
+	// An HTTPException carries a status and a message a route meant to send; an
+	// unexpected throw carries whatever the runtime put in it — for a failed
+	// `docker compose`, the whole command line and the host paths in it.
+	if (err instanceof HTTPException) return err.getResponse();
+	return c.json({ error: "Internal error" }, 500);
 });
 
 // Mounted twice: at the root for `pnpm dev` (Vite strips the /api prefix when proxying),

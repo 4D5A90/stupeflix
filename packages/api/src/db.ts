@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import initSqlJs, { type Database } from "sql.js";
@@ -58,7 +64,11 @@ export async function initDb(
 		db = new SQL.Database();
 	}
 
-	const save = () => writeFileSync(dbPath, Buffer.from(db.export()));
+	// The file is every credential and every minted secret, as plaintext JSON.
+	// `mode` only bites when the file is created, so the chmod below takes back
+	// the 0644 a database written before this got from the umask.
+	const save = () =>
+		writeFileSync(dbPath, Buffer.from(db.export()), { mode: 0o600 });
 
 	db.run(
 		readFileSync(
@@ -77,6 +87,7 @@ export async function initDb(
 		]);
 	}
 	save();
+	chmodSync(dbPath, 0o600);
 
 	return {
 		get: (key: string) => {

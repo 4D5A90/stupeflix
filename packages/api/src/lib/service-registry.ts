@@ -430,6 +430,39 @@ async function waitForService(
 	return false;
 }
 
+/**
+ * The same headers with every secret blanked, for the debug log.
+ *
+ * By name rather than by an exact list: a template declares its own headers, so
+ * the next service's way of spelling "api key" is not knowable here.
+ */
+function redactHeaders(
+	headers: Record<string, string>,
+): Record<string, string> {
+	return Object.fromEntries(
+		Object.entries(headers).map(([k, v]) => [
+			k,
+			/key|token|auth|cookie|secret|password/i.test(k) ? "***" : v,
+		]),
+	);
+}
+
+/**
+ * A peer's error body, shortened for a message the operator will read in the
+ * wizard. It can be an entire HTML page, and it can carry back the very secret
+ * the request sent.
+ */
+function errorDetail(
+	method: string,
+	url: string,
+	status: number,
+	body: string,
+) {
+	const bare = url.split("?")[0];
+	const trimmed = body.trim().slice(0, 300);
+	return `${method} ${bare} returned ${status}: ${trimmed}`;
+}
+
 /** A step's declared headers, plus the stored cookie/token it opts into. */
 function stepHeaders(
 	step: SetupStepDef,
@@ -562,7 +595,10 @@ export async function runSetupStep(
 				try {
 					const headers = stepHeaders(step, db, serviceId, vars);
 					if (contentType) headers["Content-Type"] = contentType;
-					debug(`${method} ${url}`, { headers, hasBody: !!body });
+					debug(`${method} ${url}`, {
+						headers: redactHeaders(headers),
+						hasBody: !!body,
+					});
 					const res = await fetch(url, { method, headers, body });
 					if (step.storeCookie) {
 						const cookie = res.headers.get("set-cookie");
@@ -594,7 +630,7 @@ export async function runSetupStep(
 						continue;
 					}
 					const resBody = await res.text().catch(() => "");
-					const detail = `${method} ${url} returned ${res.status}: ${resBody}`;
+					const detail = errorDetail(method, url, res.status, resBody);
 					logError("API call failed", detail);
 					return detail;
 				} catch (e) {
