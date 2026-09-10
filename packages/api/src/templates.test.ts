@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import type { Db } from "./db.js";
 import { generateCompose } from "./lib/compose.js";
 import { networkHosts } from "./lib/network.js";
@@ -15,6 +16,7 @@ import {
 import type { ServiceTemplate } from "./lib/service-registry.js";
 import { foreachSpec } from "./lib/setup-runner.js";
 import { getStacks, loadStacks } from "./lib/stacks.js";
+import { validateTemplate } from "./lib/template-schema.js";
 import { buildVars } from "./lib/template-vars.js";
 import { fakeDb } from "./test/fake-db.js";
 
@@ -87,6 +89,22 @@ function runtimeVars(tpl: ServiceTemplate): string[] {
 }
 
 describe("every template", () => {
+	/*
+	 * The loader now drops a file it cannot validate instead of crashing, which
+	 * is the right behaviour for an upload and the wrong one to discover here:
+	 * a shipped template refused at load would simply be absent, and every other
+	 * assertion below would pass over its silence. So count the files, then read
+	 * the reasons.
+	 */
+	it("is loaded, having passed the runtime validator", () => {
+		const files = readdirSync(TEMPLATES).filter((f) => /\.ya?ml$/.test(f));
+		for (const file of files) {
+			const parsed = parse(readFileSync(resolve(TEMPLATES, file), "utf-8"));
+			expect(validateTemplate(parsed), file).toEqual([]);
+		}
+		expect(templates).toHaveLength(files.length);
+	});
+
 	it("declares the fields the engine needs", () => {
 		for (const tpl of templates) {
 			expect(tpl.id, `${tpl.id}: id`).toMatch(/^[a-z0-9-]+$/);

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { debug, log } from "./logger.js";
+import { debug, log, error as logError } from "./logger.js";
 import { getTemplate } from "./service-registry.js";
 
 /**
@@ -29,6 +29,26 @@ export interface Stack {
 let stacks: Stack[] = [];
 let stacksDir = "";
 
+/** Why this file is not a stack, or null. Far less to check than a template. */
+function stackProblem(value: unknown): string | null {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return "not a mapping";
+	}
+	const stack = value as Record<string, unknown>;
+	for (const key of ["id", "name", "description"]) {
+		if (typeof stack[key] !== "string" || stack[key] === "") {
+			return `${key} is required`;
+		}
+	}
+	if (
+		!Array.isArray(stack.services) ||
+		!stack.services.every((id) => typeof id === "string")
+	) {
+		return "services must be a list of template ids";
+	}
+	return null;
+}
+
 /** Shipping stacks is optional: an absent directory is an empty list, not an error. */
 export function loadStacks(dir: string): void {
 	stacksDir = dir;
@@ -41,9 +61,21 @@ export function loadStacks(dir: string): void {
 		(f) => f.endsWith(".yml") || f.endsWith(".yaml"),
 	);
 	for (const file of files) {
-		const stack = parse(readFileSync(join(dir, file), "utf-8")) as Stack;
-		stacks.push(stack);
-		log(`Loaded stack: ${stack.id}`);
+		// `getStacks` walks `services` on every call, so a stack missing it breaks
+		// the wizard's Services step rather than its own card.
+		try {
+			const parsed: unknown = parse(readFileSync(join(dir, file), "utf-8"));
+			const problem = stackProblem(parsed);
+			if (problem) {
+				logError(`Ignored stack ${file}`, problem);
+				continue;
+			}
+			const stack = parsed as Stack;
+			stacks.push(stack);
+			log(`Loaded stack: ${stack.id}`);
+		} catch (e) {
+			logError(`Ignored stack ${file}`, e instanceof Error ? e.message : e);
+		}
 	}
 }
 

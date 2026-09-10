@@ -13,6 +13,7 @@ import { runComposeSync } from "./docker-cli.js";
 import { serviceUrl } from "./env.js";
 import { debug, log, error as logError } from "./logger.js";
 import { networkHosts, resolveNetworkTopology } from "./network.js";
+import { validateTemplate } from "./template-schema.js";
 import { buildVars, resolveTemplateVars } from "./template-vars.js";
 
 // ── YAML schema types ──
@@ -275,10 +276,22 @@ export function loadTemplates(dir: string): void {
 		(f) => f.endsWith(".yml") || f.endsWith(".yaml"),
 	);
 	for (const file of files) {
-		const raw = readFileSync(join(dir, file), "utf-8");
-		const tpl = parse(raw) as ServiceTemplate;
-		templates.push(tpl);
-		log(`Loaded service template: ${tpl.id}`);
+		// Per file, and never fatal: `loadTemplates` runs before `serve()`, so a
+		// single unparseable `.yml` used to mean the server never came up again —
+		// and one can be dropped in from outside, or uploaded.
+		try {
+			const parsed: unknown = parse(readFileSync(join(dir, file), "utf-8"));
+			const problems = validateTemplate(parsed);
+			if (problems.length > 0) {
+				logError(`Ignored ${file}`, problems.join("; "));
+				continue;
+			}
+			const tpl = parsed as ServiceTemplate;
+			templates.push(tpl);
+			log(`Loaded service template: ${tpl.id}`);
+		} catch (e) {
+			logError(`Ignored ${file}`, e instanceof Error ? e.message : e);
+		}
 	}
 }
 

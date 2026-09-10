@@ -1,10 +1,12 @@
-import { resolve } from "node:path";
+import { writeFileSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
+import { parse } from "yaml";
 import { initDb } from "./db.js";
 import { accessToken, tokenGate } from "./lib/auth.js";
 import { runDockerSync } from "./lib/docker-cli.js";
@@ -32,6 +34,7 @@ import {
 	runSetupStep,
 } from "./lib/service-registry.js";
 import { getStacks, loadStacks, reloadStacks } from "./lib/stacks.js";
+import { validateTemplate } from "./lib/template-schema.js";
 import { dockerRoutes } from "./routes/docker.js";
 import { installRoutes } from "./routes/install.js";
 import { servicesRoutes } from "./routes/services.js";
@@ -94,18 +97,47 @@ api.post("/templates/reload", (c) => {
 	return c.json({ success: true, count: getTemplates().length });
 });
 
+/**
+ * Uploading a template is uploading code: it declares the containers this API
+ * starts and the requests it makes on the operator's behalf.
+ *
+ * So the multipart filename is reduced to a basename and matched against a
+ * shape — `resolve(dir, "../../../etc/cron.d/x.yml")` used to be honoured — and
+ * the content is validated *before* anything is written. A refused template must
+ * leave nothing on disk: the loader would otherwise pick it up on the next boot.
+ */
 api.post("/templates/upload", async (c) => {
 	const body = await c.req.parseBody();
 	const file = body.file;
 	if (!(file instanceof File)) {
 		return c.json({ error: "No file provided" }, 400);
 	}
-	if (!file.name.endsWith(".yml") && !file.name.endsWith(".yaml")) {
-		return c.json({ error: "File must be .yml or .yaml" }, 400);
+	const name = basename(file.name);
+	if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$/.test(name)) {
+		return c.json({ error: "File must be named <id>.yml" }, 400);
 	}
+	const dir = resolve(getTemplatesDir());
+	const target = join(dir, name);
+	// The shape above already forbids a separator; this is the invariant itself,
+	// and it is what stays true if that expression is ever loosened.
+	if (!target.startsWith(dir + sep)) {
+		return c.json({ error: "File must be named <id>.yml" }, 400);
+	}
+
 	const content = await file.text();
-	const { writeFileSync } = await import("node:fs");
-	writeFileSync(resolve(getTemplatesDir(), file.name), content);
+	let parsed: unknown;
+	try {
+		parsed = parse(content);
+	} catch (e) {
+		const detail = e instanceof Error ? e.message : String(e);
+		return c.json({ error: `Not valid YAML: ${detail}` }, 400);
+	}
+	const problems = validateTemplate(parsed);
+	if (problems.length > 0) {
+		return c.json({ error: problems.join("; "), problems }, 400);
+	}
+
+	writeFileSync(target, content);
 	reloadTemplates();
 	return c.json({ success: true, count: getTemplates().length });
 });
@@ -130,15 +162,24 @@ api.get("/status", (c) => {
 	return c.json({ setup_completed: setupCompleted, containers });
 });
 
+/**
+ * Every stored credential, for the dashboard's copy-password button. Behind the
+ * token like everything else — the operator reading their own qBittorrent
+ * password is the point; anyone else reading it was the bug.
+ *
+ * Built on null-prototype objects: the service id is a key segment a caller
+ * chooses, and `result["__proto__"]` used to be truthy, so the field beneath it
+ * landed on `Object.prototype` for the whole process.
+ */
 api.get("/credentials", (c) => {
 	const all = db.all();
-	const result: Record<string, Record<string, string>> = {};
+	const result: Record<string, Record<string, string>> = Object.create(null);
 	for (const [key, value] of Object.entries(all)) {
 		if (!key.startsWith("credentials.") || typeof value !== "string") continue;
-		const parts = key.split(".");
-		const serviceId = parts[1];
-		const field = parts[2];
-		if (!result[serviceId]) result[serviceId] = {};
+		const [, serviceId, field] = key.split(".");
+		if (!serviceId || !field) continue;
+		if (!Object.hasOwn(result, serviceId))
+			result[serviceId] = Object.create(null);
 		result[serviceId][field] = value;
 	}
 	return c.json(result);
