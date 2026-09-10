@@ -118,7 +118,7 @@ the container.
 | `STUPEFLIX_COMPOSE_PROJECT` | `stupeflix` | Compose project name |
 | `STUPEFLIX_TEMPLATES_DIR` | `/app/templates` | Service templates |
 | `STUPEFLIX_STACKS_DIR` | `/app/stacks` | Shipped stacks; unset simply removes the fork in the wizard |
-| `STUPEFLIX_TOKEN` | *(minted)* | Access token for the wizard and the API; left unset, one is minted on first boot and printed at startup |
+| `STUPEFLIX_TOKEN` | *(minted)* | Access token for the wizard and the API. **Set one** — see [Access token](#access-token) |
 | `PUID` / `PGID` | `1000` | Ownership applied to the service containers |
 | `TZ` | `Europe/Paris` | Timezone handed to the service containers |
 | `PORT` | `3000` | HTTP port (API + wizard) |
@@ -136,15 +136,32 @@ the container.
 ### Access token
 
 Every API route except the healthcheck needs a bearer token, and the wizard asks for it
-once. Unset, one is minted on first boot, kept in the database so it survives a restart,
-and printed in the log:
+once.
+
+**Set your own in [`.env`](.env.example).** It works without — one is minted on first
+boot, kept in the database and printed at startup — but that copy is only as durable as
+your container logs, and the token itself then lives inside a SQLite blob. In `.env` it
+is somewhere you will look a year from now:
+
+```bash
+echo "STUPEFLIX_TOKEN=$(openssl rand -base64 32)" >> .env
+docker compose up -d
+```
+
+Letters, digits and `. _ ~ + / - =`, 16 characters minimum — that is what an
+`Authorization` header can carry, and the server refuses to start on anything else
+rather than start unreachable with its own correct token.
+
+Writing it there costs nothing: `.env` is git-ignored, and anyone who can read it can
+already reach the Docker socket, which is root on the host either way.
+
+Left unset, recover the minted one from the log — or restart, which prints it again:
 
 ```bash
 docker logs stupeflix | grep 'Access token'
 ```
 
-Set `STUPEFLIX_TOKEN` to pin your own instead — the minted one is then ignored. Driving
-the API by hand means carrying it:
+Driving the API by hand means carrying it:
 
 ```bash
 curl -H "Authorization: Bearer $STUPEFLIX_TOKEN" http://localhost:3000/api/status
@@ -269,7 +286,8 @@ stupeflix/
 ├── docs/templates.md   # How to write a template
 ├── packages/
 │   ├── api/src/
-│   │   ├── index.ts    # Loads templates, serves the API and the web build
+│   │   ├── index.ts    # Bootstrap: load templates, open the database, listen
+│   │   ├── app.ts      # The HTTP surface, assembled — token gate, routes, static
 │   │   ├── lib/        # Registry, setup runner, compose, network, requirements…
 │   │   └── routes/     # setup, install, services, settings, docker
 │   └── web/src/
@@ -337,7 +355,7 @@ except `GET /health` need `Authorization: Bearer <token>`.
 |--------|----------|-------------|
 | `GET` | `/health` `/runtime` `/status` | Health, host wiring, setup state |
 | `GET` | `/registry` `/stacks` `/templates` | What the wizard can offer |
-| `POST` | `/templates/reload` `/templates/upload` | Reload from disk, add one |
+| `POST` | `/templates/reload` `/templates/upload` | Reload from disk; add one, never replace |
 | `POST` | `/setup/paths` `/setup/credentials` `/setup/services` | Store one wizard step |
 | `POST` | `/setup/complete` | Start a full (re)configuration |
 | `GET` | `/setup/status` `/credentials` | Progress, stored credentials |
