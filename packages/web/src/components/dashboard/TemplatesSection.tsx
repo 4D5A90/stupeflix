@@ -1,5 +1,6 @@
 import type { TemplateSummary } from "../../api/client";
 import type { TemplateCatalogue } from "../../hooks/useTemplateCatalogue";
+import { Collapse } from "../ui/Collapse";
 import { ServiceIcon, serviceTint } from "../ui/ServiceIcon";
 import { CATEGORY_LABELS } from "./categories";
 
@@ -23,9 +24,7 @@ export function TemplatesSection({
 		<div className="border-t border-white/[0.07] pt-6">
 			{/* One row, always there: the title toggles the grid, the two actions act
 			    on the catalogue whether it is shown or not. */}
-			<div
-				className={`flex items-center justify-between ${open ? "mb-3" : ""}`}
-			>
+			<div className="flex items-center justify-between">
 				<button
 					type="button"
 					onClick={() => setOpen(!open)}
@@ -104,14 +103,14 @@ export function TemplatesSection({
 				</div>
 			</div>
 
-			{open && templates ? (
+			<Collapse open={open && Boolean(templates)}>
 				<div
 					className="grid gap-2"
 					style={{
 						gridTemplateColumns: "repeat(auto-fill, minmax(9.5rem, 1fr))",
 					}}
 				>
-					{templates.map((tpl) => (
+					{(templates ?? []).map((tpl) => (
 						<div
 							key={tpl.id}
 							className="flex items-center gap-2.5 rounded-md border border-white/[0.07] bg-ink-800 px-3 py-2"
@@ -133,7 +132,7 @@ export function TemplatesSection({
 						</div>
 					))}
 				</div>
-			) : null}
+			</Collapse>
 		</div>
 	);
 }

@@ -4,6 +4,7 @@ import { api } from "../../api/client";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
 import type { ServiceMeta, SetupConfig, StepStatus } from "../../types/setup";
 import { Button } from "../ui/Button";
+import { Collapse } from "../ui/Collapse";
 import { SetupPreflight } from "./SetupPreflight";
 import { StepMatrix } from "./StepMatrix";
 
@@ -140,17 +141,9 @@ export function ProgressStep({
 
 			{/* Everything that stops being true the moment the run starts. It sits
 			    under the grid, so when it goes the grid does not move. */}
-			<div
-				className={`grid transition-all duration-500 ${
-					started
-						? "grid-rows-[0fr] opacity-0 -mt-4 pointer-events-none"
-						: "grid-rows-[1fr] opacity-100"
-				}`}
-			>
-				<div className="overflow-hidden">
-					<SetupPreflight registry={registry} config={config} />
-				</div>
-			</div>
+			<Collapse open={!started}>
+				<SetupPreflight registry={registry} config={config} />
+			</Collapse>
 
 			{!started ? (
 				<div className="flex justify-between">

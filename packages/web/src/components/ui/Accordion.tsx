@@ -1,4 +1,5 @@
 import { type ReactNode, useState } from "react";
+import { Collapse } from "./Collapse";
 
 interface AccordionProps {
 	label: string;
@@ -57,9 +58,9 @@ export function Accordion({
 					/>
 				</svg>
 			</button>
-			{open ? (
-				<div className={small ? "mt-1.5" : "mt-2"}>{children}</div>
-			) : null}
+			<Collapse open={open} className={small ? "mt-1.5" : "mt-2"}>
+				{children}
+			</Collapse>
 		</div>
 	);
 }
