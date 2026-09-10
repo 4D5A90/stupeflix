@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Db } from "../db.js";
+import { pathProblem } from "../lib/safe-path.js";
 
 /**
  * Settings a caller may write.
@@ -22,6 +23,14 @@ const WRITABLE = [
 
 /** The writable ones, plus the run state the wizard reads back. */
 const READABLE = [...WRITABLE, /^setup\.(completed|global|error)$/];
+
+/**
+ * A writable key is not a writable value: `paths.*` is the base of every join
+ * the engine performs, so it answers to `lib/safe-path.ts` however it is set.
+ */
+function valueProblem(key: string, value: unknown): string | null {
+	return key.startsWith("paths.") ? pathProblem(value) : null;
+}
 
 const readable = (key: string) => READABLE.some((rule) => rule.test(key));
 const writable = (key: string) => WRITABLE.some((rule) => rule.test(key));
@@ -52,6 +61,8 @@ export function settingsRoutes(db: Db) {
 		const key = c.req.param("key");
 		if (!writable(key)) return c.json({ error: "Not a writable setting" }, 400);
 		const { value } = await c.req.json();
+		const problem = valueProblem(key, value);
+		if (problem) return c.json({ error: `${key} ${problem}` }, 400);
 		db.set(key, value);
 		return c.json({ key, value });
 	});
@@ -64,6 +75,10 @@ export function settingsRoutes(db: Db) {
 		const refused = entries.filter(([key]) => !writable(key)).map(([k]) => k);
 		if (refused.length > 0) {
 			return c.json({ error: "Not a writable setting", refused }, 400);
+		}
+		for (const [key, value] of entries) {
+			const problem = valueProblem(key, value);
+			if (problem) return c.json({ error: `${key} ${problem}` }, 400);
 		}
 		for (const [key, value] of entries) db.set(key, value);
 		return c.json({ updated: entries.length });

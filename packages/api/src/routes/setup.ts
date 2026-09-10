@@ -12,6 +12,7 @@ import {
 import { ownershipConflict } from "../lib/instance.js";
 import { debug, error, log } from "../lib/logger.js";
 import { checkRequirements, requirementMessage } from "../lib/requirements.js";
+import { libraryNameProblem, pathProblem } from "../lib/safe-path.js";
 import { getEnabledTemplates, getTemplates } from "../lib/service-registry.js";
 import {
 	type StepStatus,
@@ -115,6 +116,35 @@ async function runSetup(db: Db) {
 	}
 }
 
+/**
+ * Why this set of paths cannot be stored, or null.
+ *
+ * Checked before it is written, and written nowhere else: these three are the
+ * base of every `join()` the engine performs and the source of every bind mount
+ * in the generated compose file. `paths.config = /etc` turns the next
+ * reconfigure into a recursive delete of `/etc`.
+ */
+function pathsProblem(paths: unknown): string | null {
+	if (typeof paths !== "object" || paths === null) return "Missing paths";
+	const values = paths as Record<string, unknown>;
+	for (const key of ["config", "media", "torrents"] as const) {
+		const problem = pathProblem(values[key]);
+		if (problem) return `paths.${key} ${problem}`;
+	}
+	return null;
+}
+
+/** Why this library list cannot be stored, or null. */
+function librariesProblem(libraries: unknown): string | null {
+	if (!Array.isArray(libraries)) return "libraries must be a list";
+	for (const library of libraries) {
+		const name = (library as Library | undefined)?.name;
+		const problem = libraryNameProblem(name);
+		if (problem) return `library name ${problem}`;
+	}
+	return null;
+}
+
 function applyPaths(
 	db: Db,
 	paths: { config: string; media: string; torrents: string },
@@ -189,7 +219,10 @@ export function setupRoutes(db: Db) {
 	const app = new Hono();
 
 	app.post("/paths", async (c) => {
-		applyPaths(db, await c.req.json());
+		const paths = await c.req.json().catch(() => null);
+		const problem = pathsProblem(paths);
+		if (problem) return c.json({ error: problem }, 400);
+		applyPaths(db, paths);
 		return c.json({ success: true });
 	});
 
@@ -229,6 +262,17 @@ export function setupRoutes(db: Db) {
 		// Refused before anything is written, so a wrong window changes nothing
 		const conflict = await ownershipConflict(db);
 		if (conflict) return c.json({ error: conflict }, 409);
+
+		// Both checked before either is written, so a refused configuration is not
+		// half-stored — the same reason the requirements check runs above.
+		if (body.paths) {
+			const problem = pathsProblem(body.paths);
+			if (problem) return c.json({ error: problem }, 400);
+		}
+		if (body.libraries) {
+			const problem = librariesProblem(body.libraries);
+			if (problem) return c.json({ error: problem }, 400);
+		}
 
 		if (body.paths) applyPaths(db, body.paths);
 		if (body.libraries) applyLibraries(db, body.libraries);

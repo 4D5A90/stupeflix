@@ -2,6 +2,7 @@ import { readdirSync, statfsSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { join } from "node:path";
 import type { Db } from "../db.js";
+import { underRoot } from "./safe-path.js";
 import { getLibraries } from "./template-vars.js";
 import type { Library } from "./template-vars.js";
 
@@ -77,7 +78,15 @@ function isMedia(name: string, type: string): boolean {
 }
 
 /** Media files anywhere under `dir`. Hidden entries are skipped — .DS_Store, @eaDir. */
-function countMediaFiles(dir: string, type: string): number {
+/**
+ * How far down the walk goes. A media tree is Library/Show/Season/File, so this
+ * is generous; without it a symlink-free but pathological tree blocks the event
+ * loop for as long as it takes, on an endpoint anyone can call repeatedly.
+ */
+const MAX_DEPTH = 12;
+
+function countMediaFiles(dir: string, type: string, depth = MAX_DEPTH): number {
+	if (depth <= 0) return 0;
 	let total = 0;
 	let entries: Dirent[];
 	try {
@@ -88,7 +97,7 @@ function countMediaFiles(dir: string, type: string): number {
 	for (const entry of entries) {
 		if (entry.name.startsWith(".")) continue;
 		if (entry.isDirectory())
-			total += countMediaFiles(join(dir, entry.name), type);
+			total += countMediaFiles(join(dir, entry.name), type, depth - 1);
 		else if (isMedia(entry.name, type)) total++;
 	}
 	return total;
@@ -104,7 +113,10 @@ function countMediaFiles(dir: string, type: string): number {
  */
 export function statLibrary(root: string, library: Library): LibraryStat {
 	const units = UNITS[library.type] ?? DEFAULT_UNITS;
-	const dir = join(root, library.name);
+	// The name is the user's, and this walk is synchronous: a library called
+	// `../..` would put the event loop through the whole disk, and report the
+	// counts of somebody else's directories.
+	const dir = underRoot(root, library.name);
 	const stat: LibraryStat = {
 		name: library.name,
 		type: library.type,
@@ -153,8 +165,13 @@ export function statDisk(path: string): DiskStat | null {
 export function getLibraryStats(db: Db): LibraryStats {
 	const root = (db.get("paths.media") as string) ?? "";
 	if (!root) return { libraries: [], disk: null };
-	return {
-		libraries: getLibraries(db).map((l) => statLibrary(root, l)),
-		disk: statDisk(root),
-	};
+	const libraries: LibraryStat[] = [];
+	for (const library of getLibraries(db)) {
+		// A name that climbs out is not a library to report on. Dropped rather
+		// than thrown: the dashboard's tiles must not go dark over one bad row.
+		try {
+			libraries.push(statLibrary(root, library));
+		} catch {}
+	}
+	return { libraries, disk: statDisk(root) };
 }

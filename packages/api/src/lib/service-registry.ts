@@ -13,6 +13,7 @@ import { runComposeSync } from "./docker-cli.js";
 import { serviceUrl } from "./env.js";
 import { debug, log, error as logError } from "./logger.js";
 import { networkHosts, resolveNetworkTopology } from "./network.js";
+import { underRoot } from "./safe-path.js";
 import { validateTemplate } from "./template-schema.js";
 import { buildVars, resolveTemplateVars } from "./template-vars.js";
 
@@ -664,10 +665,18 @@ export async function runSetupStep(
 			if (!step.file) return "config_file requires file";
 			const configPath = db.get("paths.config") as string;
 			if (!configPath) return "paths.config is not set";
-			const target = join(
-				configPath,
-				resolveTemplateVars(step.file, vars) as string,
-			);
+			// After substitution, not before: `lib/template-schema.ts` refuses a
+			// literal `..` in `file:`, but a `{{credentials.x}}` in it becomes a
+			// path only here.
+			let target: string;
+			try {
+				target = underRoot(
+					configPath,
+					resolveTemplateVars(step.file, vars) as string,
+				);
+			} catch {
+				return `${step.file} is outside paths.config`;
+			}
 			if (step.skipIfExists !== false && existsSync(target)) {
 				debug(`${step.file} already exists, skipping`);
 				return SKIPPED;
@@ -711,7 +720,12 @@ export async function runSetupStep(
 				return "extract_from_config requires file, regex, and storeAs";
 			}
 			const configPath = db.get("paths.config") as string;
-			const filePath = join(configPath, step.file);
+			let filePath: string;
+			try {
+				filePath = underRoot(configPath, step.file);
+			} catch {
+				return `${step.file} is outside paths.config`;
+			}
 			const maxAttempts = step.maxRetries ?? 15;
 			for (let attempt = 0; attempt <= maxAttempts; attempt++) {
 				try {
