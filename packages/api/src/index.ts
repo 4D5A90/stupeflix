@@ -3,13 +3,14 @@ import { basename, join, resolve, sep } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { parse } from "yaml";
 import { initDb } from "./db.js";
 import { accessToken, tokenGate } from "./lib/auth.js";
-import { runDockerSync } from "./lib/docker-cli.js";
+import { containerStatus } from "./lib/container-status.js";
 import {
 	HOST,
 	PORT,
@@ -60,6 +61,16 @@ const api = new Hono();
 // mounted at both prefixes, and the outer app also serves the wizard — gating
 // that would gate the screen that asks for the token.
 api.use("*", tokenGate(accessToken(db)));
+
+// After the gate, so an anonymous request is refused before its body is read.
+// A template is a few kB; nothing else this API takes has a body at all.
+api.use(
+	"*",
+	bodyLimit({
+		maxSize: 1024 * 1024,
+		onError: (c) => c.json({ error: "Payload too large" }, 413),
+	}),
+);
 
 api.get("/health", (c) => c.json({ status: "ok" }));
 
@@ -143,23 +154,11 @@ api.post("/templates/upload", async (c) => {
 });
 
 api.get("/status", (c) => {
-	const setupCompleted = db.get("setup.completed");
 	const containers: Record<string, string> = {};
-
 	for (const tpl of getTemplates()) {
-		try {
-			containers[tpl.id] = runDockerSync([
-				"inspect",
-				"-f",
-				"{{.State.Status}}",
-				tpl.container,
-			]).trim();
-		} catch {
-			containers[tpl.id] = "not_found";
-		}
+		containers[tpl.id] = containerStatus(tpl.container);
 	}
-
-	return c.json({ setup_completed: setupCompleted, containers });
+	return c.json({ setup_completed: db.get("setup.completed"), containers });
 });
 
 /**

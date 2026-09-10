@@ -1,25 +1,13 @@
 import { Hono } from "hono";
 import type { Db } from "../db.js";
+import { containerStatus } from "../lib/container-status.js";
 import { credentialProblems } from "../lib/credential-rules.js";
-import { runComposeSync, runDockerSync } from "../lib/docker-cli.js";
+import { runComposeSync } from "../lib/docker-cli.js";
 import { ownershipConflict } from "../lib/instance.js";
 import { readServiceInfo } from "../lib/service-info.js";
 import { removeService, runServiceInstall } from "../lib/service-install.js";
 import { getTemplate, getTemplates } from "../lib/service-registry.js";
 import { setStepStatus, stepKeys } from "../lib/setup-runner.js";
-
-function getContainerStatus(container: string): string {
-	try {
-		return runDockerSync([
-			"inspect",
-			"-f",
-			"{{.State.Status}}",
-			container,
-		]).trim();
-	} catch {
-		return "not_found";
-	}
-}
 
 /**
  * The container these fixed verbs act on.
@@ -71,7 +59,7 @@ export function servicesRoutes(db: Db) {
 				name: tpl.id,
 				label: tpl.name,
 				enabled: s[`services.${tpl.id}.enabled`] ?? false,
-				status: getContainerStatus(tpl.container),
+				status: containerStatus(tpl.container),
 				port: tpl.port,
 				webUiPath: webUiPath || undefined,
 				// Lets the dashboard offer a button per declared action without

@@ -7,26 +7,40 @@ import { ownershipConflict } from "../lib/instance.js";
 export function dockerRoutes(db: Db) {
 	const app = new Hono();
 
-	app.post("/generate", (c) => {
+	/** Why this cannot run now, or null. The same two the other verbs check. */
+	async function blocked(): Promise<string | null> {
+		if (db.get("setup.global") === "in_progress") {
+			return "Setup already in progress";
+		}
+		return await ownershipConflict(db);
+	}
+
+	app.post("/generate", async (c) => {
+		const refusal = await blocked();
+		if (refusal) return c.json({ error: refusal }, 409);
 		const path = writeCompose(db);
 		return c.json({ success: true, path });
 	});
 
 	app.post("/up", async (c) => {
-		const conflict = await ownershipConflict(db);
-		if (conflict) return c.json({ error: conflict }, 409);
+		const refusal = await blocked();
+		if (refusal) return c.json({ error: refusal }, 409);
 		runComposeSync(["up", "-d"], { inherit: true });
 		return c.json({ success: true });
 	});
 
 	app.post("/down", async (c) => {
-		const conflict = await ownershipConflict(db);
-		if (conflict) return c.json({ error: conflict }, 409);
+		const refusal = await blocked();
+		if (refusal) return c.json({ error: refusal }, 409);
 		runComposeSync(["down"], { inherit: true });
 		return c.json({ success: true });
 	});
 
-	app.post("/pull", (c) => {
+	// Guarded like the rest: pulling every image is minutes of disk and network,
+	// and it used to be the one destructive-adjacent verb anyone could loop on.
+	app.post("/pull", async (c) => {
+		const refusal = await blocked();
+		if (refusal) return c.json({ error: refusal }, 409);
 		runComposeSync(["pull"], { inherit: true });
 		return c.json({ success: true });
 	});

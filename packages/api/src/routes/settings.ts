@@ -32,6 +32,9 @@ function valueProblem(key: string, value: unknown): string | null {
 	return key.startsWith("paths.") ? pathProblem(value) : null;
 }
 
+/** A bulk write is a convenience, not a bulk-loading facility. */
+const MAX_BATCH = 50;
+
 const readable = (key: string) => READABLE.some((rule) => rule.test(key));
 const writable = (key: string) => WRITABLE.some((rule) => rule.test(key));
 
@@ -72,6 +75,11 @@ export function settingsRoutes(db: Db) {
 	app.put("/", async (c) => {
 		const body = await c.req.json();
 		const entries = Object.entries(body);
+		// `db.set` serialises and rewrites the whole file, so a batch costs one
+		// full write per key. There are a handful of writable keys in all.
+		if (entries.length > MAX_BATCH) {
+			return c.json({ error: `At most ${MAX_BATCH} settings at a time` }, 400);
+		}
 		const refused = entries.filter(([key]) => !writable(key)).map(([k]) => k);
 		if (refused.length > 0) {
 			return c.json({ error: "Not a writable setting", refused }, 400);
