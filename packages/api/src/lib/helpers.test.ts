@@ -4,6 +4,7 @@ import {
 	mkdtempSync,
 	readdirSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -69,6 +70,25 @@ describe("cleanServiceConfig", () => {
 		// `reset.dirs` wipes the directory but must leave it in place to boot into
 		expect(existsSync(join(dir, "alpha"))).toBe(true);
 		expect(readdirSync(join(dir, "alpha"))).toEqual([]);
+	});
+
+	/**
+	 * A bind mount attaches to the directory itself, not to its name. Replacing
+	 * it — `rm -rf` then `mkdir` — leaves the same path pointing at a different
+	 * object, and Docker Desktop's file sharing keeps handing the container the
+	 * one that was deleted: Jellyfin then cannot even create `/config/data`.
+	 * Emptying it keeps the object, so there is nothing to go stale.
+	 */
+	it("empties the reset directory without replacing it", () => {
+		const path = join(dir, "alpha");
+		const before = statSync(path).ino;
+		mkdirSync(join(path, "cache/images"), { recursive: true });
+		writeFileSync(join(path, ".hidden"), "dotfiles count too");
+
+		cleanServiceConfig(db, template("alpha"));
+
+		expect(statSync(path).ino).toBe(before);
+		expect(readdirSync(path)).toEqual([]);
 	});
 
 	/**

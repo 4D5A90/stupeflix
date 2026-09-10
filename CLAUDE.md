@@ -243,6 +243,12 @@ Two invariants that are easy to break:
 - **A reset is scoped.** `cleanConfigs` clears every template, `cleanServiceConfig`
   clears one. Reconfiguring Jellyfin must not replay Plex's startup wizard, so use
   the per-template lists (`getTemplateConfigFiles`, `getTemplateResetDirs`).
+- **A reset directory is emptied, never replaced.** It is bind-mounted into the
+  container, and a mount attaches to the directory itself rather than to its
+  name — `rm -rf` then `mkdir` puts a different object at the same path, and
+  Docker Desktop hands the container the deleted one. Jellyfin then boots unable
+  to create `/config/data` and `wait_ready` times out four minutes later on an
+  API that will never answer. `helpers.test.ts` asserts the inode survives.
 - **Removal never names a container.** A template may own several (a service and
   its database, say), so it disables the service, rewrites the compose file
   and lets `up -d --remove-orphans` collect what is no longer declared. The

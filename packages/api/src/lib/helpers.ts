@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Db } from "../db.js";
 import { debug, log } from "./logger.js";
@@ -61,12 +61,18 @@ function dropConfig(db: Db, files: string[], dirs: string[]): void {
 		rmSync(path, { force: true });
 	}
 
-	// Recreated empty: the container expects the directory, just not its contents
+	// Emptied, never replaced. A bind mount attaches to the directory itself, not
+	// to its name: `rm -rf` then `mkdir` leaves the same path pointing at a new
+	// object, and Docker Desktop's file sharing goes on handing the container the
+	// one that was deleted — Jellyfin comes up unable to create `/config/data`,
+	// and `wait_ready` then times out on an API that will never answer.
 	for (const dir of dirs) {
 		const path = join(configPath, dir);
 		if (!existsSync(path)) continue;
-		debug(`Removing ${path}`);
-		rmSync(path, { recursive: true, force: true });
-		mkdirSync(path, { recursive: true });
+		debug(`Emptying ${path}`);
+		// readdir, not a shell glob: dotfiles are contents too.
+		for (const entry of readdirSync(path)) {
+			rmSync(join(path, entry), { recursive: true, force: true });
+		}
 	}
 }
