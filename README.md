@@ -284,6 +284,7 @@ stupeflix/
 ├── templates/          # Service definitions, loaded at runtime
 ├── stacks/             # Named sets of services
 ├── docs/templates.md   # How to write a template
+├── docs/adr/           # The decisions that shape the rest, and why
 ├── packages/
 │   ├── api/src/
 │   │   ├── index.ts    # Bootstrap: load templates, open the database, listen
@@ -346,6 +347,12 @@ curl -H "Authorization: Bearer e2e-token" http://localhost:3999/setup/status
 
 **[Writing a service template](docs/templates.md)** — the full YAML schema: setup steps,
 requirements, networking, variables, `foreach`, actions and readouts.
+
+**[Decisions](docs/adr)** — the short record of the choices that shape the rest, and of
+what each one makes unnecessary: [a bearer token rather than a
+session](docs/adr/0001-a-bearer-token-rather-than-a-session.md), [a template is code and
+is validated as such](docs/adr/0002-a-template-is-code-and-is-validated-as-such.md), [no
+shell between the API and Docker](docs/adr/0003-no-shell-between-the-api-and-docker.md).
 
 **API** — every route is served under `/api`, and also at the root when the API serves
 nothing else on the port (dev, where Vite strips the prefix when proxying). All of them

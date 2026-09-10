@@ -372,6 +372,9 @@ so everything path- or host-related goes through `lib/env.ts`:
 
 ## Key Files
 
+- `docs/adr/` - Decisions that shape the rest, and what each makes unnecessary.
+  Read these before reversing something that looks like an oversight — the bearer
+  token, the missing `csrf()`, the root `USER`, the argv-only Docker layer
 - `templates/*.yml` - Service definitions (credentials, setup pipeline)
 - `packages/api/src/lib/service-registry.ts` - Template loader and setup step runner
 - `packages/api/src/routes/setup.ts` - Async setup with status polling
