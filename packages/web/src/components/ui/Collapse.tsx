@@ -3,7 +3,12 @@ import { type ReactNode, useLayoutEffect, useRef } from "react";
 interface CollapseProps {
 	open: boolean;
 	children: ReactNode;
-	/** Extra classes for the inner box — margins that belong to the content. */
+	/**
+	 * Extra classes for the inner box. Space it with **padding**, never margin:
+	 * the height is read from `offsetHeight`, which excludes margins, so a margin
+	 * here is animated to a box that is too short and the content is clipped by
+	 * exactly that much.
+	 */
 	className?: string;
 }
 

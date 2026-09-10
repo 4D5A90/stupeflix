@@ -103,7 +103,7 @@ export function TemplatesSection({
 				</div>
 			</div>
 
-			<Collapse open={open && Boolean(templates)}>
+			<Collapse open={open && Boolean(templates)} className="pt-3">
 				<div
 					className="grid gap-2"
 					style={{

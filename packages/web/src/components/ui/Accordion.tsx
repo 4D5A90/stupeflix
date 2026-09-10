@@ -58,7 +58,7 @@ export function Accordion({
 					/>
 				</svg>
 			</button>
-			<Collapse open={open} className={small ? "mt-1.5" : "mt-2"}>
+			<Collapse open={open} className={small ? "pt-1.5" : "pt-2"}>
 				{children}
 			</Collapse>
 		</div>
