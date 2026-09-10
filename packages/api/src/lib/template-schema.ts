@@ -317,6 +317,25 @@ export function validateTemplate(value: unknown): string[] {
 		}
 	}
 
+	// Compiled and run by `lib/credential-rules.ts` on every credential write,
+	// which is what makes an over-long one worth refusing here.
+	if (Array.isArray(value.credentials)) {
+		value.credentials.forEach((field, i) => {
+			if (!isRecord(field)) {
+				problems.push(`credentials[${i}] must be a mapping`);
+				return;
+			}
+			const rules = isRecord(field.rules) ? field.rules : {};
+			const problem = patternProblem(
+				`credentials[${i}].rules.pattern`,
+				rules.pattern,
+			);
+			if (problem) problems.push(problem);
+		});
+	} else if (value.credentials !== undefined) {
+		problems.push("credentials must be a list");
+	}
+
 	if (Array.isArray(value.setup)) {
 		value.setup.forEach((step, i) => {
 			problems.push(...stepProblems(`setup[${i}]`, step));

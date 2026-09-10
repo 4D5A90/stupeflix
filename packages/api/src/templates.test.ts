@@ -299,6 +299,63 @@ describe("every template", () => {
 	 * contents — but an empty one renders a dead field, and a default outside it
 	 * silently submits a value the service will reject.
 	 */
+	/*
+	 * The engine substitutes `{{...}}` and escapes for nothing, so a credential
+	 * spliced into a document a template builds by hand — an INI file, a JSON
+	 * body written as a string — can end that document and start another. A
+	 * `pattern` is the only thing standing in the way, and the API now enforces
+	 * the ones a template declares (`lib/credential-rules.ts`).
+	 *
+	 * A structured `body:` is exempt on purpose: it is handed to
+	 * `JSON.stringify` or `URLSearchParams`, which quote for you.
+	 */
+	it("gives a pattern to every credential it splices into a document", () => {
+		/**
+		 * Is this string a document the template wrote itself?
+		 *
+		 * A body value like `"{{credentials.user}}"` is one field of a mapping
+		 * the runner hands to `JSON.stringify`, which quotes it. The same field
+		 * inside `\'{"web_ui_username":"{{credentials.user}}"}\'` is not: that
+		 * string *is* the JSON, and nothing will quote anything inside it. What
+		 * separates them is punctuation of its own, once the placeholders are
+		 * taken out.
+		 */
+		function isDocument(text: string): boolean {
+			return /[{}"[\]]/.test(text.replace(/\{\{[^}]*\}\}/g, ""));
+		}
+
+		/** Strings a template writes verbatim, as opposed to encoding. */
+		function handBuilt(tpl: ServiceTemplate): string[] {
+			const strings: string[] = [];
+			for (const step of [...tpl.setup, ...Object.values(tpl.actions ?? {})]) {
+				// A config file is a document by definition — INI, JSON, XML.
+				if (step.type === "config_file" && step.content) {
+					strings.push(step.content);
+				}
+				for (const value of Object.values(
+					(step.body as Record<string, unknown>) ?? {},
+				)) {
+					if (typeof value === "string" && isDocument(value)) {
+						strings.push(value);
+					}
+				}
+			}
+			return strings;
+		}
+
+		for (const tpl of templates) {
+			for (const text of handBuilt(tpl)) {
+				for (const m of text.matchAll(/\{\{credentials\.(\w+)\}\}/g)) {
+					const field = tpl.credentials?.find((f) => f.key === m[1]);
+					expect(
+						field?.rules?.pattern,
+						`${tpl.id}: {{credentials.${m[1]}}} is written into a document verbatim`,
+					).toBeTruthy();
+				}
+			}
+		}
+	});
+
 	it("gives every select its options, with the default among them", () => {
 		for (const tpl of templates) {
 			for (const field of tpl.credentials ?? []) {

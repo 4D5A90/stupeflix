@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Db } from "../db.js";
+import { credentialProblems } from "../lib/credential-rules.js";
 import { runComposeSync, runDockerSync } from "../lib/docker-cli.js";
 import { ownershipConflict } from "../lib/instance.js";
 import { readServiceInfo } from "../lib/service-info.js";
@@ -133,6 +134,10 @@ export function servicesRoutes(db: Db) {
 
 		const body = await c.req.json().catch(() => ({}));
 		const credentials: Record<string, string> = body.credentials ?? {};
+		const problems = credentialProblems(tpl, credentials);
+		if (problems.length > 0) {
+			return c.json({ error: problems.join("; "), problems }, 400);
+		}
 		for (const [key, value] of Object.entries(credentials)) {
 			db.set(`credentials.${name}.${key}`, value);
 		}

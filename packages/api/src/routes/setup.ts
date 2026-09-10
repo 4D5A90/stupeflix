@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { Hono } from "hono";
 import type { Db } from "../db.js";
 import { writeCompose } from "../lib/compose.js";
+import { credentialProblems } from "../lib/credential-rules.js";
 import { runCompose } from "../lib/docker-cli.js";
 import { COMPOSE_FILE } from "../lib/env.js";
 import {
@@ -13,7 +14,11 @@ import { ownershipConflict } from "../lib/instance.js";
 import { debug, error, log } from "../lib/logger.js";
 import { checkRequirements, requirementMessage } from "../lib/requirements.js";
 import { libraryNameProblem, pathProblem } from "../lib/safe-path.js";
-import { getEnabledTemplates, getTemplates } from "../lib/service-registry.js";
+import {
+	getEnabledTemplates,
+	getTemplate,
+	getTemplates,
+} from "../lib/service-registry.js";
 import {
 	type StepStatus,
 	runTemplateSteps,
@@ -134,6 +139,26 @@ function pathsProblem(paths: unknown): string | null {
 	return null;
 }
 
+/**
+ * Why this credential map cannot be stored, or null.
+ *
+ * The service id is checked as well as the fields: it becomes the middle of
+ * `credentials.<id>.<key>`, so an unknown one writes a setting nothing reads
+ * and no screen shows.
+ */
+function credentialsProblem(credentials: unknown): string | null {
+	if (typeof credentials !== "object" || credentials === null) {
+		return "credentials must be a mapping";
+	}
+	for (const [id, fields] of Object.entries(credentials)) {
+		const tpl = getTemplate(id);
+		if (!tpl) return `${id} is not a service`;
+		const problems = credentialProblems(tpl, fields);
+		if (problems.length > 0) return problems.join("; ");
+	}
+	return null;
+}
+
 /** Why this library list cannot be stored, or null. */
 function librariesProblem(libraries: unknown): string | null {
 	if (!Array.isArray(libraries)) return "libraries must be a list";
@@ -227,7 +252,10 @@ export function setupRoutes(db: Db) {
 	});
 
 	app.post("/credentials", async (c) => {
-		applyCredentials(db, await c.req.json());
+		const credentials = await c.req.json().catch(() => null);
+		const problem = credentialsProblem(credentials);
+		if (problem) return c.json({ error: problem }, 400);
+		applyCredentials(db, credentials);
 		return c.json({ success: true });
 	});
 
@@ -271,6 +299,10 @@ export function setupRoutes(db: Db) {
 		}
 		if (body.libraries) {
 			const problem = librariesProblem(body.libraries);
+			if (problem) return c.json({ error: problem }, 400);
+		}
+		if (body.credentials) {
+			const problem = credentialsProblem(body.credentials);
 			if (problem) return c.json({ error: problem }, 400);
 		}
 

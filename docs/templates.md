@@ -290,6 +290,20 @@ credentials:
       message: Custom error message
 ```
 
+Enforced by the API on every credential write (`lib/credential-rules.ts`), and
+mirrored in the wizard so it can answer as you type. The API is the authority;
+change the two together. A `select` is held to its own `options` the same way,
+and a field with no `rules:` is still capped at 512 characters.
+
+**The engine escapes for nothing.** A `{{credentials.x}}` is substituted
+verbatim, so a value spliced into a document the template writes itself — a
+`config_file` body, or an `api_call` body given as a JSON *string* rather than a
+mapping — can close that document and open another. Give those fields a
+`pattern`; `templates.test.ts` refuses a template that does not.
+
+A structured `body:` needs none of this: the runner hands it to `JSON.stringify`
+or `URLSearchParams`, which quote for you. Prefer that shape.
+
 ## Action icons
 
 Optional and **case-sensitive**; an unknown name falls back to a generic glyph.

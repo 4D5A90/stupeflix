@@ -30,17 +30,29 @@ compose:
       - "6881:6881/udp"
     restart: unless-stopped
 
+# Both are spliced into documents this template builds by hand — the INI below
+# and the JSON body of `set_credentials` — and the engine escapes for neither.
+# The patterns are what makes that safe: without them a newline in the username
+# adds an `[AutoRun]` section to the config, and qBittorrent runs whatever it
+# names once a download finishes.
 credentials:
   - key: user
     type: text
     label: Username
     default: admin
+    rules:
+      minLength: 3
+      maxLength: 32
+      pattern: "^[A-Za-z0-9._-]{3,32}$"
+      message: 3 to 32 letters, digits, dot, dash or underscore
   - key: pass
     type: password
     label: Password
     rules:
       minLength: 6
-      message: Must be at least 6 characters
+      maxLength: 64
+      pattern: "^[A-Za-z0-9!@#$%^&*()_+=,.?~-]{6,64}$"
+      message: 6 to 64 letters, digits or punctuation (no quotes or backslashes)
 
 setup:
   - name: config
