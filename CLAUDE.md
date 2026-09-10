@@ -337,9 +337,17 @@ so everything path- or host-related goes through `lib/env.ts`:
   ground muddies everything.
 - Changing `tailwind.config.js` needs a dev-server restart — Vite does not pick it
   up hot, and `@apply` with a new token fails the PostCSS build until it does.
-- New icons come from Heroicons outline paths, or the service's own logo where
-  one exists (simple-icons). Hand-drawn SVG reads as noise at the 14px these
-  render at.
+- Service logos come from **[dashboardicons.com](https://dashboardicons.com)**,
+  which carries every self-hosted app in this stack; simple-icons has the
+  monochrome marks for a few (Sonarr, Radarr). Anything else — a category, an
+  action — comes from Heroicons outline paths. Hand-drawn SVG reads as noise at
+  the 14px these render at.
+- **`currentColor` decides the tile.** A monochrome glyph takes the service's
+  hue, a full-colour logo gets a neutral tile instead — Prowlarr's orange on a
+  green tile reads as a mistake, and `serviceTint` detects which it is by
+  looking for `currentColor` in the file. Prefer the monochrome mark when the
+  project publishes one: a full illustration costs ~11 kB in the bundle and
+  turns to mush at 20px.
 - **A service's glyph is a file, not code**: `web/src/assets/icons/<id>.svg`,
   found by filename. `ServiceIcon` globs the directory at build time, so adding a
   service is dropping its `.svg` beside the others and touching nothing else —

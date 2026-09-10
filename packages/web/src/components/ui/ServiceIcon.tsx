@@ -80,10 +80,24 @@ function hueOf(id: string): number {
 	return (hash % HUE_SLOTS) * (360 / HUE_SLOTS);
 }
 
+/**
+ * A full-colour logo brings its own palette, and a hue behind it fights it —
+ * Prowlarr's orange on a green tile reads as a mistake. Detected rather than
+ * declared: an icon that never says `currentColor` cannot take a tint, so it
+ * gets a neutral tile and speaks for itself.
+ */
+const NEUTRAL_TILE = {
+	backgroundColor: "rgb(255 255 255 / 0.06)",
+	color: "inherit",
+};
+
 export function serviceTint(id: string): {
 	backgroundColor: string;
 	color: string;
 } {
+	const svg = icons[id];
+	if (svg && !svg.includes("currentColor")) return NEUTRAL_TILE;
+
 	const tint = TINTS[id] ?? { hue: hueOf(id), tone: "bright" as const };
 	// The glyph carries the hue; the square behind it only separates the tile
 	// from the card, so it stays well below the glyph's contrast.
