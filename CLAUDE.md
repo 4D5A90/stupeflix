@@ -345,9 +345,10 @@ so everything path- or host-related goes through `lib/env.ts`:
 - **`currentColor` decides the tile.** A monochrome glyph takes the service's
   hue, a full-colour logo gets a neutral tile instead — Prowlarr's orange on a
   green tile reads as a mistake, and `serviceTint` detects which it is by
-  looking for `currentColor` in the file. Prefer the monochrome mark when the
-  project publishes one: a full illustration costs ~11 kB in the bundle and
-  turns to mush at 20px.
+  looking for `currentColor` in the file. **Take dashboardicons' monochrome
+  variant** and give its root `fill="currentColor"`: Prowlarr's colour
+  illustration weighed 11 kB and turned to mush at 20px, its mono mark is 3 kB
+  and takes the tint.
 - **A service's glyph is a file, not code**: `web/src/assets/icons/<id>.svg`,
   found by filename. `ServiceIcon` globs the directory at build time, so adding a
   service is dropping its `.svg` beside the others and touching nothing else —
