@@ -42,8 +42,10 @@ circle.
 | ![Storage paths](docs/screenshots/wizard-paths.jpg) | ![Stacks](docs/screenshots/wizard-stacks.jpg) |
 | **2 · Services** — what a service needs blocks, what it merely likes only warns | **3 · Credentials** — only the services that ask for them, passwords generated on request |
 | ![Services](docs/screenshots/wizard-services.jpg) | ![Credentials](docs/screenshots/wizard-credentials.jpg) |
-| **4 · Summary** — the whole configuration before anything is written | |
-| ![Summary](docs/screenshots/wizard-summary.jpg) | |
+| **4 · Summary** — the whole configuration before anything is written | **4 · Setup** — one row per service, one cell per step, whatever the size of the stack |
+| ![Summary](docs/screenshots/wizard-summary.jpg) | ![Setup progress](docs/screenshots/wizard-progress.jpg) |
+| **Done** — what the run took, and the one thing left to do | |
+| ![Setup complete](docs/screenshots/wizard-done.jpg) | |
 
 ## Getting started
 
