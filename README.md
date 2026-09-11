@@ -24,13 +24,9 @@ generates the Compose file, starts the containers on your Docker daemon and conf
 each one through its own API — libraries created, keys exchanged, services pointed at
 each other. Then it stays up as a dashboard.
 
-Every service is a YAML file in [`templates/`](templates), loaded at runtime — no
-service is named in the code. Adding one is dropping a `.yml` there, plus its
-logo as `packages/web/src/icons/<id>.svg`; [dashboardicons.com](https://dashboardicons.com)
-has a mark for every self-hosted app in this stack. Take the **monochrome**
-variant and set `fill="currentColor"` on its root, so the icon picks up the
-service's colour — a service with no icon still works, it just gets a plain
-circle.
+Every service is a YAML file in [`templates/`](templates), loaded at runtime — no service
+is named in the code. Adding one is dropping a `.yml` there, plus its logo as an `.svg`
+next to the others: see [writing a template](docs/templates.md).
 
 ## What it looks like
 
@@ -135,37 +131,23 @@ the container.
 
 ### Access token
 
-Every API route except the healthcheck needs a bearer token, and the wizard asks for it
-once.
+Every route except `GET /health` needs a bearer token. The wizard asks for it once.
 
-**Set your own in [`.env`](.env.example).** It works without — one is minted on first
-boot, kept in the database and printed at startup — but that copy is only as durable as
-your container logs, and the token itself then lives inside a SQLite blob. In `.env` it
-is somewhere you will look a year from now:
+Set your own — `.env` is where you will still find it a year from now:
 
 ```bash
 echo "STUPEFLIX_TOKEN=$(openssl rand -base64 32)" >> .env
-docker compose up -d
 ```
 
-Letters, digits and `. _ ~ + / - =`, 16 characters minimum — that is what an
-`Authorization` header can carry, and the server refuses to start on anything else
-rather than start unreachable with its own correct token.
-
-Writing it there costs nothing: `.env` is git-ignored, and anyone who can read it can
-already reach the Docker socket, which is root on the host either way.
-
-Left unset, recover the minted one from the log — or restart, which prints it again:
+Unset, one is minted on first boot and printed at startup:
 
 ```bash
 docker logs stupeflix | grep 'Access token'
 ```
 
-Driving the API by hand means carrying it:
-
-```bash
-curl -H "Authorization: Bearer $STUPEFLIX_TOKEN" http://localhost:3000/api/status
-```
+> [!NOTE]
+> Letters, digits and `. _ ~ + / - =`, 16 characters minimum. The server refuses to start
+> on anything else rather than start unreachable.
 
 ### Remote access
 
@@ -196,17 +178,12 @@ router forwards 80/443 to it, and it terminates TLS with Let's Encrypt certifica
 docker compose --profile proxy --profile tunnel up -d
 ```
 
-**Before you point a hostname at anything:**
-
-1. **Change NPM's first login**, and never route its `:81`. It is the thing that decides
-   what gets published.
-2. **Leave 80 and 443 commented out** while the tunnel is in front. Opening them puts an
-   origin back on your IP, where a scanner finds it through its TLS certificate.
-3. **Aim the wildcard at `http://npm:80` only.** Pointed at a service, it hands that one every
-   subdomain you own.
-4. **Give a proxy host to Jellyfin, Plex, Seerr or Stupeflix, and to nothing else.**
-   Sonarr, Radarr and Prowlarr run with authentication disabled for local addresses and
-   have no login to offer a stranger; they stay on the LAN.
+> [!CAUTION]
+> Before you point a hostname at anything:
+> 1. **Change NPM's first login**, and never route its `:81` — it decides what gets published.
+> 2. **Leave 80 and 443 closed** behind the tunnel; opening them puts an origin back on your IP.
+> 3. **Aim the wildcard at `http://npm:80` only** — at a service, it hands that one every subdomain you own.
+> 4. **Proxy Jellyfin, Plex, Seerr or Stupeflix, nothing else.** Sonarr, Radarr and Prowlarr have no login to offer a stranger.
 
 ## What's inside
 
@@ -335,11 +312,9 @@ curl -H "Authorization: Bearer e2e-token" http://localhost:3999/setup/status
 ```
 
 > [!WARNING]
-> If you also remap a **port** to dodge a stack already running, move the service's
-> own port with it — `WEBUI_PORT`, the port inside `config_file`, and the step URLs.
-> Publishing `18080:8080` alone leaves the service listening on 8080 while the `Host`
-> header says 18080, and qBittorrent (among others) refuses the request over it:
-> `Invalid Host header, port mismatch`. It reads as a broken template and is not one.
+> Remapping a port means moving the service's own port with it — `WEBUI_PORT`, the port
+> in `config_file`, and the step URLs. Publishing `18080:8080` alone leaves the service on
+> 8080 and qBittorrent refuses the request: `Invalid Host header, port mismatch`.
 
 </details>
 
@@ -348,11 +323,9 @@ curl -H "Authorization: Bearer e2e-token" http://localhost:3999/setup/status
 **[Writing a service template](docs/templates.md)** — the full YAML schema: setup steps,
 requirements, networking, variables, `foreach`, actions and readouts.
 
-**[Decisions](docs/adr)** — the short record of the choices that shape the rest, and of
-what each one makes unnecessary: [a bearer token rather than a
-session](docs/adr/0001-a-bearer-token-rather-than-a-session.md), [a template is code and
-is validated as such](docs/adr/0002-a-template-is-code-and-is-validated-as-such.md), [no
-shell between the API and Docker](docs/adr/0003-no-shell-between-the-api-and-docker.md).
+**[Decisions](docs/adr)** — why a bearer token and no CSRF middleware, why a template is
+validated at load, why nothing reaches Docker through a shell. Read these before undoing
+something that looks like an oversight.
 
 **API** — every route is served under `/api`, and also at the root when the API serves
 nothing else on the port (dev, where Vite strips the prefix when proxying). All of them

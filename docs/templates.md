@@ -13,6 +13,7 @@ green, and it appears in the wizard. No file under `packages/api/src` names a se
 [`api_call` options](#api_call-options) ·
 [Credential rules](#credential-rules) ·
 [What a template may declare](#what-a-template-may-declare) ·
+[The service logo](#the-service-logo) ·
 [Action icons](#action-icons)
 
 ## Anatomy
@@ -349,6 +350,23 @@ service's output.
 
 Needing something this list forbids is a conversation, not a workaround — the
 list lives in one file and changing it is a reviewed change.
+
+## The service logo
+
+A file, not code: `packages/web/src/icons/<id>.svg`, found by filename. The
+directory is globbed at build time, so adding a service is dropping its `.svg`
+beside the others and touching nothing else.
+
+[dashboardicons.com](https://dashboardicons.com) has a mark for every self-hosted
+app in this stack. **Take the monochrome variant** and set `fill="currentColor"`
+on its root: the tile then picks up the service's own hue. A full-colour logo
+gets a neutral tile instead, which is the right call — an orange illustration on
+a green tile reads as a mistake — but it also weighs three or four times as much
+and turns to mush at the 20px these render at.
+
+A service with no icon still works; it gets `_default.svg`, a plain circle. The
+gate runs the other way only: `templates.test.ts` fails on an icon whose template
+is gone, since nothing else would ever point that file out.
 
 ## Action icons
 
