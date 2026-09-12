@@ -104,14 +104,14 @@ setup:
     type: api_call
     url: http://localhost:8096/Auth/Keys?App=Stupeflix
     method: POST
-    useToken: true
+    useToken: 'MediaBrowser Token="{{internal.token}}"'
 
   - name: store_api_key
     label: Store the API key
     type: api_call
     url: http://localhost:8096/Auth/Keys
     method: GET
-    useToken: true
+    useToken: 'MediaBrowser Token="{{internal.token}}"'
     store: { from: body, path: Items.0.AccessToken, as: api_key }
 
   - name: scan_libraries

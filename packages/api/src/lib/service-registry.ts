@@ -147,7 +147,16 @@ export interface SetupStepDef {
 	/** Read a value out of this step and keep it. See `StoreSpec`. */
 	store?: StoreSpec;
 	useCookie?: boolean;
-	useToken?: boolean;
+	/**
+	 * Send the token this service handed us, in the header shape the service
+	 * expects — the value is `{{internal.token}}`, resolved like any other.
+	 *
+	 * The shape belongs to the template, not to the engine: it used to be a
+	 * boolean, and the engine wrote `MediaBrowser Token="…"` — a Jellyfin string
+	 * living under `src/`, which is exactly what "no file under `src/` names a
+	 * service" forbids. A service speaking `Bearer` could not use this at all.
+	 */
+	useToken?: string;
 	/**
 	 * Repeat this step over a collection. `foreach: libraries` is shorthand for
 	 * `foreach: { source: libraries }`.
@@ -551,8 +560,17 @@ function stepHeaders(
 		if (cookie) headers.Cookie = cookie;
 	}
 	if (step.useToken && own) {
+		// The presence check stays on the stored value: resolving an absent one
+		// yields `Token=""`, which a service answers 401 to without saying why.
+		// `buildVars` runs per step, so `{{internal.token}}` here is whatever the
+		// login step stored a moment ago.
 		const token = db.get(`internal.${serviceId}.token`) as string;
-		if (token) headers.Authorization = `MediaBrowser Token="${token}"`;
+		if (token) {
+			headers.Authorization = resolveTemplateVars(
+				step.useToken,
+				vars,
+			) as string;
+		}
 	}
 	return headers;
 }

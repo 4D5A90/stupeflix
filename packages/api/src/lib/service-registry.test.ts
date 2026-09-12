@@ -456,3 +456,81 @@ describe("runSetupStep: store", () => {
 		);
 	});
 });
+
+/**
+ * The header's shape belongs to the template. It used to be a boolean, and the
+ * engine wrote `MediaBrowser Token="…"` — a Jellyfin string living under `src/`,
+ * which is what "no file under `src/` names a service" forbids, and which left a
+ * service speaking `Bearer` unable to use the mechanism at all.
+ */
+describe("runSetupStep: useToken", () => {
+	type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
+	let fetchMock: ReturnType<typeof vi.fn<Fetch>>;
+
+	beforeEach(() => {
+		// 204 carries no body, so `null` rather than `""` — the Response
+		// constructor refuses a body on that status.
+		fetchMock = vi
+			.fn<Fetch>()
+			.mockResolvedValue(new Response(null, { status: 204 }));
+		vi.stubGlobal("fetch", fetchMock);
+	});
+	afterEach(() => vi.unstubAllGlobals());
+
+	const headers = () =>
+		(fetchMock.mock.calls[0][1]?.headers ?? {}) as Record<string, string>;
+
+	it("sends the token in the shape the template wrote", async () => {
+		const db = configuredDb({ "internal.alpha.token": "tok-1" });
+		const step: SetupStepDef = {
+			name: "keys",
+			label: "Keys",
+			type: "api_call",
+			url: "http://localhost:1111/Auth/Keys",
+			useToken: 'MediaBrowser Token="{{internal.token}}"',
+		};
+		await runSetupStep(step, db, "alpha");
+		expect(headers().Authorization).toBe('MediaBrowser Token="tok-1"');
+	});
+
+	it("takes any other shape just as well", async () => {
+		const db = configuredDb({ "internal.alpha.token": "tok-2" });
+		const step: SetupStepDef = {
+			name: "keys",
+			label: "Keys",
+			type: "api_call",
+			url: "http://localhost:1111/whatever",
+			useToken: "Bearer {{internal.token}}",
+		};
+		await runSetupStep(step, db, "alpha");
+		expect(headers().Authorization).toBe("Bearer tok-2");
+	});
+
+	// Handing one service's session to another is what the host check is for.
+	it("withholds the session from a peer", async () => {
+		const db = configuredDb({ "internal.alpha.token": "tok-3" });
+		const step: SetupStepDef = {
+			name: "peer",
+			label: "Peer",
+			type: "api_call",
+			url: "http://beta:2222/api",
+			useToken: "Bearer {{internal.token}}",
+		};
+		await runSetupStep(step, db, "alpha");
+		expect(headers().Authorization).toBeUndefined();
+	});
+
+	// An absent token would resolve to `Token=""`, which a service answers 401 to
+	// without saying why.
+	it("sends no header at all when nothing was stored", async () => {
+		const step: SetupStepDef = {
+			name: "keys",
+			label: "Keys",
+			type: "api_call",
+			url: "http://localhost:1111/Auth/Keys",
+			useToken: "Bearer {{internal.token}}",
+		};
+		await runSetupStep(step, configuredDb(), "alpha");
+		expect(headers().Authorization).toBeUndefined();
+	});
+});
