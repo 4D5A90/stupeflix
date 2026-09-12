@@ -261,6 +261,7 @@ stupeflix/
 ├── templates/          # Service definitions, loaded at runtime
 ├── stacks/             # Named sets of services
 ├── docs/templates.md   # How to write a template
+├── docs/testing.md     # What the suite covers, and the isolated run for the rest
 ├── docs/adr/           # The decisions that shape the rest, and why
 ├── packages/
 │   ├── api/src/
@@ -322,6 +323,10 @@ curl -H "Authorization: Bearer e2e-token" http://localhost:3999/setup/status
 
 **[Writing a service template](docs/templates.md)** — the full YAML schema: setup steps,
 requirements, networking, variables, `foreach`, actions and readouts.
+
+**[Testing](docs/testing.md)** — what `pnpm test` covers, what it cannot (anything that
+shells out to Docker or talks to a live service), and the isolated recipe for the rest.
+Never run it against your own stack.
 
 **[Decisions](docs/adr)** — why a bearer token and no CSRF middleware, why a template is
 validated at load, why nothing reaches Docker through a shell. Read these before undoing
