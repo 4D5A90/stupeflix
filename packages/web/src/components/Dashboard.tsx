@@ -66,6 +66,11 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 	const enabledServices = services.filter((s) => s.enabled);
 	const enabledIds = new Set(enabledServices.map((s) => s.name));
 	const uninstalled = (registry ?? []).filter((svc) => !enabledIds.has(svc.id));
+	// Removing a service keeps its own settings on disk. The install screen asks
+	// what to do with them, and only for the services that have any.
+	const withLeftovers = new Set(
+		services.filter((s) => s.leftovers).map((s) => s.name),
+	);
 	// What the stack already covers, so the install screen can say what is
 	// missing instead of letting the API refuse after the form is filled in
 	const installedCategories = (registry ?? [])
@@ -103,8 +108,9 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 				title="Add a service"
 				services={uninstalled}
 				installedCategories={installedCategories}
+				withLeftovers={withLeftovers}
 				submitVerb="Install"
-				submit={(id, creds) => api.installService(id, creds)}
+				submit={(id, creds, reset) => api.installService(id, creds, reset)}
 				onBack={() => setAdding(false)}
 				onDone={(id, name) => {
 					setAdding(false);

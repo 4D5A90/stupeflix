@@ -7,6 +7,7 @@ import {
 	generatedLengthFor,
 } from "../../types/setup";
 import { ServiceIcon, serviceTint } from "../ui/ServiceIcon";
+import { Toggle } from "../ui/Toggle";
 import { CATEGORY_LABELS } from "./categories";
 
 /**
@@ -22,6 +23,7 @@ export function ServiceSetupScreen({
 	services,
 	locked,
 	installedCategories,
+	withLeftovers,
 	initialCreds,
 	submitVerb,
 	submit,
@@ -34,9 +36,15 @@ export function ServiceSetupScreen({
 	locked?: ServiceMeta;
 	/** Categories the installed services already cover, to resolve `requires`. */
 	installedCategories: string[];
+	/** Services whose own settings a previous removal left on disk. */
+	withLeftovers?: Set<string>;
 	initialCreds?: Record<string, string>;
 	submitVerb: string;
-	submit: (id: string, creds: Record<string, string>) => Promise<unknown>;
+	submit: (
+		id: string,
+		creds: Record<string, string>,
+		reset: boolean,
+	) => Promise<unknown>;
 	onBack: () => void;
 	onDone: (serviceId: string, serviceName: string) => void;
 }) {
@@ -46,6 +54,9 @@ export function ServiceSetupScreen({
 	);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
+	// Off by default: keeping what is there is the non-destructive reading, and
+	// an ambiguous request never resolves to the destructive one.
+	const [reset, setReset] = useState(false);
 
 	// The API refuses this too, and says the same thing — but only once the form
 	// has been filled in and sent, which is a poor moment to learn it
@@ -56,6 +67,7 @@ export function ServiceSetupScreen({
 	const selectService = (svc: ServiceMeta) => {
 		setPicked(svc);
 		setError(null);
+		setReset(false);
 		setCreds(initialCredsFor(svc, initialCreds));
 	};
 
@@ -64,7 +76,7 @@ export function ServiceSetupScreen({
 		setError(null);
 		setBusy(true);
 		try {
-			await submit(picked.id, creds);
+			await submit(picked.id, creds, reset);
 			onDone(picked.id, picked.name);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : `${submitVerb} failed`);
@@ -240,6 +252,23 @@ export function ServiceSetupScreen({
 									) : null}
 								</div>
 							))}
+						</div>
+					) : null}
+
+					{withLeftovers?.has(picked.id) ? (
+						<div className="space-y-1.5 rounded-md border border-white/[0.07] bg-ink-950 px-3 py-2.5">
+							<Toggle
+								label={`Start ${picked.name} from a clean configuration`}
+								checked={reset}
+								onChange={setReset}
+							/>
+							<p className="text-xs text-gray-500">
+								{picked.name} was installed here before and its settings are
+								still on disk.{" "}
+								{reset
+									? "They will be deleted and rebuilt from the values above."
+									: "They will be kept, and anything you changed in its own interface survives."}
+							</p>
 						</div>
 					) : null}
 

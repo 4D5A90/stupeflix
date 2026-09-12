@@ -30,8 +30,9 @@ import {
 	getTemplateDefaults,
 	loadTemplates,
 	runSetupStep,
+	sortByDependencies,
 } from "./service-registry.js";
-import type { SetupStepDef } from "./service-registry.js";
+import type { ServiceTemplate, SetupStepDef } from "./service-registry.js";
 
 const FIXTURES = fileURLToPath(new URL("../test/fixtures", import.meta.url));
 
@@ -324,5 +325,294 @@ describe("runSetupStep: skipIf", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
 		expect(fetchMock.mock.calls[1][1]?.method).toBe("POST");
+	});
+});
+
+/**
+ * One vocabulary for what used to be four. `body` and `cookie` read the answer
+ * of the `api_call` they sit on; `logs` and `file` have no answer to read, so
+ * they are a step of their own.
+ */
+describe("runSetupStep: store", () => {
+	type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
+	let db: Db;
+
+	beforeEach(() => {
+		db = configuredDb();
+	});
+	afterEach(() => vi.unstubAllGlobals());
+
+	const call = (store: SetupStepDef["store"]): SetupStepDef => ({
+		name: "login",
+		label: "Login",
+		type: "api_call",
+		url: "http://localhost:1111/login",
+		method: "POST",
+		store,
+	});
+
+	it("walks a dot path into the JSON response", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn<Fetch>()
+				.mockResolvedValue(
+					Response.json({ Items: [{ AccessToken: "abc123" }] }),
+				),
+		);
+		const step = call({
+			from: "body",
+			path: "Items.0.AccessToken",
+			as: "api_key",
+		});
+		await expect(runSetupStep(step, db, "alpha")).resolves.toBeNull();
+		expect(db.get("internal.alpha.api_key")).toBe("abc123");
+	});
+
+	/**
+	 * A 4xx body is not the document the path was written against. Storing
+	 * whatever sits at that key would poison the slot for every later step, which
+	 * would then fail somewhere else entirely.
+	 */
+	it("keeps nothing from a failed response", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn<Fetch>()
+				.mockResolvedValue(Response.json({ token: "nope" }, { status: 401 })),
+		);
+		const step = call({ from: "body", path: "token", as: "token" });
+		await expect(runSetupStep(step, db, "alpha")).resolves.toEqual(
+			expect.stringContaining("401"),
+		);
+		expect(db.get("internal.alpha.token")).toBeNull();
+	});
+
+	it("takes the session cookie off the headers", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn<Fetch>()
+				.mockResolvedValue(
+					new Response("", { headers: { "set-cookie": "SID=xyz; Path=/" } }),
+				),
+		);
+		const step = call({ from: "cookie", as: "cookie" });
+		await expect(runSetupStep(step, db, "alpha")).resolves.toBeNull();
+		expect(db.get("internal.alpha.cookie")).toBe("SID=xyz; Path=/");
+	});
+
+	it("reads capture group 1 out of a file under paths.config", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "stupeflix-store-"));
+		try {
+			db = configuredDb({ "paths.config": dir });
+			writeFileSync(join(dir, "prefs.xml"), '<P PlexOnlineToken="tok-42"/>');
+			const step: SetupStepDef = {
+				name: "extract_token",
+				label: "Extract token",
+				type: "store",
+				store: {
+					from: "file",
+					file: "prefs.xml",
+					regex: 'PlexOnlineToken="([^"]+)"',
+					as: "token",
+				},
+			};
+			await expect(runSetupStep(step, db, "alpha")).resolves.toBeNull();
+			expect(db.get("internal.alpha.token")).toBe("tok-42");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses to climb out of paths.config", async () => {
+		const step: SetupStepDef = {
+			name: "escape",
+			label: "Escape",
+			type: "store",
+			store: {
+				from: "file",
+				file: "../../etc/passwd",
+				regex: "root:(.*)",
+				as: "leak",
+			},
+		};
+		await expect(runSetupStep(step, db, "alpha")).resolves.toEqual(
+			expect.stringContaining("outside paths.config"),
+		);
+	});
+
+	// `body` and `cookie` name a response, and a step of its own has none. Saying
+	// so beats storing nothing and reporting success.
+	it("refuses a response source on a step with no response", async () => {
+		const step: SetupStepDef = {
+			name: "nope",
+			label: "Nope",
+			type: "store",
+			store: { from: "body", path: "x", as: "x" },
+		};
+		await expect(runSetupStep(step, db, "alpha")).resolves.toEqual(
+			expect.stringContaining("not a step of its own"),
+		);
+	});
+});
+
+/**
+ * The header's shape belongs to the template. It used to be a boolean, and the
+ * engine wrote `MediaBrowser Token="…"` — a Jellyfin string living under `src/`,
+ * which is what "no file under `src/` names a service" forbids, and which left a
+ * service speaking `Bearer` unable to use the mechanism at all.
+ */
+describe("runSetupStep: useToken", () => {
+	type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
+	let fetchMock: ReturnType<typeof vi.fn<Fetch>>;
+
+	beforeEach(() => {
+		// 204 carries no body, so `null` rather than `""` — the Response
+		// constructor refuses a body on that status.
+		fetchMock = vi
+			.fn<Fetch>()
+			.mockResolvedValue(new Response(null, { status: 204 }));
+		vi.stubGlobal("fetch", fetchMock);
+	});
+	afterEach(() => vi.unstubAllGlobals());
+
+	const headers = () =>
+		(fetchMock.mock.calls[0][1]?.headers ?? {}) as Record<string, string>;
+
+	it("sends the token in the shape the template wrote", async () => {
+		const db = configuredDb({ "internal.alpha.token": "tok-1" });
+		const step: SetupStepDef = {
+			name: "keys",
+			label: "Keys",
+			type: "api_call",
+			url: "http://localhost:1111/Auth/Keys",
+			useToken: 'MediaBrowser Token="{{internal.token}}"',
+		};
+		await runSetupStep(step, db, "alpha");
+		expect(headers().Authorization).toBe('MediaBrowser Token="tok-1"');
+	});
+
+	it("takes any other shape just as well", async () => {
+		const db = configuredDb({ "internal.alpha.token": "tok-2" });
+		const step: SetupStepDef = {
+			name: "keys",
+			label: "Keys",
+			type: "api_call",
+			url: "http://localhost:1111/whatever",
+			useToken: "Bearer {{internal.token}}",
+		};
+		await runSetupStep(step, db, "alpha");
+		expect(headers().Authorization).toBe("Bearer tok-2");
+	});
+
+	// Handing one service's session to another is what the host check is for.
+	it("withholds the session from a peer", async () => {
+		const db = configuredDb({ "internal.alpha.token": "tok-3" });
+		const step: SetupStepDef = {
+			name: "peer",
+			label: "Peer",
+			type: "api_call",
+			url: "http://beta:2222/api",
+			useToken: "Bearer {{internal.token}}",
+		};
+		await runSetupStep(step, db, "alpha");
+		expect(headers().Authorization).toBeUndefined();
+	});
+
+	// An absent token would resolve to `Token=""`, which a service answers 401 to
+	// without saying why.
+	it("sends no header at all when nothing was stored", async () => {
+		const step: SetupStepDef = {
+			name: "keys",
+			label: "Keys",
+			type: "api_call",
+			url: "http://localhost:1111/Auth/Keys",
+			useToken: "Bearer {{internal.token}}",
+		};
+		await runSetupStep(step, configuredDb(), "alpha");
+		expect(headers().Authorization).toBeUndefined();
+	});
+});
+
+/**
+ * Without it the install order is `readdirSync`'s — the alphabetical order of
+ * the file names, which no template declares and every template depended on.
+ */
+describe("sortByDependencies", () => {
+	// Spread from a real fixture rather than cast from a literal: a literal whose
+	// optional is explicitly `undefined` overlaps nothing, and the rest stays a
+	// template the loader actually validated.
+	const tpl = (
+		id: string,
+		category: string,
+		after?: { category: string }[],
+	): ServiceTemplate => ({
+		...template("alpha"),
+		id,
+		name: id,
+		category,
+		container: id,
+		setup: [],
+		after,
+	});
+
+	it("leaves a list that declares nothing exactly as it was", () => {
+		const list = [tpl("a", "indexer"), tpl("b", "mediaServer")];
+		expect(sortByDependencies(list).map((t) => t.id)).toEqual(["a", "b"]);
+	});
+
+	it("moves a template after the category it waits on", () => {
+		const list = [
+			tpl("seerr", "requests", [{ category: "mediaManager" }]),
+			tpl("sonarr", "mediaManager"),
+		];
+		expect(sortByDependencies(list).map((t) => t.id)).toEqual([
+			"sonarr",
+			"seerr",
+		]);
+	});
+
+	// A category, never a service: adding a second media manager must not need
+	// the `after:` line touched.
+	it("waits on every member of the category, not the first", () => {
+		const list = [
+			tpl("seerr", "requests", [{ category: "mediaManager" }]),
+			tpl("sonarr", "mediaManager"),
+			tpl("radarr", "mediaManager"),
+		];
+		expect(sortByDependencies(list).map((t) => t.id)).toEqual([
+			"sonarr",
+			"radarr",
+			"seerr",
+		]);
+	});
+
+	it("is stable: a template with no reason to move does not move", () => {
+		const list = [
+			tpl("zeta", "seeder"),
+			tpl("seerr", "requests", [{ category: "mediaManager" }]),
+			tpl("alpha", "vpn"),
+			tpl("sonarr", "mediaManager"),
+		];
+		expect(sortByDependencies(list).map((t) => t.id)).toEqual([
+			"zeta",
+			"alpha",
+			"sonarr",
+			"seerr",
+		]);
+	});
+
+	/**
+	 * A cycle cannot be blamed on any single file, so nothing is dropped. Refusing
+	 * to boot over a relationship between two templates would be worse than the
+	 * ordering bug it protects against.
+	 */
+	it("keeps the original order when templates wait on each other", () => {
+		const list = [
+			tpl("a", "indexer", [{ category: "mediaServer" }]),
+			tpl("b", "mediaServer", [{ category: "indexer" }]),
+		];
+		expect(sortByDependencies(list).map((t) => t.id)).toEqual(["a", "b"]);
 	});
 });

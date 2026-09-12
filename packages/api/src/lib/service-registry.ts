@@ -86,15 +86,50 @@ export interface ForeachSpec {
 	map?: Record<string, Record<string, string>>;
 }
 
+/**
+ * Where a value is read from, and what to call it once stored under
+ * `internal.<service>.<as>`.
+ *
+ * One shape for what used to be four: `storeToken` plus `storeAs` for a JSON
+ * response, `storeCookie` for a header, and two whole step types —
+ * `extract_from_logs` and `extract_from_config` — whose only job was to read a
+ * value and keep it. Those two differed by *where* they read, which is a
+ * parameter, not a kind of step.
+ *
+ * `storeToken` also lied: it was a path into the response body, and carried
+ * "Token" only because `storeAs` defaulted to `token`. `jellyfin.yml` already
+ * used it to keep an API key.
+ *
+ * Every option lives under here rather than beside it, the way `foreach` does:
+ * `container` means something to `logs` and nothing to `body`, so it has no
+ * business in the vocabulary every template reads.
+ */
+export interface StoreSpec {
+	/**
+	 * `body` and `cookie` read an `api_call`'s response; `logs` and `file` are a
+	 * step of their own (`type: store`) and read from outside the API entirely.
+	 */
+	from: "body" | "cookie" | "logs" | "file";
+	/** `body`: dot path into the JSON response — `Items.0.AccessToken`. */
+	path?: string;
+	/** `logs` and `file`: the value is capture group 1. */
+	regex?: string;
+	/** `logs`: which container to read, both streams merged. */
+	container?: string;
+	/** `file`: path under `paths.config`. */
+	file?: string;
+	/**
+	 * Destination under `internal.<service>.`. Always written out, never
+	 * defaulted: a session token and a permanent API key must not share a slot —
+	 * the first expires, the second is what has to outlive setup.
+	 */
+	as: string;
+}
+
 export interface SetupStepDef {
 	name: string;
 	label: string;
-	type:
-		| "config_file"
-		| "api_call"
-		| "wait_ready"
-		| "extract_from_logs"
-		| "extract_from_config";
+	type: "config_file" | "api_call" | "wait_ready" | "store";
 	/**
 	 * Resolved like any other value, and the step runs only when it comes out
 	 * `"true"`. This is what makes a `recommends:` peer usable: it may be
@@ -109,10 +144,19 @@ export interface SetupStepDef {
 	headers?: Record<string, string>;
 	body?: unknown;
 	contentType?: "json" | "form";
-	storeCookie?: boolean;
+	/** Read a value out of this step and keep it. See `StoreSpec`. */
+	store?: StoreSpec;
 	useCookie?: boolean;
-	storeToken?: string;
-	useToken?: boolean;
+	/**
+	 * Send the token this service handed us, in the header shape the service
+	 * expects — the value is `{{internal.token}}`, resolved like any other.
+	 *
+	 * The shape belongs to the template, not to the engine: it used to be a
+	 * boolean, and the engine wrote `MediaBrowser Token="…"` — a Jellyfin string
+	 * living under `src/`, which is exactly what "no file under `src/` names a
+	 * service" forbids. A service speaking `Bearer` could not use this at all.
+	 */
+	useToken?: string;
 	/**
 	 * Repeat this step over a collection. `foreach: libraries` is shorthand for
 	 * `foreach: { source: libraries }`.
@@ -137,27 +181,53 @@ export interface SetupStepDef {
 	 * omit it. Merging is shallow, by top-level key.
 	 */
 	merge?: boolean;
-	container?: string;
-	/** Path under `paths.config`, for `config_file` and `extract_from_config`. */
+	/** `config_file` only: path under `paths.config`. */
 	file?: string;
 	/** File body for `config_file`. Template variables are resolved. */
 	content?: string;
 	/** `config_file` only: leave an existing file alone (default true). */
 	skipIfExists?: boolean;
-	regex?: string;
 	/**
-	 * Destination under `internal.<service>.` for `extract_from_*` and for
-	 * `storeToken`, which defaults to `token`. A session token and a permanent
-	 * API key must not share a slot: the first expires, the second is what has
-	 * to outlive setup.
+	 * A step whose failure is not the template's failure. It records `skipped`
+	 * and the pipeline goes on.
+	 *
+	 * For the work a service only needs done once. qBittorrent prints a temporary
+	 * password on a *virgin* boot and never again, so the three steps that trade
+	 * it for real credentials have nothing to do on a service whose config
+	 * survived a removal — and failing there would strand an install that had
+	 * nothing left to do.
+	 *
+	 * Not a blanket property of a step type: Plex failing to yield its token is a
+	 * genuine failure, and the same `store` step must keep saying so.
 	 */
-	storeAs?: string;
+	optional?: boolean;
 	/**
 	 * `actions` only: which icon the dashboard draws on the button. Names are
 	 * case-sensitive and listed in the README; an unknown one falls back to the
 	 * default action icon rather than breaking the button.
 	 */
 	icon?: string;
+}
+
+/**
+ * Steps to run when a *peer* is removed, declared by the template that holds the
+ * entry.
+ *
+ * The rule that decides where these live: **clean up where the entry is, and do
+ * it when the thing it points at disappears.** Sonarr writes a download client
+ * into its own database pointing at qBittorrent, so removing qBittorrent leaves
+ * Sonarr holding a dead entry — and only Sonarr's API can drop it.
+ *
+ * Removing Sonarr itself needs nothing here: the entry goes with the database
+ * that held it.
+ *
+ * Grouped by `when` rather than carrying it per step, so the trigger is written
+ * once and `SetupStepDef` stays what it is everywhere else.
+ */
+export interface UninstallHook {
+	/** The service whose removal runs these steps. */
+	when: string;
+	steps: SetupStepDef[];
 }
 
 /**
@@ -237,7 +307,22 @@ export interface ServiceTemplate {
 	reset?: { dirs?: string[] };
 	/** Absent when the service asks the user for nothing of its own. */
 	credentials?: CredentialField[];
+	/**
+	 * Categories whose members must be set up before this one.
+	 *
+	 * Without it the install order is `readdirSync`'s, which is the alphabetical
+	 * order of the *file names* — a fact no template declares and every template
+	 * depends on. `seerr.yml` sorts before `sonarr.yml`, so Seerr used to reach
+	 * for a Sonarr whose root folder did not exist yet, and said so in a `notes:`
+	 * telling the user to install them in the right order by hand.
+	 *
+	 * A category, never a service: the same rule as `requires:`. Adding a second
+	 * media manager must not need this line touched.
+	 */
+	after?: { category: string }[];
 	setup: SetupStepDef[];
+	/** What to undo when a peer this service wired itself to is removed. */
+	uninstall?: UninstallHook[];
 	/** On-demand steps the dashboard can trigger after setup, e.g. `scan`. */
 	actions?: Record<string, SetupStepDef>;
 	/**
@@ -294,6 +379,58 @@ export function loadTemplates(dir: string): void {
 			logError(`Ignored ${file}`, e instanceof Error ? e.message : e);
 		}
 	}
+	// Sorted once, here, so every consumer inherits the order rather than each
+	// deciding for itself — and so the file name stops carrying meaning.
+	templates = sortByDependencies(templates);
+}
+
+/**
+ * Templates in the order they must be set up, `after:` honoured.
+ *
+ * A stable topological sort: templates come out in their original order except
+ * where a declared dependency moves one, so a template that declares nothing
+ * keeps the position it has always had.
+ *
+ * A cycle cannot be blamed on any single file, so it does not drop one — it is
+ * logged and the original order kept. The alternative is refusing to boot over
+ * a relationship between two templates, which is worse than the ordering bug it
+ * would be protecting against.
+ */
+export function sortByDependencies(list: ServiceTemplate[]): ServiceTemplate[] {
+	const sorted: ServiceTemplate[] = [];
+	const done = new Set<string>();
+	const ready = (tpl: ServiceTemplate) =>
+		(tpl.after ?? []).every((dep) =>
+			list.every(
+				(other) =>
+					other.id === tpl.id ||
+					other.category !== dep.category ||
+					done.has(other.id),
+			),
+		);
+
+	let remaining = [...list];
+	while (remaining.length > 0) {
+		// Scanned in the original order every pass, rather than following one
+		// template's dependencies down: a depth-first walk emits whatever it
+		// reaches on the way, which drags unrelated templates along with it.
+		const next = remaining.filter(ready);
+		if (next.length === 0) {
+			logError(
+				"Ignored after: ordering",
+				`templates wait on each other in a cycle (${remaining
+					.map((t) => t.id)
+					.join(", ")}) — keeping file order`,
+			);
+			return list;
+		}
+		for (const tpl of next) {
+			sorted.push(tpl);
+			done.add(tpl.id);
+		}
+		remaining = remaining.filter((tpl) => !done.has(tpl.id));
+	}
+	return sorted;
 }
 
 export function reloadTemplates(): void {
@@ -525,8 +662,17 @@ function stepHeaders(
 		if (cookie) headers.Cookie = cookie;
 	}
 	if (step.useToken && own) {
+		// The presence check stays on the stored value: resolving an absent one
+		// yields `Token=""`, which a service answers 401 to without saying why.
+		// `buildVars` runs per step, so `{{internal.token}}` here is whatever the
+		// login step stored a moment ago.
 		const token = db.get(`internal.${serviceId}.token`) as string;
-		if (token) headers.Authorization = `MediaBrowser Token="${token}"`;
+		if (token) {
+			headers.Authorization = resolveTemplateVars(
+				step.useToken,
+				vars,
+			) as string;
+		}
 	}
 	return headers;
 }
@@ -538,6 +684,41 @@ function stepHeaders(
  * qBittorrent" green while no request ever left.
  */
 export const SKIPPED = Symbol("skipped");
+
+/**
+ * The half of `store:` that reads an `api_call`'s answer — `from: body` walks a
+ * dot path into the JSON, `from: cookie` takes the session header.
+ *
+ * A body is only read on a successful response: a 4xx error page is not the
+ * document the path was written against, and storing whatever happens to sit at
+ * that key would poison the slot for every later step.
+ */
+async function storeFromResponse(
+	spec: StoreSpec | undefined,
+	res: Response,
+	db: Db,
+	serviceId: string,
+): Promise<void> {
+	if (!spec) return;
+	if (spec.from === "cookie") {
+		const cookie = res.headers.get("set-cookie");
+		if (cookie) db.set(`internal.${serviceId}.${spec.as}`, cookie);
+		return;
+	}
+	if (spec.from !== "body" || !res.ok) return;
+	try {
+		let val: unknown = await res.clone().json();
+		for (const key of (spec.path ?? "").split(".")) {
+			val = (val as Record<string, unknown>)?.[key];
+		}
+		if (typeof val === "string") {
+			db.set(`internal.${serviceId}.${spec.as}`, val);
+			debug(`Stored ${spec.as} from ${spec.path}`);
+		}
+	} catch {
+		debug(`Failed to read ${spec.path} from the response`);
+	}
+}
 
 /** An error message, `SKIPPED`, or `null` when the step really ran. */
 export type StepOutcome = string | typeof SKIPPED | null;
@@ -667,26 +848,7 @@ export async function runSetupStep(
 						body,
 						signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
 					});
-					if (step.storeCookie) {
-						const cookie = res.headers.get("set-cookie");
-						if (cookie) db.set(`internal.${serviceId}.cookie`, cookie);
-					}
-					if (step.storeToken && res.ok) {
-						try {
-							const json = await res.clone().json();
-							const tokenPath = step.storeToken.split(".");
-							let val: unknown = json;
-							for (const key of tokenPath) {
-								val = (val as Record<string, unknown>)?.[key];
-							}
-							if (typeof val === "string") {
-								db.set(`internal.${serviceId}.${step.storeAs ?? "token"}`, val);
-								debug(`Stored token from ${step.storeToken}`);
-							}
-						} catch {
-							debug("Failed to extract token from response");
-						}
-					}
+					await storeFromResponse(step.store, res, db, serviceId);
 					if (res.ok || res.status === 204) return null;
 					if (step.ignoreStatus?.includes(res.status)) return null;
 					if (retryOn.includes(res.status) && attempt < maxRetries) {
@@ -747,57 +909,72 @@ export async function runSetupStep(
 			}
 		}
 
-		case "extract_from_logs": {
-			if (!step.container || !step.regex || !step.storeAs) {
-				return "extract_from_logs requires container, regex, and storeAs";
-			}
-			try {
-				// Both streams: an image may log its temporary password to either.
-				const logs = runComposeSync(["logs", step.container], {
-					mergeStderr: true,
-				});
-				const match = logs.match(new RegExp(step.regex));
-				if (!match?.[1]) {
-					return `Pattern not found in ${step.container} logs: ${step.regex}`;
-				}
-				db.set(`internal.${serviceId}.${step.storeAs}`, match[1]);
-				debug(`Extracted ${step.storeAs} from ${step.container} logs`);
-				return null;
-			} catch (e) {
-				return `Failed to read ${step.container} logs: ${e instanceof Error ? e.message : e}`;
-			}
-		}
+		// The two sources that are not an API answer, and so are a step of their
+		// own. They used to be two step types that differed only by where they
+		// read — which is a parameter, not a kind of step.
+		case "store": {
+			const spec = step.store;
+			if (!spec) return "store requires a store: block";
 
-		case "extract_from_config": {
-			if (!step.file || !step.regex || !step.storeAs) {
-				return "extract_from_config requires file, regex, and storeAs";
-			}
-			const configPath = db.get("paths.config") as string;
-			let filePath: string;
-			try {
-				filePath = underRoot(configPath, step.file);
-			} catch {
-				return `${step.file} is outside paths.config`;
-			}
-			const maxAttempts = step.maxRetries ?? 15;
-			for (let attempt = 0; attempt <= maxAttempts; attempt++) {
+			if (spec.from === "logs") {
+				if (!spec.container || !spec.regex) {
+					return "store from logs requires container and regex";
+				}
 				try {
-					const content = readFileSync(filePath, "utf-8");
-					const match = content.match(new RegExp(step.regex));
-					if (match?.[1]) {
-						db.set(`internal.${serviceId}.${step.storeAs}`, match[1]);
-						debug(`Extracted ${step.storeAs} from ${step.file}`);
-						return null;
+					// Both streams: an image may log its temporary password to either.
+					const logs = runComposeSync(["logs", spec.container], {
+						mergeStderr: true,
+					});
+					const match = logs.match(new RegExp(spec.regex));
+					if (!match?.[1]) {
+						return `Pattern not found in ${spec.container} logs: ${spec.regex}`;
 					}
-				} catch {
-					// file not ready yet
-				}
-				if (attempt < maxAttempts) {
-					debug(`Waiting for ${step.file} (${attempt + 1}/${maxAttempts})...`);
-					await new Promise((r) => setTimeout(r, 3000));
+					db.set(`internal.${serviceId}.${spec.as}`, match[1]);
+					debug(`Stored ${spec.as} from ${spec.container} logs`);
+					return null;
+				} catch (e) {
+					return `Failed to read ${spec.container} logs: ${e instanceof Error ? e.message : e}`;
 				}
 			}
-			return `Pattern not found in ${step.file} after ${maxAttempts} attempts`;
+
+			if (spec.from === "file") {
+				if (!spec.file || !spec.regex) {
+					return "store from file requires file and regex";
+				}
+				const configPath = db.get("paths.config") as string;
+				let filePath: string;
+				try {
+					filePath = underRoot(configPath, spec.file);
+				} catch {
+					return `${spec.file} is outside paths.config`;
+				}
+				// A service writes its config when it feels like it, so this waits
+				// rather than failing on the first read.
+				const maxAttempts = step.maxRetries ?? 15;
+				for (let attempt = 0; attempt <= maxAttempts; attempt++) {
+					try {
+						const content = readFileSync(filePath, "utf-8");
+						const match = content.match(new RegExp(spec.regex));
+						if (match?.[1]) {
+							db.set(`internal.${serviceId}.${spec.as}`, match[1]);
+							debug(`Stored ${spec.as} from ${spec.file}`);
+							return null;
+						}
+					} catch {
+						// file not ready yet
+					}
+					if (attempt < maxAttempts) {
+						debug(
+							`Waiting for ${spec.file} (${attempt + 1}/${maxAttempts})...`,
+						);
+						await new Promise((r) => setTimeout(r, 3000));
+					}
+				}
+				return `Pattern not found in ${spec.file} after ${maxAttempts} attempts`;
+			}
+
+			// `body` and `cookie` have no response to read outside an api_call.
+			return `store from "${spec.from}" is not a step of its own — put it on an api_call`;
 		}
 
 		default:

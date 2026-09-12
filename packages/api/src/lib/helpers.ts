@@ -50,6 +50,31 @@ export function cleanServiceConfig(db: Db, tpl: ServiceTemplate): void {
 	dropConfig(db, getTemplateConfigFiles(db, tpl), getTemplateResetDirs(tpl));
 }
 
+/**
+ * Whether this service has left anything behind that a reset would drop.
+ *
+ * A removal keeps the service's directory under `paths.config` on purpose — it
+ * holds settings the user chose, and reinstalling should find them again. The
+ * cost is that a reinstall then runs a first-install pipeline against a service
+ * that is already configured, which is not always the same thing.
+ *
+ * So the answer is the user's to give, and this is what tells the wizard whether
+ * the question is worth asking: it looks at exactly the set `cleanServiceConfig`
+ * would delete, no more.
+ */
+export function hasLeftoverConfig(db: Db, tpl: ServiceTemplate): boolean {
+	const configPath = db.get("paths.config") as string;
+	if (!configPath) return false;
+	const targets = [
+		...getTemplateConfigFiles(db, tpl),
+		...getTemplateResetDirs(tpl),
+	];
+	return targets.some((tail) => {
+		const path = contained(configPath, tail);
+		return Boolean(path && existsSync(path));
+	});
+}
+
 /** The path, or null after saying why it was left alone. */
 function contained(base: string, tail: string): string | null {
 	try {

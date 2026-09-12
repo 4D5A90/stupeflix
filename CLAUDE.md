@@ -74,6 +74,11 @@ Each template defines:
 - `notes`: manual steps or quirks, shown inline in the wizard and on the
   install/reconfigure screen — where the user is configuring, not on the
   dashboard card. Plain text, rendered as-is, no markdown
+- `after`: categories whose members are set up before this one. Without it the
+  order is `readdirSync`'s — the alphabetical order of the *file names*, which no
+  template declares and every template depended on. The sort is stable, and a
+  cycle is logged with the file order kept rather than dropping a file nobody can
+  be blamed for
 - `requires` / `recommends`: what this service needs, declared as a **category**
   and never as a service name. `requires` blocks — the wizard refuses to advance
   and `POST /install/:name` answers 409; `recommends` only warns, because Sonarr
@@ -114,7 +119,12 @@ Each template defines:
     the whole thing back, for an API that accepts nothing but the entire object
     on a write and whose other fields are not the template's to know
   - `config_file` — writes `content` to `file` under `paths.config`
-  - `extract_from_logs` / `extract_from_config` — pull a value out via regex
+  - `store` — keep a value that is not an API answer. `store: {from: logs|file,
+    …}` is a step; `{from: body|cookie, …}` is an option on an `api_call`, since
+    it reads that call's response. One vocabulary for what used to be four:
+    `storeToken`+`storeAs`, `storeCookie`, and two step types that differed only
+    by *where* they read. `as` is never defaulted — a session token and a
+    permanent API key must not share a slot
 
   Any step takes `if:`, a condition (or a list of them, all of which must hold)
   that has to resolve to `"true"`. A step that will not run never enters the
@@ -134,6 +144,12 @@ Each template defines:
   extract, refresh }`. Read server-side by `lib/service-info.ts`; anything that
   fails reads as a dash, never as an error. An action *does* something and
   returns nothing, a readout *is* something and does nothing — do not merge them
+- `uninstall`: `{ when, steps }` — what to undo when a **peer** is removed.
+  Clean up where the entry *is*, when the thing it points at disappears: Sonarr's
+  download client lives in Sonarr's database and points at qBittorrent, so only
+  Sonarr's API can drop it, and qBittorrent leaving is what makes it dead.
+  Removing Sonarr needs nothing — the entry goes with the database that held it.
+  The id comes from `store` at creation, never from a probe at deletion
 - `actions`: on-demand steps the dashboard exposes at `/services/:name/actions/:action`.
   `label` is the button's text, and optional `icon` picks its glyph from
   `web/src/components/ui/ActionIcon.tsx` — names are case-sensitive and listed in
@@ -317,8 +333,8 @@ nobody provides blocks the wizard on a box the user cannot tick, and an unknown
 
 There is no test for the docker-facing paths (`compose up`, `rm --remove-orphans`,
 live service APIs) — which now includes reconfiguring and removing a service.
-Changes there need a real run: see the isolated recipe in the README, and never
-against a live stack. That recipe works, and it is worth the trouble: it is what
+Changes there need a real run: see the isolated recipe in `docs/testing.md`, and
+never against a live stack. That recipe works, and it is worth the trouble: it is what
 caught `priority` being a top-level field of Sonarr's download client rather than
 one of its `fields[]`, which no amount of reading the API docs had revealed.
 

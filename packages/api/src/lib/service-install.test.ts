@@ -3,8 +3,13 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { configuredDb } from "../test/fake-db.js";
 import { template } from "../test/helpers.js";
 import { runCompose } from "./docker-cli.js";
-import { removalCommand, removeService } from "./service-install.js";
-import { loadTemplates } from "./service-registry.js";
+import {
+	removalCommand,
+	removeService,
+	runServiceInstall,
+} from "./service-install.js";
+import { getTemplate, loadTemplates } from "./service-registry.js";
+import type { ServiceTemplate } from "./service-registry.js";
 
 // The two collaborators that reach outside: one writes the compose file, the
 // other runs docker. Everything else about a removal is bookkeeping.
@@ -51,5 +56,33 @@ describe("removeService", () => {
 		const db = configuredDb({ "services.alpha.enabled": true });
 		await removeService(db, template("alpha"));
 		expect(runCompose).toHaveBeenCalledWith(["down", "--remove-orphans"]);
+	});
+});
+
+/**
+ * "Did this service exist before this operation?" is what decides whether a
+ * failure should undo the install. The flag used to be written by
+ * `routes/install.ts` before the installer read it, so the answer was always
+ * yes — and a failed first install left the service marked installed, showing on
+ * the dashboard as exited and no longer offered under "Add service".
+ */
+describe("runServiceInstall on failure", () => {
+	const failing = () => {
+		vi.mocked(runCompose).mockRejectedValue(new Error("docker is not there"));
+		return getTemplate("eta") as ServiceTemplate;
+	};
+
+	it("undoes a first install that never completed", async () => {
+		const db = configuredDb();
+		await runServiceInstall(db, failing());
+		expect(db.get("services.eta.enabled")).toBe(false);
+		expect(db.get("setup.global")).toBe("failed");
+	});
+
+	it("leaves a service the user already had installed", async () => {
+		const db = configuredDb({ "services.eta.enabled": true });
+		await runServiceInstall(db, failing());
+		expect(db.get("services.eta.enabled")).toBe(true);
+		expect(db.get("setup.global")).toBe("failed");
 	});
 });

@@ -48,10 +48,14 @@ setup:
 
   - name: extract_token
     label: Extract server token
-    type: extract_from_config
-    file: plex/Library/Application Support/Plex Media Server/Preferences.xml
-    regex: 'PlexOnlineToken="([^"]+)"'
-    storeAs: token
+    type: store
+    store:
+      from: file
+      file: plex/Library/Application Support/Plex Media Server/Preferences.xml
+      regex: 'PlexOnlineToken="([^"]+)"'
+      as: token
+    # Not a retry on failure: Plex writes Preferences.xml when it feels like it,
+    # so this is a 60 s wait for the file to carry the token at all.
     maxRetries: 20
 
   - name: add_library

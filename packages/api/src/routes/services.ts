@@ -1,9 +1,11 @@
 import { Hono } from "hono";
 import type { Db } from "../db.js";
-import { containerStatus } from "../lib/container-status.js";
+import { containerHealth, containerStatus } from "../lib/container-status.js";
 import { credentialProblems } from "../lib/credential-rules.js";
 import { runComposeSync } from "../lib/docker-cli.js";
+import { hasLeftoverConfig } from "../lib/helpers.js";
 import { ownershipConflict } from "../lib/instance.js";
+import { checkRequirements } from "../lib/requirements.js";
 import { readServiceInfo } from "../lib/service-info.js";
 import { removeService, runServiceInstall } from "../lib/service-install.js";
 import { getTemplate, getTemplates } from "../lib/service-registry.js";
@@ -41,7 +43,18 @@ export function servicesRoutes(db: Db) {
 
 	app.get("/", (c) => {
 		const s = db.all();
-		const services = getTemplates().map((tpl) => {
+		const templates = getTemplates();
+		// Computed on every read rather than stored, so it cannot go stale: a peer
+		// removed, a `requires` widened by an uploaded template, a `supports:`
+		// narrowed — all of it shows up without an event having to be caught.
+		// Resolved once for the whole list; `checkRequirements` answers for every
+		// enabled service in one pass.
+		const enabledIds = templates
+			.filter((t) => s[`services.${t.id}.enabled`])
+			.map((t) => t.id);
+		const { missing } = checkRequirements(templates, enabledIds);
+
+		const services = templates.map((tpl) => {
 			let webUiPath = tpl.webUiPath ?? "";
 			if (webUiPath) {
 				webUiPath = webUiPath.replace(
@@ -60,6 +73,19 @@ export function servicesRoutes(db: Db) {
 				label: tpl.name,
 				enabled: s[`services.${tpl.id}.enabled`] ?? false,
 				status: containerStatus(tpl.container),
+				// A second axis, not a status: a container with no `healthcheck:`
+				// has no health to report, and that is not being unhealthy.
+				health: containerHealth(tpl.container),
+				// Whether a removal left config behind, so the install screen can ask
+				// what to do with it instead of guessing. Two `existsSync` calls per
+				// service, which is what the answer costs to be true right now
+				// rather than cached and wrong.
+				leftovers: hasLeftoverConfig(db, tpl),
+				// Blocking needs only. `recommends` warns during setup, but a
+				// service that merely runs badly is not what this badge is for.
+				unmet: missing
+					.filter((m) => m.service === tpl.id)
+					.map(({ category, reason }) => ({ category, reason })),
 				port: tpl.port,
 				webUiPath: webUiPath || undefined,
 				// Lets the dashboard offer a button per declared action without

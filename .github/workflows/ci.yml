@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Biome: lint, format and import sorting in one pass, both packages.
+      - run: pnpm lint
+
+      # esbuild strips types without checking them, so the API would otherwise
+      # ship a type error green. Both packages are strict.
+      - run: pnpm typecheck
+
+      # templates.test.ts runs against the real templates/ directory: it is the
+      # gate that a new service template must keep green.
+      - run: pnpm test
+
+      - run: pnpm build
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No push: proving the single image still builds is the point.
+      - run: docker build -t stupeflix .

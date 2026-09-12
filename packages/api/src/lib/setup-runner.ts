@@ -57,7 +57,7 @@ export function stepEnabled(
 	);
 }
 
-interface StepRun {
+export interface StepRun {
 	key: string;
 	label: string;
 	vars?: Record<string, string>;
@@ -123,6 +123,48 @@ export function stepKeys(db: Db, tpl: ServiceTemplate): string[] {
 	return stepRuns(db, tpl).map((run) => run.key);
 }
 
+/**
+ * One run of one step, statuses included. Shared so that a first install and a
+ * later replay can never record an outcome differently.
+ *
+ * Returns the failure rather than throwing: a template's own pipeline stops on
+ * the first error, while a replay across peers must not let one broken service
+ * hide the others.
+ */
+async function runOne(
+	db: Db,
+	tpl: ServiceTemplate,
+	step: SetupStepDef,
+	run: StepRun,
+): Promise<string | null> {
+	setStepStatus(db, run.key, "in_progress");
+	log(`Running ${run.label}...`);
+
+	const err = await runSetupStep(step, db, tpl.id, run.vars);
+	// Checked before the truthiness test below: a symbol is truthy, and a skip is
+	// not a failure.
+	if (err === SKIPPED) {
+		setStepStatus(db, run.key, "skipped");
+		log(`${run.label} skipped: already configured`);
+		return null;
+	}
+	if (err) {
+		// An optional step reads as `skipped`, not `failed`: it did not go wrong,
+		// it had nothing to do. The reason still reaches the log, so a step that
+		// failed for a real reason is not silently swallowed.
+		if (step.optional) {
+			setStepStatus(db, run.key, "skipped");
+			log(`${run.label} skipped: optional, and ${err}`);
+			return null;
+		}
+		setStepStatus(db, run.key, "failed");
+		return `${run.label}: ${err}`;
+	}
+	setStepStatus(db, run.key, "completed");
+	log(`${run.label} completed`);
+	return null;
+}
+
 /** Runs one phase of a template's setup. Throws on the first failing step. */
 export async function runTemplateSteps(
 	db: Db,
@@ -136,24 +178,128 @@ export async function runTemplateSteps(
 			continue;
 		}
 		for (const run of expandStep(db, tpl, step)) {
-			setStepStatus(db, run.key, "in_progress");
-			log(`Running ${run.label}...`);
+			const err = await runOne(db, tpl, step, run);
+			if (err) throw new Error(err);
+		}
+	}
+}
 
-			const err = await runSetupStep(step, db, tpl.id, run.vars);
-			// Checked before the truthiness test below: a symbol is truthy, and a
-			// skip is not a failure.
-			if (err === SKIPPED) {
-				setStepStatus(db, run.key, "skipped");
-				log(`${run.label} skipped: already configured`);
-				continue;
-			}
-			if (err) {
-				setStepStatus(db, run.key, "failed");
-				throw new Error(`${run.label}: ${err}`);
-			}
+/**
+ * Steps this template has never had a chance to run.
+ *
+ * A step held back by its `if:` never enters the status list at all, so the
+ * absence of a status *is* the record that it was passed over — no extra
+ * bookkeeping, and no need to remember what the condition evaluated to last
+ * time. Once the condition turns true, the step is simply one with no status.
+ *
+ * That is what makes installing a peer after the fact work: Sonarr's
+ * `register_in_prowlarr` was skipped when Prowlarr was absent, and a later
+ * install of Prowlarr leaves it sitting here.
+ *
+ * **`post_up` only.** A `config_file` step is read by its container at boot, so
+ * writing one now would change a file nobody rereads — recreating the container
+ * is a reconfigure, not a replay, and the user has to ask for that.
+ */
+export function pendingRuns(
+	db: Db,
+	tpl: ServiceTemplate,
+): { step: SetupStepDef; run: StepRun }[] {
+	return tpl.setup
+		.filter((step) => stepPhase(step) === "post_up")
+		.filter((step) => stepEnabled(db, tpl, step))
+		.flatMap((step) => expandStep(db, tpl, step).map((run) => ({ step, run })))
+		.filter(({ run }) => db.get(`setup.status.${run.key}`) == null);
+}
 
-			setStepStatus(db, run.key, "completed");
-			log(`${run.label} completed`);
+/**
+ * Undoes what the surviving templates wrote about a service that is going.
+ *
+ * Runs **after** the container is gone: the entry being dropped lives in a peer
+ * that stays up, and it is only truly dead once the thing it pointed at is.
+ *
+ * A failure is logged and stepped over. A removal the user asked for must not be
+ * held hostage by a peer that will not answer — and the entry it leaves behind
+ * is the state we were already in before any of this existed.
+ */
+export async function runUninstallHooks(
+	db: Db,
+	templates: ServiceTemplate[],
+	removedId: string,
+): Promise<void> {
+	for (const tpl of templates) {
+		if (tpl.id === removedId) continue;
+		for (const hook of tpl.uninstall ?? []) {
+			if (hook.when !== removedId) continue;
+			for (const step of hook.steps) {
+				log(`Undoing ${tpl.id}: ${step.label}`);
+				const err = await runSetupStep(step, db, tpl.id).catch((e) =>
+					e instanceof Error ? e.message : String(e),
+				);
+				// A symbol means the step's own probe found nothing to do, which is
+				// the outcome this is after anyway.
+				if (err && err !== SKIPPED) {
+					log(`Could not undo ${tpl.id}: ${step.label} — ${err}`);
+				}
+			}
+		}
+	}
+}
+
+/**
+ * The status keys of every step that was conditional on `serviceId` being there.
+ *
+ * Removing a service takes its database with it, so an entry a peer wrote inside
+ * it is gone too — but the peer's own note still says the step is done. The two
+ * then disagree, and `pendingRuns` walks straight past the step because a step
+ * with an outcome is one it leaves alone. Reinstalling the service would never
+ * re-wire anything.
+ *
+ * Dropping the notes is what puts the step back in reach: it becomes one with no
+ * outcome, which is exactly what a later install replays.
+ *
+ * Matched on `if:` and nothing else. That is the set of steps that existed
+ * *because* the service did — a step merely mentioning it in a body would fail
+ * on its own terms, and is not this function's to guess about.
+ */
+export function statusKeysNaming(
+	db: Db,
+	templates: ServiceTemplate[],
+	serviceId: string,
+): string[] {
+	const needle = `services.${serviceId}.enabled`;
+	return templates.flatMap((tpl) =>
+		tpl.setup
+			.filter((step) =>
+				[step.if ?? []].flat().some((cond) => cond.includes(needle)),
+			)
+			.flatMap((step) => expandStep(db, tpl, step).map((run) => run.key)),
+	);
+}
+
+/**
+ * Runs what every other enabled template was never able to run yet.
+ *
+ * Called after anything that changes `services.*.enabled`, which is the only
+ * thing a peer's `if:` reads. `skipId` is the template that just ran its own
+ * pipeline — replaying it here would double every step it just took.
+ *
+ * A failure is recorded and stepped over rather than thrown: the install that
+ * triggered this already succeeded, and one peer that will not wire up is not a
+ * reason to report it as failed.
+ */
+export async function replayPendingSteps(
+	db: Db,
+	templates: ServiceTemplate[],
+	skipId?: string,
+): Promise<void> {
+	for (const tpl of templates) {
+		if (tpl.id === skipId) continue;
+		for (const { step, run } of pendingRuns(db, tpl)) {
+			log(`Replaying ${tpl.id}: ${run.label} — its condition now holds`);
+			const err = await runOne(db, tpl, step, run).catch((e) =>
+				e instanceof Error ? e.message : String(e),
+			);
+			if (err) log(`Replay of ${tpl.id} stopped at ${run.label}: ${err}`);
 		}
 	}
 }

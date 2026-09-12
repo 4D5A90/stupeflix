@@ -8,15 +8,47 @@ import { COMPOSE_PROJECT } from "./env.js";
  */
 const TTL_MS = 1000;
 
-let cached: Map<string, string> | null = null;
+/**
+ * What one container reads as. `state` is `docker ps`'s own vocabulary and stays
+ * the only thing callers see by default; `health` is a second, independent axis
+ * that only exists for a container declaring a `healthcheck:`.
+ */
+export interface ContainerState {
+	state: string;
+	health?: "healthy" | "unhealthy" | "starting";
+}
+
+let cached: Map<string, ContainerState> | null = null;
 let cachedAt = 0;
 
-/** `docker ps --format "{{.Names}}\t{{.State}}"`, as a lookup. */
-export function parseStatuses(out: string): Map<string, string> {
-	const statuses = new Map<string, string>();
+/**
+ * `.Status` is prose — "Up 2 hours (unhealthy)", "Exited (0) 3 minutes ago" —
+ * not a vocabulary, which is why it supplements `.State` rather than replacing
+ * it. Only the parenthesised health marker is read out of it.
+ */
+function healthOf(status: string): ContainerState["health"] {
+	if (/\(healthy\)/.test(status)) return "healthy";
+	if (/\(unhealthy\)/.test(status)) return "unhealthy";
+	if (/\(health: starting\)/.test(status)) return "starting";
+	return undefined;
+}
+
+/** `docker ps --format "{{.Names}}\t{{.State}}\t{{.Status}}"`, as a lookup. */
+export function parseStatuses(out: string): Map<string, ContainerState> {
+	const statuses = new Map<string, ContainerState>();
 	for (const line of out.split("\n")) {
-		const [name, state] = line.split("\t");
-		if (name && state) statuses.set(name, state.trim());
+		const [name, state, status] = line.split("\t");
+		if (!name || !state) continue;
+		const trimmed = state.trim();
+		// A stopped container carries no health: docker keeps the last probe in
+		// `.Status` for some states, and reporting it would say a container that
+		// is not running is unhealthy, which is a different problem than the one
+		// the badge is for.
+		const health = trimmed === "running" ? healthOf(status ?? "") : undefined;
+		statuses.set(
+			name,
+			health ? { state: trimmed, health } : { state: trimmed },
+		);
 	}
 	return statuses;
 }
@@ -29,9 +61,9 @@ export function parseStatuses(out: string): Map<string, string> {
  * and anyone can call in a loop. One `docker ps` answers the same question for
  * all of them.
  */
-export function containerStatuses(): Map<string, string> {
+export function containerStatuses(): Map<string, ContainerState> {
 	if (cached && Date.now() - cachedAt < TTL_MS) return cached;
-	let statuses = new Map<string, string>();
+	let statuses = new Map<string, ContainerState>();
 	try {
 		statuses = parseStatuses(
 			runDockerSync([
@@ -40,7 +72,7 @@ export function containerStatuses(): Map<string, string> {
 				"--filter",
 				`label=com.docker.compose.project=${COMPOSE_PROJECT}`,
 				"--format",
-				"{{.Names}}\t{{.State}}",
+				"{{.Names}}\t{{.State}}\t{{.Status}}",
 			]),
 		);
 	} catch {
@@ -59,5 +91,16 @@ export function forgetContainerStatuses(): void {
 
 /** `docker inspect`'s vocabulary — running, exited, created — or not_found. */
 export function containerStatus(container: string): string {
-	return containerStatuses().get(container) ?? "not_found";
+	return containerStatuses().get(container)?.state ?? "not_found";
+}
+
+/**
+ * `healthy`, `unhealthy`, `starting` — or nothing at all, which is the common
+ * case: a container without a `healthcheck:` has no health to report, and that
+ * is not the same as being unhealthy.
+ */
+export function containerHealth(
+	container: string,
+): ContainerState["health"] | undefined {
+	return containerStatuses().get(container)?.health;
 }

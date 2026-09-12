@@ -139,8 +139,7 @@ actions:
 | `wait_ready` | Poll `url` until the service responds. `match`: keep polling until the body matches a regex |
 | `api_call` | HTTP request with retry, cookies, tokens, headers. `skipIf: {url, match}` probes first and skips when the work is already done |
 | `config_file` | Write `content` to `file` under `paths.config` (`skipIfExists`, default true) |
-| `extract_from_logs` | Pull a value out of container logs via regex |
-| `extract_from_config` | Pull a value out of a config file via regex |
+| `store` | Keep a value that is not an API answer: `store: {from: logs\|file, …}` |
 
 `config_file` steps run **before** `docker compose up` — a container reads its config
 at boot. Every other step runs after. The phase comes from the step type.
@@ -264,14 +263,157 @@ lives **inside** `foreach`.
       tvshows: { content_type: show,  agent: tv.plex.agents.series }
 ```
 
+## `store`
+
+One way in, for every value a template has to keep. It lands under
+`internal.<service>.<as>`, which is where `{{internal.<key>}}` and
+`{{internal.<service>.<key>}}` read it back.
+
+| `from` | Where it reads | Needs |
+|--------|----------------|-------|
+| `body` | The JSON response of the `api_call` it sits on | `path` — a dot path, `Items.0.AccessToken` |
+| `cookie` | The `Set-Cookie` header of that response | — |
+| `logs` | A container's output, both streams | `container`, `regex` |
+| `file` | A file under `paths.config` | `file`, `regex` |
+
+`body` and `cookie` are options **on an `api_call`** — they read its answer.
+`logs` and `file` have no answer to read, so they are a step of their own:
+`type: store`.
+
+`as` is never defaulted. A session token and a permanent API key must not land
+in the same slot by omission — the first expires, the second has to outlive
+setup.
+
+For `logs` and `file`, the value is **capture group 1** of `regex`. A `file` step
+retries while the file is absent or does not match yet (`maxRetries`, default
+15, three seconds apart): a service writes its config when it feels like it.
+
+```yaml
+  # on an api_call
+  - name: login
+    type: api_call
+    url: http://localhost:8096/Users/AuthenticateByName
+    method: POST
+    store: { from: body, path: AccessToken, as: token }
+
+  # a step of its own
+  - name: extract_temp_pass
+    label: Extract temporary password
+    type: store
+    store:
+      from: logs
+      container: qbittorrent
+      regex: "A temporary password is provided for this session: (\\S+)"
+      as: temp_pass
+```
+
+## `after`
+
+Categories whose members must be set up before this one.
+
+```yaml
+after:
+  - category: mediaServer
+  - category: mediaManager
+```
+
+Without it the install order is `readdirSync`'s — **the alphabetical order of the
+file names**, which no template declares and every template depends on.
+`seerr.yml` sorts before `sonarr.yml`, so Seerr reached for a Sonarr whose root
+folder did not exist yet, and said so in a `notes:` asking the user to install
+them in the right order by hand.
+
+A category, never a service, for the same reason `requires:` names one: adding a
+second media manager must not need this line touched.
+
+The sort is **stable** — a template that declares nothing keeps the position it
+had, so the progress screen stays predictable. A cycle is logged and the file
+order kept: it cannot be blamed on any single file, and refusing to boot over a
+relationship between two templates would be worse than the ordering bug it
+protects against.
+
+## `uninstall`
+
+What to undo when a **peer** this service wired itself to is removed.
+
+The rule that decides where a cleanup lives: **clean up where the entry is, and
+do it when the thing it points at disappears.** Sonarr writes a download client
+into its own database pointing at qBittorrent, so removing qBittorrent leaves
+Sonarr holding a dead entry — and only Sonarr's API can drop it.
+
+Removing Sonarr itself needs nothing here: the entry goes with the database that
+held it.
+
+```yaml
+uninstall:
+  - when: qbittorrent
+    steps:
+      - name: drop_download_client
+        label: Disconnect qBittorrent
+        type: api_call
+        method: DELETE
+        url: http://localhost:8989/api/v3/downloadclient/{{internal.qbittorrent_client_id}}
+        headers:
+          X-Api-Key: "{{internal.api_key}}"
+        ignoreStatus: [404]
+```
+
+The id comes from `store` at creation, not from a probe at deletion:
+
+```yaml
+  - name: download_client
+    type: api_call
+    method: POST
+    store: { from: body, path: id, as: qbittorrent_client_id }
+```
+
+Runs **after** the container is gone, and a failure is logged and stepped over: a
+removal the user asked for must not be held hostage by a peer that will not
+answer, and the entry left behind is the state everything was in before.
+
+Nothing is stored when the creation step's `skipIf` found the entry already
+there — and there is then nothing this install made to undo either.
+
+## `optional`
+
+A step whose failure is not the template's failure: it records `skipped` and the
+pipeline goes on.
+
+For work a service only needs done once. qBittorrent prints a temporary password
+on a **virgin** boot and never again, so the three steps that trade it for real
+credentials have nothing to do on a service whose config survived a removal —
+and failing there would strand an install that had nothing left to do.
+
+Per step, never per type. Plex failing to yield its token is a genuine failure,
+and the same `store` step must keep saying so.
+
+## Steps that run later
+
+A step held back by its `if:` **never enters the status list**, and that absence
+is the record that it was passed over. So installing the peer it was waiting for
+picks it up: after any install, every other enabled template is offered the steps
+it has no outcome for.
+
+That is what makes `recommends:` usable in both directions — Sonarr installed
+before Prowlarr still ends up registered with it.
+
+Two limits worth knowing:
+
+- **`post_up` only.** A `config_file` step is read by its container at boot, so
+  writing one after the fact changes a file nobody rereads. Recreating the
+  container is a reconfigure, and the user has to ask for that.
+- **It repairs the missing, not the stale.** A replayed step whose `skipIf` probe
+  finds an out-of-date entry leaves it exactly as it is: the probe tests
+  existence, not content.
+
 ## `api_call` options
 
 | Option | Description |
 |--------|-------------|
 | `contentType: form` | Send body as `application/x-www-form-urlencoded` |
-| `storeCookie` / `useCookie` | Save the response cookie, send it on later calls |
-| `storeToken: AccessToken` | Store a JSON field of the response as the token |
-| `useToken: true` | Send the stored token as `Authorization` |
+| `store: {from: body, path: …, as: …}` | Keep a field of the JSON response |
+| `store: {from: cookie, as: cookie}` / `useCookie` | Save the session cookie, send it on later calls |
+| `useToken: '…{{internal.token}}…'` | Send the stored token as `Authorization`, in the shape this service wants |
 | `headers: {}` | Custom request headers |
 | `retryOn: [503]` | Status codes worth retrying (default `[503]`) |
 | `maxRetries: 10` | Attempts (default `10`) |

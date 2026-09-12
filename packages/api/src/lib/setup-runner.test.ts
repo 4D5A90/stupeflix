@@ -22,9 +22,14 @@ import type { Db } from "../db.js";
 import { configuredDb } from "../test/fake-db.js";
 import { template } from "../test/helpers.js";
 import { loadTemplates, runSetupStep } from "./service-registry.js";
-import type { ServiceTemplate } from "./service-registry.js";
+import type { ServiceTemplate, SetupStepDef } from "./service-registry.js";
 import {
+	pendingRuns,
+	replayPendingSteps,
 	runTemplateSteps,
+	runUninstallHooks,
+	setStepStatus,
+	statusKeysNaming,
 	stepEnabled,
 	stepKeys,
 	stepPhase,
@@ -43,11 +48,7 @@ describe("stepPhase", () => {
 	});
 
 	it("puts everything that talks to a service after", () => {
-		for (const type of [
-			"wait_ready",
-			"api_call",
-			"extract_from_logs",
-		] as const) {
+		for (const type of ["wait_ready", "api_call", "store"] as const) {
 			expect(stepPhase({ name: "s", label: "s", type })).toBe("post_up");
 		}
 	});
@@ -396,5 +397,317 @@ describe("runTemplateSteps", () => {
 		expect(db.get("setup.status.alpha.first")).toBe("completed");
 		expect(db.get("setup.status.alpha.broken")).toBe("failed");
 		expect(db.get("setup.status.alpha.never")).toBeNull();
+	});
+});
+
+/**
+ * A step whose failure is not the template's failure — for work a service only
+ * needs done once, which has nothing left to do on a service whose config
+ * survived a removal.
+ */
+describe("optional steps", () => {
+	const withSteps = (steps: SetupStepDef[]): ServiceTemplate =>
+		({
+			id: "alpha",
+			name: "Alpha",
+			category: "indexer",
+			container: "alpha",
+			setup: steps,
+		}) as ServiceTemplate;
+
+	const failing = (name: string, optional?: boolean): SetupStepDef => ({
+		name,
+		label: name,
+		type: "store",
+		// No `store:` block at all, so the step reports an error without needing a
+		// network or a container.
+		optional,
+	});
+
+	it("records a failure as skipped and lets the pipeline go on", async () => {
+		const db = configuredDb();
+		const tpl = withSteps([failing("first", true), failing("second", true)]);
+		await expect(runTemplateSteps(db, tpl, "post_up")).resolves.toBeUndefined();
+		expect(db.get("setup.status.alpha.first")).toBe("skipped");
+		expect(db.get("setup.status.alpha.second")).toBe("skipped");
+	});
+
+	// The flag is per step, never per type: Plex failing to yield its token is a
+	// genuine failure, and the same `store` step must keep saying so.
+	it("still stops on a step that did not ask to be optional", async () => {
+		const db = configuredDb();
+		const tpl = withSteps([failing("first", true), failing("second")]);
+		await expect(runTemplateSteps(db, tpl, "post_up")).rejects.toThrow(
+			"second",
+		);
+		expect(db.get("setup.status.alpha.first")).toBe("skipped");
+		expect(db.get("setup.status.alpha.second")).toBe("failed");
+	});
+});
+
+/**
+ * A step held back by its `if:` never enters the status list, so the absence of
+ * a status *is* the record that it was passed over. That is what lets a later
+ * install pick it up with no extra bookkeeping.
+ */
+describe("pendingRuns", () => {
+	const guarded = (steps: SetupStepDef[]): ServiceTemplate =>
+		({
+			id: "alpha",
+			name: "Alpha",
+			category: "indexer",
+			container: "alpha",
+			setup: steps,
+		}) as ServiceTemplate;
+
+	const peerStep: SetupStepDef = {
+		name: "register",
+		label: "Register with the peer",
+		type: "api_call",
+		if: "{{services.beta.enabled}}",
+		url: "http://localhost:2222/apps",
+	};
+
+	it("holds nothing back while the condition is false", () => {
+		const db = configuredDb({ "services.beta.enabled": false });
+		expect(pendingRuns(db, guarded([peerStep]))).toHaveLength(0);
+	});
+
+	it("offers the step once the condition holds and nothing has run it", () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		const pending = pendingRuns(db, guarded([peerStep]));
+		expect(pending.map((p) => p.run.key)).toEqual(["alpha.register"]);
+	});
+
+	it("leaves a step that already has an outcome alone", () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		setStepStatus(db, "alpha.register", "completed");
+		expect(pendingRuns(db, guarded([peerStep]))).toHaveLength(0);
+	});
+
+	// Including a failure: replaying it would overwrite a red tick the user is
+	// looking at, and a retry is something they ask for.
+	it("leaves a failed step alone too", () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		setStepStatus(db, "alpha.register", "failed");
+		expect(pendingRuns(db, guarded([peerStep]))).toHaveLength(0);
+	});
+
+	/**
+	 * A container reads its config at boot, so writing one now would change a
+	 * file nobody rereads. Recreating the container is a reconfigure, and the
+	 * user has to ask for that.
+	 */
+	it("never offers a config_file step, whose container would not reread it", () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		const tpl = guarded([
+			{
+				name: "conf",
+				label: "Write config",
+				type: "config_file",
+				if: "{{services.beta.enabled}}",
+				file: "alpha/alpha.conf",
+				content: "x",
+			},
+		]);
+		expect(pendingRuns(db, tpl)).toHaveLength(0);
+	});
+});
+
+describe("replayPendingSteps", () => {
+	const tplWith = (id: string, steps: SetupStepDef[]): ServiceTemplate =>
+		({
+			id,
+			name: id,
+			category: "indexer",
+			container: id,
+			setup: steps,
+		}) as ServiceTemplate;
+
+	const failing: SetupStepDef = {
+		name: "register",
+		label: "Register",
+		// No `store:` block, so it reports an error without a network.
+		type: "store",
+		if: "{{services.beta.enabled}}",
+	};
+
+	// The template that just ran its own pipeline must not run it twice.
+	it("skips the template that triggered it", async () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		await replayPendingSteps(db, [tplWith("alpha", [failing])], "alpha");
+		expect(db.get("setup.status.alpha.register")).toBeNull();
+	});
+
+	/**
+	 * The install that triggered this already succeeded. One peer that will not
+	 * wire up is not a reason to report it as failed — and it must not hide the
+	 * peers that come after it either.
+	 */
+	it("records a failure, steps over it, and carries on to the next template", async () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		await expect(
+			replayPendingSteps(db, [
+				tplWith("alpha", [failing]),
+				tplWith("gamma", [failing]),
+			]),
+		).resolves.toBeUndefined();
+		expect(db.get("setup.status.alpha.register")).toBe("failed");
+		expect(db.get("setup.status.gamma.register")).toBe("failed");
+	});
+});
+
+/**
+ * Removing a service takes its database with it, so an entry a peer wrote inside
+ * it is gone — but the peer's own note still says the step is done. Dropping the
+ * note is what puts the step back within reach of a later replay.
+ */
+describe("statusKeysNaming", () => {
+	const withStep = (id: string, step: SetupStepDef): ServiceTemplate =>
+		({
+			id,
+			name: id,
+			category: "indexer",
+			container: id,
+			setup: [step],
+		}) as ServiceTemplate;
+
+	const step = (cond: SetupStepDef["if"]): SetupStepDef => ({
+		name: "register",
+		label: "Register",
+		type: "api_call",
+		if: cond,
+		url: "http://localhost:2222/apps",
+	});
+
+	it("finds the steps a single condition made conditional", () => {
+		const db = configuredDb();
+		const keys = statusKeysNaming(
+			db,
+			[withStep("alpha", step("{{services.beta.enabled}}"))],
+			"beta",
+		);
+		expect(keys).toEqual(["alpha.register"]);
+	});
+
+	// Wiring two services together needs both present, so the condition is a list
+	// and the service can sit anywhere in it.
+	it("finds them inside a list of conditions", () => {
+		const db = configuredDb();
+		const keys = statusKeysNaming(
+			db,
+			[
+				withStep(
+					"alpha",
+					step(["{{services.eta.enabled}}", "{{services.beta.enabled}}"]),
+				),
+			],
+			"beta",
+		);
+		expect(keys).toEqual(["alpha.register"]);
+	});
+
+	it("leaves a step that never named it alone", () => {
+		const db = configuredDb();
+		const keys = statusKeysNaming(
+			db,
+			[withStep("alpha", step("{{services.eta.enabled}}"))],
+			"beta",
+		);
+		expect(keys).toEqual([]);
+	});
+
+	// A `foreach` step holds one status per run, and all of them go stale together.
+	it("names every run of a repeated step", () => {
+		const db = configuredDb();
+		const repeated: SetupStepDef = {
+			...step("{{services.beta.enabled}}"),
+			foreach: "libraries",
+		};
+		expect(statusKeysNaming(db, [withStep("alpha", repeated)], "beta")).toEqual(
+			["alpha.register_Movies", "alpha.register_TvShows"],
+		);
+	});
+});
+
+/**
+ * The rule that decides where a cleanup lives: clean up where the entry is, and
+ * do it when the thing it points at disappears. Sonarr writes a download client
+ * into its own database pointing at qBittorrent, so removing qBittorrent leaves
+ * Sonarr holding a dead entry — and only Sonarr's API can drop it.
+ */
+describe("runUninstallHooks", () => {
+	type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
+
+	const hooked = (id: string, when: string): ServiceTemplate => {
+		// Annotated rather than cast: inside a nested literal TypeScript widens
+		// `type` to `string`, which then overlaps nothing in `SetupStepDef`.
+		const steps: SetupStepDef[] = [
+			{
+				name: "drop",
+				label: "Drop the entry",
+				type: "api_call",
+				method: "DELETE",
+				url: `http://localhost:1111/clients/${id}`,
+			},
+		];
+		// Built off a real fixture rather than cast from a literal: only the two
+		// fields under test are overridden, and the rest stays a template the
+		// loader actually validated.
+		return {
+			...template("alpha"),
+			id,
+			container: id,
+			uninstall: [{ when, steps }],
+		};
+	};
+
+	afterEach(() => vi.unstubAllGlobals());
+
+	const stub = () => {
+		const fetchMock = vi
+			.fn<Fetch>()
+			.mockResolvedValue(new Response(null, { status: 204 }));
+		vi.stubGlobal("fetch", fetchMock);
+		return fetchMock;
+	};
+
+	it("runs the hooks that name the service going away", async () => {
+		const fetchMock = stub();
+		await runUninstallHooks(
+			configuredDb(),
+			[hooked("alpha", "beta"), hooked("gamma", "eta")],
+			"beta",
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock.mock.calls[0][0]).toContain("/clients/alpha");
+	});
+
+	// Removing the service itself needs nothing: the entry goes with the database
+	// that held it.
+	it("never runs the departing service's own hooks", async () => {
+		const fetchMock = stub();
+		await runUninstallHooks(configuredDb(), [hooked("beta", "beta")], "beta");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * A removal the user asked for must not be held hostage by a peer that will
+	 * not answer. The dead entry left behind is the state we were already in.
+	 */
+	it("steps over a hook that fails, and keeps going", async () => {
+		const fetchMock = vi
+			.fn<Fetch>()
+			.mockRejectedValueOnce(new Error("connection refused"))
+			.mockResolvedValue(new Response(null, { status: 204 }));
+		vi.stubGlobal("fetch", fetchMock);
+		await expect(
+			runUninstallHooks(
+				configuredDb(),
+				[hooked("alpha", "beta"), hooked("gamma", "beta")],
+				"beta",
+			),
+		).resolves.toBeUndefined();
+		expect(fetchMock.mock.calls.at(-1)?.[0]).toContain("/clients/gamma");
 	});
 });

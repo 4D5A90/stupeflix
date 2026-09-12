@@ -12,6 +12,7 @@ import {
 	getTemplateDefaults,
 	getTemplates,
 	loadTemplates,
+	sortByDependencies,
 } from "./lib/service-registry.js";
 import type { ServiceTemplate } from "./lib/service-registry.js";
 import { foreachSpec } from "./lib/setup-runner.js";
@@ -81,9 +82,13 @@ function referencedVars(
 /** Variables a step produces at runtime, which buildVars cannot know up front. */
 function runtimeVars(tpl: ServiceTemplate): string[] {
 	const keys: string[] = [];
-	for (const step of [...tpl.setup, ...Object.values(tpl.actions ?? {})]) {
-		if (step.storeAs) keys.push(`internal.${step.storeAs}`);
-		if (step.storeToken) keys.push("internal.token");
+	const steps = [
+		...tpl.setup,
+		...(tpl.uninstall ?? []).flatMap((hook) => hook.steps),
+		...Object.values(tpl.actions ?? {}),
+	];
+	for (const step of steps) {
+		if (step.store) keys.push(`internal.${step.store.as}`);
 	}
 	return keys;
 }
@@ -434,10 +439,13 @@ describe("every template", () => {
 	it("addresses a peer through {{host.x}}, never by its container name", () => {
 		const peers = new Map(templates.map((t) => [t.container, t.id]));
 		for (const tpl of templates) {
-			// Setup steps write addresses too, and resolve the same hosts
+			// Setup steps write addresses too, and resolve the same hosts — and so
+			// does `uninstall:`, which is a list of steps like any other. A section
+			// left out here is a section where hardcoding a container name passes.
 			const rendered = JSON.stringify([
 				tpl.compose,
 				tpl.setup,
+				tpl.uninstall,
 				tpl.actions,
 				tpl.info,
 			]);
@@ -622,5 +630,46 @@ describe("stacks", () => {
 	it("has unique ids", () => {
 		const ids = getStacks().map((s) => s.id);
 		expect(ids).toEqual([...new Set(ids)]);
+	});
+});
+
+/**
+ * The gate on `after:`. The order used to be `readdirSync`'s — the alphabetical
+ * order of the file names — and two `notes:` in production were that fact
+ * written out as advice to the user.
+ */
+describe("the order templates are set up in", () => {
+	it("puts every category a template waits on before it", () => {
+		const position = new Map(templates.map((t, i) => [t.id, i]));
+		for (const tpl of templates) {
+			for (const dep of tpl.after ?? []) {
+				for (const other of templates) {
+					if (other.id === tpl.id || other.category !== dep.category) continue;
+					expect(
+						(position.get(other.id) ?? 0) < (position.get(tpl.id) ?? 0),
+						`${tpl.id} waits on ${dep.category} but ${other.id} comes after it`,
+					).toBe(true);
+				}
+			}
+		}
+	});
+
+	// A cycle makes `sortByDependencies` give up and keep the file order, which is
+	// logged but not fatal — so nothing else would ever point it out.
+	it("has no cycle among the shipped templates", () => {
+		const sorted = sortByDependencies(templates);
+		expect(sorted.map((t) => t.id)).toEqual(templates.map((t) => t.id));
+	});
+
+	// The `notes:` it replaces said "Install Sonarr and Radarr before Seerr".
+	it("no longer asks the user to install things in the right order", () => {
+		for (const tpl of templates) {
+			for (const note of tpl.notes ?? []) {
+				expect(
+					/install .* before/i.test(note),
+					`${tpl.id} still states an install order in prose: "${note}"`,
+				).toBe(false);
+			}
+		}
 	});
 });

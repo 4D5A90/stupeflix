@@ -6,7 +6,12 @@ import { log, error as logError } from "./logger.js";
 import { affectedServices, resolveNetworkTopology } from "./network.js";
 import { getEnabledTemplates } from "./service-registry.js";
 import type { ServiceTemplate } from "./service-registry.js";
-import { runTemplateSteps } from "./setup-runner.js";
+import {
+	replayPendingSteps,
+	runTemplateSteps,
+	runUninstallHooks,
+	statusKeysNaming,
+} from "./setup-runner.js";
 
 interface InstallOptions {
 	/**
@@ -27,9 +32,14 @@ export async function runServiceInstall(
 	tpl: ServiceTemplate,
 	{ reset = false }: InstallOptions = {},
 ): Promise<void> {
+	// Read before it is written, and written here rather than by the caller: the
+	// answer to "did this service exist before?" is what decides whether a failure
+	// should undo the install, and a caller that sets the flag first destroys it.
 	const wasInstalled = Boolean(db.get(`services.${tpl.id}.enabled`));
 	try {
 		db.set("setup.global", "in_progress");
+		// Before `writeCompose`, which only emits the enabled templates.
+		db.set(`services.${tpl.id}.enabled`, true);
 
 		writeCompose(db);
 
@@ -65,6 +75,12 @@ export async function runServiceInstall(
 			...all,
 		]);
 		await runTemplateSteps(db, tpl, "post_up");
+
+		// This install is what a peer's `if:` was waiting on: a step held back for
+		// want of this service now has its condition, and nothing else would ever
+		// go back for it. Skipping `tpl` is what keeps its own pipeline from
+		// running twice.
+		await replayPendingSteps(db, getEnabledTemplates(db), tpl.id);
 
 		db.set("setup.global", "completed");
 		db.set("setup.error", null);
@@ -118,8 +134,20 @@ export async function removeService(
 	db: Db,
 	tpl: ServiceTemplate,
 ): Promise<void> {
+	// Before the flag flips, so the steps that named this service can still be
+	// found: their `if:` is what identifies them.
+	const stale = statusKeysNaming(db, getEnabledTemplates(db), tpl.id);
 	db.set(`services.${tpl.id}.enabled`, false);
+	for (const key of stale) db.delete(`setup.status.${key}`);
 	writeCompose(db);
-	await runCompose(removalCommand(getEnabledTemplates(db).length));
+	const remaining = getEnabledTemplates(db);
+	await runCompose(removalCommand(remaining.length));
+	// After the container is gone: the entries being dropped live in peers that
+	// stay up, and they are only truly dead once the thing they pointed at is.
+	await runUninstallHooks(db, remaining, tpl.id);
+	// No replay here, deliberately. It would only serve a step guarded on this
+	// service being *absent*, and `if:` tests equality to "true" and nothing else
+	// — there is no way to write that condition today. Adding the call now would
+	// be a mechanism for a case that cannot exist.
 	log(`[remove] ${tpl.id} removed`);
 }

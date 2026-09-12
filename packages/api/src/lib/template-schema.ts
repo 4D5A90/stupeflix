@@ -37,6 +37,7 @@ const TEMPLATE_KEY_LIST = [
 	"notes",
 	"requires",
 	"recommends",
+	"after",
 	"compose",
 	"volumes",
 	"generate",
@@ -44,6 +45,7 @@ const TEMPLATE_KEY_LIST = [
 	"reset",
 	"credentials",
 	"setup",
+	"uninstall",
 	"actions",
 	"network",
 	"info",
@@ -63,9 +65,8 @@ const STEP_KEY_LIST = [
 	"headers",
 	"body",
 	"contentType",
-	"storeCookie",
+	"store",
 	"useCookie",
-	"storeToken",
 	"useToken",
 	"foreach",
 	"retryOn",
@@ -74,12 +75,10 @@ const STEP_KEY_LIST = [
 	"match",
 	"skipIf",
 	"merge",
-	"container",
 	"file",
 	"content",
 	"skipIfExists",
-	"regex",
-	"storeAs",
+	"optional",
 	"icon",
 ] as const satisfies readonly (keyof SetupStepDef)[];
 assertCovered<Exclude<keyof SetupStepDef, (typeof STEP_KEY_LIST)[number]>>();
@@ -89,8 +88,7 @@ const STEP_TYPE_LIST = [
 	"config_file",
 	"api_call",
 	"wait_ready",
-	"extract_from_logs",
-	"extract_from_config",
+	"store",
 ] as const satisfies readonly SetupStepDef["type"][];
 assertCovered<Exclude<SetupStepDef["type"], (typeof STEP_TYPE_LIST)[number]>>();
 const STEP_TYPES = new Set<string>(STEP_TYPE_LIST);
@@ -181,6 +179,76 @@ function patternProblem(label: string, value: unknown): string | null {
 		return `${label} is longer than ${MAX_PATTERN} characters`;
 	}
 	return null;
+}
+
+/**
+ * `uninstall:` — a list of `{when, steps}`. The trigger is a service id, so it
+ * is held to the same shape as one: a template naming a peer is expected
+ * elsewhere too (`supports:`, an `if:` condition), but it still has to look like
+ * a name and not like a path.
+ */
+function uninstallProblems(where: string, hooks: unknown): string[] {
+	if (hooks === undefined) return [];
+	if (!Array.isArray(hooks)) return [`${where} must be a list`];
+	return hooks.flatMap((hook, i) => {
+		const at = `${where}[${i}]`;
+		if (!isRecord(hook)) return [`${at} must be a mapping`];
+		const problems: string[] = [];
+		for (const key of Object.keys(hook)) {
+			if (!["when", "steps"].includes(key)) {
+				problems.push(`${at}.${key} is not an uninstall field`);
+			}
+		}
+		if (!NAME.test(String(hook.when))) {
+			problems.push(`${at}.when "${hook.when}" is not a service id`);
+		}
+		if (!Array.isArray(hook.steps)) {
+			problems.push(`${at}.steps must be a list`);
+		} else {
+			hook.steps.forEach((step, j) => {
+				problems.push(...stepProblems(`${at}.steps[${j}]`, step));
+			});
+		}
+		return problems;
+	});
+}
+
+/**
+ * The one place a value can enter `internal.<service>.`, so it is also the one
+ * place its inputs are checked: a regex that reaches the engine, a container
+ * name, and a path that must stay under `paths.config`.
+ */
+const STORE_SOURCES = new Set(["body", "cookie", "logs", "file"]);
+
+function storeProblems(where: string, store: unknown): string[] {
+	if (store === undefined) return [];
+	if (!isRecord(store)) return [`${where} must be a mapping`];
+	const problems: string[] = [];
+	for (const key of Object.keys(store)) {
+		if (!["from", "path", "regex", "container", "file", "as"].includes(key)) {
+			problems.push(`${where}.${key} is not a store field`);
+		}
+	}
+	if (!STORE_SOURCES.has(String(store.from))) {
+		problems.push(`${where}.from "${store.from}" is not a store source`);
+	}
+	// Never defaulted: a session token and a permanent API key must not land in
+	// the same slot by omission.
+	if (typeof store.as !== "string" || store.as === "") {
+		problems.push(`${where}.as is required`);
+	}
+	if (store.container !== undefined && !NAME.test(String(store.container))) {
+		problems.push(
+			`${where}.container "${store.container}" is not a container name`,
+		);
+	}
+	if (store.file !== undefined) {
+		const problem = relativePathProblem(`${where}.file`, store.file);
+		if (problem) problems.push(problem);
+	}
+	const problem = patternProblem(`${where}.regex`, store.regex);
+	if (problem) problems.push(problem);
+	return problems;
 }
 
 /** The source half of a `volumes:` entry, in either syntax. */
@@ -285,18 +353,9 @@ function stepProblems(where: string, step: unknown): string[] {
 		const problem = relativePathProblem(`${where}.file`, step.file);
 		if (problem) problems.push(problem);
 	}
-	if (step.container !== undefined && !NAME.test(String(step.container))) {
-		problems.push(
-			`${where}.container "${step.container}" is not a container name`,
-		);
-	}
-	for (const [key, value] of [
-		["regex", step.regex],
-		["match", step.match],
-	] as const) {
-		const problem = patternProblem(`${where}.${key}`, value);
-		if (problem) problems.push(problem);
-	}
+	problems.push(...storeProblems(`${where}.store`, step.store));
+	const problem = patternProblem(`${where}.match`, step.match);
+	if (problem) problems.push(problem);
 	if (step.skipIf !== undefined) {
 		if (!isRecord(step.skipIf)) {
 			problems.push(`${where}.skipIf must be a mapping`);
@@ -387,6 +446,7 @@ export function validateTemplate(value: unknown): string[] {
 	problems.push(...listProblems("notes", value.notes, mustBeString));
 	problems.push(...listProblems("requires", value.requires, mustBeRecord));
 	problems.push(...listProblems("recommends", value.recommends, mustBeRecord));
+	problems.push(...listProblems("after", value.after, mustBeRecord));
 	problems.push(...listProblems("generate", value.generate, mustBeRecord));
 	problems.push(...listProblems("info", value.info, mustBeRecord));
 	problems.push(
@@ -427,6 +487,7 @@ export function validateTemplate(value: unknown): string[] {
 			problems.push(...stepProblems(`setup[${i}]`, step));
 		});
 	}
+	problems.push(...uninstallProblems("uninstall", value.uninstall));
 	if (value.actions !== undefined) {
 		if (!isRecord(value.actions)) {
 			problems.push("actions must be a mapping");

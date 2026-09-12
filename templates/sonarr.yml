@@ -100,6 +100,10 @@ setup:
     method: POST
     headers:
       X-Api-Key: "{{internal.api_key}}"
+    # Kept so the entry can be dropped again when qBittorrent goes. Nothing is
+    # stored when `skipIf` below finds the entry already there — and there is
+    # then nothing this install created to undo either.
+    store: { from: body, path: id, as: qbittorrent_client_id }
     skipIf:
       url: http://localhost:8989/api/v3/downloadclient
       match: QBittorrent
@@ -167,3 +171,20 @@ setup:
           value: "http://{{host.sonarr}}:8989"
         - name: apiKey
           value: "{{internal.api_key}}"
+
+# The entry lives in Sonarr's own database and points at qBittorrent, so it is
+# Sonarr's API that has to drop it, and qBittorrent leaving is what makes it
+# dead. Removing Sonarr itself needs nothing here: the entry goes with the
+# database that held it.
+uninstall:
+  - when: qbittorrent
+    steps:
+      - name: drop_download_client
+        label: Disconnect qBittorrent
+        type: api_call
+        method: DELETE
+        url: http://localhost:8989/api/v3/downloadclient/{{internal.qbittorrent_client_id}}
+        headers:
+          X-Api-Key: "{{internal.api_key}}"
+        # Already gone is the state this step wants anyway.
+        ignoreStatus: [404]
