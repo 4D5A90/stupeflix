@@ -111,11 +111,32 @@ export interface ServiceAction {
 	icon?: string;
 }
 
+/**
+ * A need a service declares and nothing satisfies. `reason` is the template's
+ * own wording when it has one, and generated when it cannot — a template cannot
+ * guess which unsupported peer someone would pick.
+ */
+export interface UnmetRequirement {
+	category: string;
+	reason?: string;
+}
+
 export interface ServiceInfo {
 	name: string;
 	label: string;
 	enabled: boolean;
 	status: string;
+	/**
+	 * A second axis, not a status: absent for a container that declares no
+	 * `healthcheck:`, which is not the same as being unhealthy.
+	 */
+	health?: "healthy" | "unhealthy" | "starting";
+	/**
+	 * Blocking needs this service still has, computed on every read so it cannot
+	 * go stale. Empty for a service that is not enabled — nothing about it is
+	 * broken, it is simply not installed.
+	 */
+	unmet: UnmetRequirement[];
 	/** Absent for a headless service, which then gets no Open link. */
 	port?: number;
 	webUiPath?: string;

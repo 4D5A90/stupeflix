@@ -4,6 +4,7 @@ import type { CopyCredentials } from "../../hooks/useCopyCredentials";
 import type { ServiceActions } from "../../hooks/useServiceActions";
 import { ActionIcon } from "../ui/ActionIcon";
 import { ServiceIcon, serviceTint } from "../ui/ServiceIcon";
+import { Tooltip } from "../ui/Tooltip";
 import { ServiceInfoRow } from "./ServiceInfoRow";
 import { ServiceMenu } from "./ServiceMenu";
 
@@ -32,6 +33,41 @@ const statusStyles: Record<
 		pill: "bg-gray-500/15 text-gray-400",
 	},
 };
+
+/**
+ * Two conditions that are not the container's state, and must not be folded into
+ * it: a service can run perfectly and still be unable to do its job. Rendering
+ * them beside the status rather than in its place keeps both facts readable —
+ * replacing `running` would have lost the one that says the container is up.
+ *
+ * The sentence goes in the tooltip, not on the card. The template already writes
+ * it for a human to read, and the repo's convention puts that kind of prose
+ * where the user is configuring, not on a dashboard tile.
+ */
+function WarningPill({
+	tone,
+	text,
+	title,
+}: {
+	tone: "amber" | "red";
+	text: string;
+	title: string;
+}) {
+	const styles =
+		tone === "amber"
+			? { dot: "bg-amber-500", pill: "bg-amber-500/10 text-amber-400" }
+			: { dot: "bg-red-500", pill: "bg-red-500/10 text-red-400" };
+	return (
+		<Tooltip text={title}>
+			<span
+				className={`inline-flex h-6 items-center gap-1.5 px-2.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${styles.pill}`}
+			>
+				<span className={`w-1.5 h-1.5 rounded-full ${styles.dot}`} />
+				{text}
+			</span>
+		</Tooltip>
+	);
+}
 
 /**
  * One service, as the dashboard sees it: what it is, whether its container runs,
@@ -86,6 +122,22 @@ export function ServiceCard({
 					<span className="text-white font-semibold truncate">{label}</span>
 				</div>
 				<div className="flex items-center gap-2.5">
+					{service.unmet.length > 0 && (
+						<WarningPill
+							tone="amber"
+							text="incomplete"
+							title={service.unmet
+								.map((u) => u.reason ?? `Requires a "${u.category}" service.`)
+								.join(" ")}
+						/>
+					)}
+					{service.health === "unhealthy" && (
+						<WarningPill
+							tone="red"
+							text="unhealthy"
+							title="The container is running, but its healthcheck is failing."
+						/>
+					)}
 					<span
 						className={`inline-flex h-6 items-center gap-1.5 px-2.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${style.pill}`}
 					>

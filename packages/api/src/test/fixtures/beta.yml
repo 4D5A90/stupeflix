@@ -6,6 +6,13 @@ defaultEnabled: false
 container: beta
 port: 2222
 
+# Declared so the `unmet` a service reports can be exercised: Eta is the only
+# mediaServer among the fixtures, so enabling Beta without it is the unsatisfied
+# case and enabling both is the satisfied one.
+requires:
+  - category: mediaServer
+    reason: Beta reads its library off a media server — install Eta first.
+
 compose:
   beta-db:
     image: postgres:17
