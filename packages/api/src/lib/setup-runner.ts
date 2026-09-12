@@ -149,6 +149,14 @@ async function runOne(
 		return null;
 	}
 	if (err) {
+		// An optional step reads as `skipped`, not `failed`: it did not go wrong,
+		// it had nothing to do. The reason still reaches the log, so a step that
+		// failed for a real reason is not silently swallowed.
+		if (step.optional) {
+			setStepStatus(db, run.key, "skipped");
+			log(`${run.label} skipped: optional, and ${err}`);
+			return null;
+		}
 		setStepStatus(db, run.key, "failed");
 		return `${run.label}: ${err}`;
 	}

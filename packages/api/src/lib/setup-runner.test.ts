@@ -511,3 +511,48 @@ describe("replayPendingSteps", () => {
 		expect(db.get("setup.status.gamma.register")).toBe("failed");
 	});
 });
+
+/**
+ * A step whose failure is not the template's failure — for work a service only
+ * needs done once, which has nothing left to do on a service whose config
+ * survived a removal.
+ */
+describe("optional steps", () => {
+	const withSteps = (steps: SetupStepDef[]): ServiceTemplate =>
+		({
+			id: "alpha",
+			name: "Alpha",
+			category: "indexer",
+			container: "alpha",
+			setup: steps,
+		}) as ServiceTemplate;
+
+	const failing = (name: string, optional?: boolean): SetupStepDef => ({
+		name,
+		label: name,
+		type: "store",
+		// No `store:` block at all, so the step reports an error without needing a
+		// network or a container.
+		optional,
+	});
+
+	it("records a failure as skipped and lets the pipeline go on", async () => {
+		const db = configuredDb();
+		const tpl = withSteps([failing("first", true), failing("second", true)]);
+		await expect(runTemplateSteps(db, tpl, "post_up")).resolves.toBeUndefined();
+		expect(db.get("setup.status.alpha.first")).toBe("skipped");
+		expect(db.get("setup.status.alpha.second")).toBe("skipped");
+	});
+
+	// The flag is per step, never per type: Plex failing to yield its token is a
+	// genuine failure, and the same `store` step must keep saying so.
+	it("still stops on a step that did not ask to be optional", async () => {
+		const db = configuredDb();
+		const tpl = withSteps([failing("first", true), failing("second")]);
+		await expect(runTemplateSteps(db, tpl, "post_up")).rejects.toThrow(
+			"second",
+		);
+		expect(db.get("setup.status.alpha.first")).toBe("skipped");
+		expect(db.get("setup.status.alpha.second")).toBe("failed");
+	});
+});

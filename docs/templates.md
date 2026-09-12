@@ -307,6 +307,19 @@ retries while the file is absent or does not match yet (`maxRetries`, default
       as: temp_pass
 ```
 
+## `optional`
+
+A step whose failure is not the template's failure: it records `skipped` and the
+pipeline goes on.
+
+For work a service only needs done once. qBittorrent prints a temporary password
+on a **virgin** boot and never again, so the three steps that trade it for real
+credentials have nothing to do on a service whose config survived a removal —
+and failing there would strand an install that had nothing left to do.
+
+Per step, never per type. Plex failing to yield its token is a genuine failure,
+and the same `store` step must keep saying so.
+
 ## Steps that run later
 
 A step held back by its `if:` **never enters the status list**, and that absence

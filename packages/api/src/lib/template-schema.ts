@@ -76,6 +76,7 @@ const STEP_KEY_LIST = [
 	"file",
 	"content",
 	"skipIfExists",
+	"optional",
 	"icon",
 ] as const satisfies readonly (keyof SetupStepDef)[];
 assertCovered<Exclude<keyof SetupStepDef, (typeof STEP_KEY_LIST)[number]>>();

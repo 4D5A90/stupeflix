@@ -188,6 +188,20 @@ export interface SetupStepDef {
 	/** `config_file` only: leave an existing file alone (default true). */
 	skipIfExists?: boolean;
 	/**
+	 * A step whose failure is not the template's failure. It records `skipped`
+	 * and the pipeline goes on.
+	 *
+	 * For the work a service only needs done once. qBittorrent prints a temporary
+	 * password on a *virgin* boot and never again, so the three steps that trade
+	 * it for real credentials have nothing to do on a service whose config
+	 * survived a removal — and failing there would strand an install that had
+	 * nothing left to do.
+	 *
+	 * Not a blanket property of a step type: Plex failing to yield its token is a
+	 * genuine failure, and the same `store` step must keep saying so.
+	 */
+	optional?: boolean;
+	/**
 	 * `actions` only: which icon the dashboard draws on the button. Names are
 	 * case-sensitive and listed in the README; an unknown one falls back to the
 	 * default action icon rather than breaking the button.

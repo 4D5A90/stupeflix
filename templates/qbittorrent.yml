@@ -72,9 +72,15 @@ setup:
     type: wait_ready
     url: http://localhost:8080/api/v2/app/version
 
+  # The three steps below are qBittorrent's first-boot handshake, and they are
+  # all `optional:` for one reason: it only prints a temporary password when it
+  # has no stored one. A service whose config survived a removal boots already
+  # configured, prints nothing, and has nothing here left to do — `login_new_creds`
+  # below then signs in with the credentials already in the database.
   - name: extract_temp_pass
     label: Extract temporary password
     type: store
+    optional: true
     store:
       from: logs
       container: qbittorrent
@@ -84,6 +90,7 @@ setup:
   - name: login
     label: Login with temporary password
     type: api_call
+    optional: true
     url: http://localhost:8080/api/v2/auth/login
     method: POST
     contentType: form
@@ -95,6 +102,7 @@ setup:
   - name: set_credentials
     label: Set credentials
     type: api_call
+    optional: true
     url: http://localhost:8080/api/v2/app/setPreferences
     method: POST
     contentType: form
