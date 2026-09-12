@@ -30,8 +30,9 @@ import {
 	getTemplateDefaults,
 	loadTemplates,
 	runSetupStep,
+	sortByDependencies,
 } from "./service-registry.js";
-import type { SetupStepDef } from "./service-registry.js";
+import type { ServiceTemplate, SetupStepDef } from "./service-registry.js";
 
 const FIXTURES = fileURLToPath(new URL("../test/fixtures", import.meta.url));
 
@@ -324,5 +325,134 @@ describe("runSetupStep: skipIf", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
 		expect(fetchMock.mock.calls[1][1]?.method).toBe("POST");
+	});
+});
+
+/**
+ * One vocabulary for what used to be four. `body` and `cookie` read the answer
+ * of the `api_call` they sit on; `logs` and `file` have no answer to read, so
+ * they are a step of their own.
+ */
+describe("runSetupStep: store", () => {
+	type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
+	let db: Db;
+
+	beforeEach(() => {
+		db = configuredDb();
+	});
+	afterEach(() => vi.unstubAllGlobals());
+
+	const call = (store: SetupStepDef["store"]): SetupStepDef => ({
+		name: "login",
+		label: "Login",
+		type: "api_call",
+		url: "http://localhost:1111/login",
+		method: "POST",
+		store,
+	});
+
+	it("walks a dot path into the JSON response", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn<Fetch>()
+				.mockResolvedValue(
+					Response.json({ Items: [{ AccessToken: "abc123" }] }),
+				),
+		);
+		const step = call({
+			from: "body",
+			path: "Items.0.AccessToken",
+			as: "api_key",
+		});
+		await expect(runSetupStep(step, db, "alpha")).resolves.toBeNull();
+		expect(db.get("internal.alpha.api_key")).toBe("abc123");
+	});
+
+	/**
+	 * A 4xx body is not the document the path was written against. Storing
+	 * whatever sits at that key would poison the slot for every later step, which
+	 * would then fail somewhere else entirely.
+	 */
+	it("keeps nothing from a failed response", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn<Fetch>()
+				.mockResolvedValue(Response.json({ token: "nope" }, { status: 401 })),
+		);
+		const step = call({ from: "body", path: "token", as: "token" });
+		await expect(runSetupStep(step, db, "alpha")).resolves.toEqual(
+			expect.stringContaining("401"),
+		);
+		expect(db.get("internal.alpha.token")).toBeNull();
+	});
+
+	it("takes the session cookie off the headers", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn<Fetch>()
+				.mockResolvedValue(
+					new Response("", { headers: { "set-cookie": "SID=xyz; Path=/" } }),
+				),
+		);
+		const step = call({ from: "cookie", as: "cookie" });
+		await expect(runSetupStep(step, db, "alpha")).resolves.toBeNull();
+		expect(db.get("internal.alpha.cookie")).toBe("SID=xyz; Path=/");
+	});
+
+	it("reads capture group 1 out of a file under paths.config", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "stupeflix-store-"));
+		try {
+			db = configuredDb({ "paths.config": dir });
+			writeFileSync(join(dir, "prefs.xml"), '<P PlexOnlineToken="tok-42"/>');
+			const step: SetupStepDef = {
+				name: "extract_token",
+				label: "Extract token",
+				type: "store",
+				store: {
+					from: "file",
+					file: "prefs.xml",
+					regex: 'PlexOnlineToken="([^"]+)"',
+					as: "token",
+				},
+			};
+			await expect(runSetupStep(step, db, "alpha")).resolves.toBeNull();
+			expect(db.get("internal.alpha.token")).toBe("tok-42");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses to climb out of paths.config", async () => {
+		const step: SetupStepDef = {
+			name: "escape",
+			label: "Escape",
+			type: "store",
+			store: {
+				from: "file",
+				file: "../../etc/passwd",
+				regex: "root:(.*)",
+				as: "leak",
+			},
+		};
+		await expect(runSetupStep(step, db, "alpha")).resolves.toEqual(
+			expect.stringContaining("outside paths.config"),
+		);
+	});
+
+	// `body` and `cookie` name a response, and a step of its own has none. Saying
+	// so beats storing nothing and reporting success.
+	it("refuses a response source on a step with no response", async () => {
+		const step: SetupStepDef = {
+			name: "nope",
+			label: "Nope",
+			type: "store",
+			store: { from: "body", path: "x", as: "x" },
+		};
+		await expect(runSetupStep(step, db, "alpha")).resolves.toEqual(
+			expect.stringContaining("not a step of its own"),
+		);
 	});
 });

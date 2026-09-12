@@ -139,8 +139,7 @@ actions:
 | `wait_ready` | Poll `url` until the service responds. `match`: keep polling until the body matches a regex |
 | `api_call` | HTTP request with retry, cookies, tokens, headers. `skipIf: {url, match}` probes first and skips when the work is already done |
 | `config_file` | Write `content` to `file` under `paths.config` (`skipIfExists`, default true) |
-| `extract_from_logs` | Pull a value out of container logs via regex |
-| `extract_from_config` | Pull a value out of a config file via regex |
+| `store` | Keep a value that is not an API answer: `store: {from: logs\|file, …}` |
 
 `config_file` steps run **before** `docker compose up` — a container reads its config
 at boot. Every other step runs after. The phase comes from the step type.
@@ -264,14 +263,58 @@ lives **inside** `foreach`.
       tvshows: { content_type: show,  agent: tv.plex.agents.series }
 ```
 
+## `store`
+
+One way in, for every value a template has to keep. It lands under
+`internal.<service>.<as>`, which is where `{{internal.<key>}}` and
+`{{internal.<service>.<key>}}` read it back.
+
+| `from` | Where it reads | Needs |
+|--------|----------------|-------|
+| `body` | The JSON response of the `api_call` it sits on | `path` — a dot path, `Items.0.AccessToken` |
+| `cookie` | The `Set-Cookie` header of that response | — |
+| `logs` | A container's output, both streams | `container`, `regex` |
+| `file` | A file under `paths.config` | `file`, `regex` |
+
+`body` and `cookie` are options **on an `api_call`** — they read its answer.
+`logs` and `file` have no answer to read, so they are a step of their own:
+`type: store`.
+
+`as` is never defaulted. A session token and a permanent API key must not land
+in the same slot by omission — the first expires, the second has to outlive
+setup.
+
+For `logs` and `file`, the value is **capture group 1** of `regex`. A `file` step
+retries while the file is absent or does not match yet (`maxRetries`, default
+15, three seconds apart): a service writes its config when it feels like it.
+
+```yaml
+  # on an api_call
+  - name: login
+    type: api_call
+    url: http://localhost:8096/Users/AuthenticateByName
+    method: POST
+    store: { from: body, path: AccessToken, as: token }
+
+  # a step of its own
+  - name: extract_temp_pass
+    label: Extract temporary password
+    type: store
+    store:
+      from: logs
+      container: qbittorrent
+      regex: "A temporary password is provided for this session: (\\S+)"
+      as: temp_pass
+```
+
 ## `api_call` options
 
 | Option | Description |
 |--------|-------------|
 | `contentType: form` | Send body as `application/x-www-form-urlencoded` |
-| `storeCookie` / `useCookie` | Save the response cookie, send it on later calls |
-| `storeToken: AccessToken` | Store a JSON field of the response as the token |
-| `useToken: true` | Send the stored token as `Authorization` |
+| `store: {from: body, path: …, as: …}` | Keep a field of the JSON response |
+| `store: {from: cookie, as: cookie}` / `useCookie` | Save the session cookie, send it on later calls |
+| `useToken: '…{{internal.token}}…'` | Send the stored token as `Authorization`, in the shape this service wants |
 | `headers: {}` | Custom request headers |
 | `retryOn: [503]` | Status codes worth retrying (default `[503]`) |
 | `maxRetries: 10` | Attempts (default `10`) |

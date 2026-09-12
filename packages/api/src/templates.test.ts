@@ -82,8 +82,7 @@ function referencedVars(
 function runtimeVars(tpl: ServiceTemplate): string[] {
 	const keys: string[] = [];
 	for (const step of [...tpl.setup, ...Object.values(tpl.actions ?? {})]) {
-		if (step.storeAs) keys.push(`internal.${step.storeAs}`);
-		if (step.storeToken) keys.push("internal.token");
+		if (step.store) keys.push(`internal.${step.store.as}`);
 	}
 	return keys;
 }

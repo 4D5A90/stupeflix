@@ -89,7 +89,7 @@ setup:
     method: POST
     headers:
       Authorization: 'MediaBrowser Client="Stupeflix", Device="Server", DeviceId="stupeflix-setup", Version="1.0.0"'
-    storeToken: AccessToken
+    store: { from: body, path: AccessToken, as: token }
     body:
       Username: "{{credentials.user}}"
       Pw: "{{credentials.pass}}"
@@ -112,8 +112,7 @@ setup:
     url: http://localhost:8096/Auth/Keys
     method: GET
     useToken: true
-    storeToken: Items.0.AccessToken
-    storeAs: api_key
+    store: { from: body, path: Items.0.AccessToken, as: api_key }
 
   - name: scan_libraries
     label: Scan libraries

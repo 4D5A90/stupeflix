@@ -22,9 +22,14 @@ import type { Db } from "../db.js";
 import { configuredDb } from "../test/fake-db.js";
 import { template } from "../test/helpers.js";
 import { loadTemplates, runSetupStep } from "./service-registry.js";
-import type { ServiceTemplate } from "./service-registry.js";
+import type { ServiceTemplate, SetupStepDef } from "./service-registry.js";
 import {
+	pendingRuns,
+	replayPendingSteps,
 	runTemplateSteps,
+	runUninstallHooks,
+	setStepStatus,
+	statusKeysNaming,
 	stepEnabled,
 	stepKeys,
 	stepPhase,
@@ -43,11 +48,7 @@ describe("stepPhase", () => {
 	});
 
 	it("puts everything that talks to a service after", () => {
-		for (const type of [
-			"wait_ready",
-			"api_call",
-			"extract_from_logs",
-		] as const) {
+		for (const type of ["wait_ready", "api_call", "store"] as const) {
 			expect(stepPhase({ name: "s", label: "s", type })).toBe("post_up");
 		}
 	});

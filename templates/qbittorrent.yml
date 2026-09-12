@@ -74,10 +74,12 @@ setup:
 
   - name: extract_temp_pass
     label: Extract temporary password
-    type: extract_from_logs
-    container: qbittorrent
-    regex: "A temporary password is provided for this session: (\\S+)"
-    storeAs: temp_pass
+    type: store
+    store:
+      from: logs
+      container: qbittorrent
+      regex: "A temporary password is provided for this session: (\\S+)"
+      as: temp_pass
 
   - name: login
     label: Login with temporary password
@@ -85,7 +87,7 @@ setup:
     url: http://localhost:8080/api/v2/auth/login
     method: POST
     contentType: form
-    storeCookie: true
+    store: { from: cookie, as: cookie }
     body:
       username: admin
       password: "{{internal.temp_pass}}"
@@ -106,7 +108,7 @@ setup:
     url: http://localhost:8080/api/v2/auth/login
     method: POST
     contentType: form
-    storeCookie: true
+    store: { from: cookie, as: cookie }
     body:
       username: "{{credentials.user}}"
       password: "{{credentials.pass}}"

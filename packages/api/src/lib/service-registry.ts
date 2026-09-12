@@ -86,15 +86,50 @@ export interface ForeachSpec {
 	map?: Record<string, Record<string, string>>;
 }
 
+/**
+ * Where a value is read from, and what to call it once stored under
+ * `internal.<service>.<as>`.
+ *
+ * One shape for what used to be four: `storeToken` plus `storeAs` for a JSON
+ * response, `storeCookie` for a header, and two whole step types —
+ * `extract_from_logs` and `extract_from_config` — whose only job was to read a
+ * value and keep it. Those two differed by *where* they read, which is a
+ * parameter, not a kind of step.
+ *
+ * `storeToken` also lied: it was a path into the response body, and carried
+ * "Token" only because `storeAs` defaulted to `token`. `jellyfin.yml` already
+ * used it to keep an API key.
+ *
+ * Every option lives under here rather than beside it, the way `foreach` does:
+ * `container` means something to `logs` and nothing to `body`, so it has no
+ * business in the vocabulary every template reads.
+ */
+export interface StoreSpec {
+	/**
+	 * `body` and `cookie` read an `api_call`'s response; `logs` and `file` are a
+	 * step of their own (`type: store`) and read from outside the API entirely.
+	 */
+	from: "body" | "cookie" | "logs" | "file";
+	/** `body`: dot path into the JSON response — `Items.0.AccessToken`. */
+	path?: string;
+	/** `logs` and `file`: the value is capture group 1. */
+	regex?: string;
+	/** `logs`: which container to read, both streams merged. */
+	container?: string;
+	/** `file`: path under `paths.config`. */
+	file?: string;
+	/**
+	 * Destination under `internal.<service>.`. Always written out, never
+	 * defaulted: a session token and a permanent API key must not share a slot —
+	 * the first expires, the second is what has to outlive setup.
+	 */
+	as: string;
+}
+
 export interface SetupStepDef {
 	name: string;
 	label: string;
-	type:
-		| "config_file"
-		| "api_call"
-		| "wait_ready"
-		| "extract_from_logs"
-		| "extract_from_config";
+	type: "config_file" | "api_call" | "wait_ready" | "store";
 	/**
 	 * Resolved like any other value, and the step runs only when it comes out
 	 * `"true"`. This is what makes a `recommends:` peer usable: it may be
@@ -109,9 +144,9 @@ export interface SetupStepDef {
 	headers?: Record<string, string>;
 	body?: unknown;
 	contentType?: "json" | "form";
-	storeCookie?: boolean;
+	/** Read a value out of this step and keep it. See `StoreSpec`. */
+	store?: StoreSpec;
 	useCookie?: boolean;
-	storeToken?: string;
 	useToken?: boolean;
 	/**
 	 * Repeat this step over a collection. `foreach: libraries` is shorthand for
@@ -137,21 +172,12 @@ export interface SetupStepDef {
 	 * omit it. Merging is shallow, by top-level key.
 	 */
 	merge?: boolean;
-	container?: string;
-	/** Path under `paths.config`, for `config_file` and `extract_from_config`. */
+	/** `config_file` only: path under `paths.config`. */
 	file?: string;
 	/** File body for `config_file`. Template variables are resolved. */
 	content?: string;
 	/** `config_file` only: leave an existing file alone (default true). */
 	skipIfExists?: boolean;
-	regex?: string;
-	/**
-	 * Destination under `internal.<service>.` for `extract_from_*` and for
-	 * `storeToken`, which defaults to `token`. A session token and a permanent
-	 * API key must not share a slot: the first expires, the second is what has
-	 * to outlive setup.
-	 */
-	storeAs?: string;
 	/**
 	 * `actions` only: which icon the dashboard draws on the button. Names are
 	 * case-sensitive and listed in the README; an unknown one falls back to the
@@ -539,6 +565,41 @@ function stepHeaders(
  */
 export const SKIPPED = Symbol("skipped");
 
+/**
+ * The half of `store:` that reads an `api_call`'s answer — `from: body` walks a
+ * dot path into the JSON, `from: cookie` takes the session header.
+ *
+ * A body is only read on a successful response: a 4xx error page is not the
+ * document the path was written against, and storing whatever happens to sit at
+ * that key would poison the slot for every later step.
+ */
+async function storeFromResponse(
+	spec: StoreSpec | undefined,
+	res: Response,
+	db: Db,
+	serviceId: string,
+): Promise<void> {
+	if (!spec) return;
+	if (spec.from === "cookie") {
+		const cookie = res.headers.get("set-cookie");
+		if (cookie) db.set(`internal.${serviceId}.${spec.as}`, cookie);
+		return;
+	}
+	if (spec.from !== "body" || !res.ok) return;
+	try {
+		let val: unknown = await res.clone().json();
+		for (const key of (spec.path ?? "").split(".")) {
+			val = (val as Record<string, unknown>)?.[key];
+		}
+		if (typeof val === "string") {
+			db.set(`internal.${serviceId}.${spec.as}`, val);
+			debug(`Stored ${spec.as} from ${spec.path}`);
+		}
+	} catch {
+		debug(`Failed to read ${spec.path} from the response`);
+	}
+}
+
 /** An error message, `SKIPPED`, or `null` when the step really ran. */
 export type StepOutcome = string | typeof SKIPPED | null;
 
@@ -667,26 +728,7 @@ export async function runSetupStep(
 						body,
 						signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
 					});
-					if (step.storeCookie) {
-						const cookie = res.headers.get("set-cookie");
-						if (cookie) db.set(`internal.${serviceId}.cookie`, cookie);
-					}
-					if (step.storeToken && res.ok) {
-						try {
-							const json = await res.clone().json();
-							const tokenPath = step.storeToken.split(".");
-							let val: unknown = json;
-							for (const key of tokenPath) {
-								val = (val as Record<string, unknown>)?.[key];
-							}
-							if (typeof val === "string") {
-								db.set(`internal.${serviceId}.${step.storeAs ?? "token"}`, val);
-								debug(`Stored token from ${step.storeToken}`);
-							}
-						} catch {
-							debug("Failed to extract token from response");
-						}
-					}
+					await storeFromResponse(step.store, res, db, serviceId);
 					if (res.ok || res.status === 204) return null;
 					if (step.ignoreStatus?.includes(res.status)) return null;
 					if (retryOn.includes(res.status) && attempt < maxRetries) {
@@ -747,57 +789,72 @@ export async function runSetupStep(
 			}
 		}
 
-		case "extract_from_logs": {
-			if (!step.container || !step.regex || !step.storeAs) {
-				return "extract_from_logs requires container, regex, and storeAs";
-			}
-			try {
-				// Both streams: an image may log its temporary password to either.
-				const logs = runComposeSync(["logs", step.container], {
-					mergeStderr: true,
-				});
-				const match = logs.match(new RegExp(step.regex));
-				if (!match?.[1]) {
-					return `Pattern not found in ${step.container} logs: ${step.regex}`;
-				}
-				db.set(`internal.${serviceId}.${step.storeAs}`, match[1]);
-				debug(`Extracted ${step.storeAs} from ${step.container} logs`);
-				return null;
-			} catch (e) {
-				return `Failed to read ${step.container} logs: ${e instanceof Error ? e.message : e}`;
-			}
-		}
+		// The two sources that are not an API answer, and so are a step of their
+		// own. They used to be two step types that differed only by where they
+		// read — which is a parameter, not a kind of step.
+		case "store": {
+			const spec = step.store;
+			if (!spec) return "store requires a store: block";
 
-		case "extract_from_config": {
-			if (!step.file || !step.regex || !step.storeAs) {
-				return "extract_from_config requires file, regex, and storeAs";
-			}
-			const configPath = db.get("paths.config") as string;
-			let filePath: string;
-			try {
-				filePath = underRoot(configPath, step.file);
-			} catch {
-				return `${step.file} is outside paths.config`;
-			}
-			const maxAttempts = step.maxRetries ?? 15;
-			for (let attempt = 0; attempt <= maxAttempts; attempt++) {
+			if (spec.from === "logs") {
+				if (!spec.container || !spec.regex) {
+					return "store from logs requires container and regex";
+				}
 				try {
-					const content = readFileSync(filePath, "utf-8");
-					const match = content.match(new RegExp(step.regex));
-					if (match?.[1]) {
-						db.set(`internal.${serviceId}.${step.storeAs}`, match[1]);
-						debug(`Extracted ${step.storeAs} from ${step.file}`);
-						return null;
+					// Both streams: an image may log its temporary password to either.
+					const logs = runComposeSync(["logs", spec.container], {
+						mergeStderr: true,
+					});
+					const match = logs.match(new RegExp(spec.regex));
+					if (!match?.[1]) {
+						return `Pattern not found in ${spec.container} logs: ${spec.regex}`;
 					}
-				} catch {
-					// file not ready yet
-				}
-				if (attempt < maxAttempts) {
-					debug(`Waiting for ${step.file} (${attempt + 1}/${maxAttempts})...`);
-					await new Promise((r) => setTimeout(r, 3000));
+					db.set(`internal.${serviceId}.${spec.as}`, match[1]);
+					debug(`Stored ${spec.as} from ${spec.container} logs`);
+					return null;
+				} catch (e) {
+					return `Failed to read ${spec.container} logs: ${e instanceof Error ? e.message : e}`;
 				}
 			}
-			return `Pattern not found in ${step.file} after ${maxAttempts} attempts`;
+
+			if (spec.from === "file") {
+				if (!spec.file || !spec.regex) {
+					return "store from file requires file and regex";
+				}
+				const configPath = db.get("paths.config") as string;
+				let filePath: string;
+				try {
+					filePath = underRoot(configPath, spec.file);
+				} catch {
+					return `${spec.file} is outside paths.config`;
+				}
+				// A service writes its config when it feels like it, so this waits
+				// rather than failing on the first read.
+				const maxAttempts = step.maxRetries ?? 15;
+				for (let attempt = 0; attempt <= maxAttempts; attempt++) {
+					try {
+						const content = readFileSync(filePath, "utf-8");
+						const match = content.match(new RegExp(spec.regex));
+						if (match?.[1]) {
+							db.set(`internal.${serviceId}.${spec.as}`, match[1]);
+							debug(`Stored ${spec.as} from ${spec.file}`);
+							return null;
+						}
+					} catch {
+						// file not ready yet
+					}
+					if (attempt < maxAttempts) {
+						debug(
+							`Waiting for ${spec.file} (${attempt + 1}/${maxAttempts})...`,
+						);
+						await new Promise((r) => setTimeout(r, 3000));
+					}
+				}
+				return `Pattern not found in ${spec.file} after ${maxAttempts} attempts`;
+			}
+
+			// `body` and `cookie` have no response to read outside an api_call.
+			return `store from "${spec.from}" is not a step of its own — put it on an api_call`;
 		}
 
 		default:

@@ -114,7 +114,12 @@ Each template defines:
     the whole thing back, for an API that accepts nothing but the entire object
     on a write and whose other fields are not the template's to know
   - `config_file` — writes `content` to `file` under `paths.config`
-  - `extract_from_logs` / `extract_from_config` — pull a value out via regex
+  - `store` — keep a value that is not an API answer. `store: {from: logs|file,
+    …}` is a step; `{from: body|cookie, …}` is an option on an `api_call`, since
+    it reads that call's response. One vocabulary for what used to be four:
+    `storeToken`+`storeAs`, `storeCookie`, and two step types that differed only
+    by *where* they read. `as` is never defaulted — a session token and a
+    permanent API key must not share a slot
 
   Any step takes `if:`, a condition (or a list of them, all of which must hold)
   that has to resolve to `"true"`. A step that will not run never enters the

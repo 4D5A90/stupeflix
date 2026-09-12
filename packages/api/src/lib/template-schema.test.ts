@@ -84,14 +84,17 @@ describe("paths a template hands to join()", () => {
 			{
 				name: "grab",
 				label: "Grab",
-				type: "extract_from_logs",
-				container: "demo",
-				regex: `(${"a+".repeat(120)})`,
-				storeAs: "x",
+				type: "store",
+				store: {
+					from: "logs",
+					container: "demo",
+					regex: `(${"a+".repeat(120)})`,
+					as: "x",
+				},
 			},
 		];
 		expect(validateTemplate(template({ setup })).join()).toContain(
-			"setup[0].regex is longer than 200",
+			"setup[0].store.regex is longer than 200",
 		);
 	});
 
