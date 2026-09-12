@@ -54,7 +54,10 @@ export function installRoutes(db: Db) {
 		for (const [key, value] of Object.entries(credentials)) {
 			db.set(`credentials.${name}.${key}`, value);
 		}
-		db.set(`services.${name}.enabled`, true);
+		// The enabled flag is `runServiceInstall`'s to set. Writing it here made it
+		// read its own write when deciding whether the service existed before, so
+		// a failed first install left the service marked installed — visible on
+		// the dashboard as exited, and no longer offered under "Add service".
 		db.set("setup.error", null);
 
 		// Initialize this service's steps as pending (keeps existing services' statuses intact)
@@ -62,7 +65,10 @@ export function installRoutes(db: Db) {
 			setStepStatus(db, key, "pending");
 		}
 
-		runServiceInstall(db, tpl);
+		// The caller decides what happens to a config a removal left behind. It
+		// defaults to keeping it — the destructive reading of an ambiguous request
+		// is never the one to assume.
+		runServiceInstall(db, tpl, { reset: body.reset === true });
 		return c.json({ success: true });
 	});
 

@@ -27,9 +27,14 @@ export async function runServiceInstall(
 	tpl: ServiceTemplate,
 	{ reset = false }: InstallOptions = {},
 ): Promise<void> {
+	// Read before it is written, and written here rather than by the caller: the
+	// answer to "did this service exist before?" is what decides whether a failure
+	// should undo the install, and a caller that sets the flag first destroys it.
 	const wasInstalled = Boolean(db.get(`services.${tpl.id}.enabled`));
 	try {
 		db.set("setup.global", "in_progress");
+		// Before `writeCompose`, which only emits the enabled templates.
+		db.set(`services.${tpl.id}.enabled`, true);
 
 		writeCompose(db);
 
