@@ -210,6 +210,27 @@ export interface SetupStepDef {
 }
 
 /**
+ * Steps to run when a *peer* is removed, declared by the template that holds the
+ * entry.
+ *
+ * The rule that decides where these live: **clean up where the entry is, and do
+ * it when the thing it points at disappears.** Sonarr writes a download client
+ * into its own database pointing at qBittorrent, so removing qBittorrent leaves
+ * Sonarr holding a dead entry — and only Sonarr's API can drop it.
+ *
+ * Removing Sonarr itself needs nothing here: the entry goes with the database
+ * that held it.
+ *
+ * Grouped by `when` rather than carrying it per step, so the trigger is written
+ * once and `SetupStepDef` stays what it is everywhere else.
+ */
+export interface UninstallHook {
+	/** The service whose removal runs these steps. */
+	when: string;
+	steps: SetupStepDef[];
+}
+
+/**
  * A value the service reports about itself, shown on its dashboard card.
  * Complements `actions:` — an action does something and returns nothing, a
  * readout is something and does nothing.
@@ -287,6 +308,8 @@ export interface ServiceTemplate {
 	/** Absent when the service asks the user for nothing of its own. */
 	credentials?: CredentialField[];
 	setup: SetupStepDef[];
+	/** What to undo when a peer this service wired itself to is removed. */
+	uninstall?: UninstallHook[];
 	/** On-demand steps the dashboard can trigger after setup, e.g. `scan`. */
 	actions?: Record<string, SetupStepDef>;
 	/**

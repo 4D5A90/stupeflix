@@ -81,7 +81,12 @@ function referencedVars(
 /** Variables a step produces at runtime, which buildVars cannot know up front. */
 function runtimeVars(tpl: ServiceTemplate): string[] {
 	const keys: string[] = [];
-	for (const step of [...tpl.setup, ...Object.values(tpl.actions ?? {})]) {
+	const steps = [
+		...tpl.setup,
+		...(tpl.uninstall ?? []).flatMap((hook) => hook.steps),
+		...Object.values(tpl.actions ?? {}),
+	];
+	for (const step of steps) {
 		if (step.store) keys.push(`internal.${step.store.as}`);
 	}
 	return keys;
@@ -433,10 +438,13 @@ describe("every template", () => {
 	it("addresses a peer through {{host.x}}, never by its container name", () => {
 		const peers = new Map(templates.map((t) => [t.container, t.id]));
 		for (const tpl of templates) {
-			// Setup steps write addresses too, and resolve the same hosts
+			// Setup steps write addresses too, and resolve the same hosts — and so
+			// does `uninstall:`, which is a list of steps like any other. A section
+			// left out here is a section where hardcoding a container name passes.
 			const rendered = JSON.stringify([
 				tpl.compose,
 				tpl.setup,
+				tpl.uninstall,
 				tpl.actions,
 				tpl.info,
 			]);

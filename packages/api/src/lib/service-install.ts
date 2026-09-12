@@ -6,7 +6,12 @@ import { log, error as logError } from "./logger.js";
 import { affectedServices, resolveNetworkTopology } from "./network.js";
 import { getEnabledTemplates } from "./service-registry.js";
 import type { ServiceTemplate } from "./service-registry.js";
-import { replayPendingSteps, runTemplateSteps } from "./setup-runner.js";
+import {
+	replayPendingSteps,
+	runTemplateSteps,
+	runUninstallHooks,
+	statusKeysNaming,
+} from "./setup-runner.js";
 
 interface InstallOptions {
 	/**
@@ -129,8 +134,17 @@ export async function removeService(
 	db: Db,
 	tpl: ServiceTemplate,
 ): Promise<void> {
+	// Before the flag flips, so the steps that named this service can still be
+	// found: their `if:` is what identifies them.
+	const stale = statusKeysNaming(db, getEnabledTemplates(db), tpl.id);
 	db.set(`services.${tpl.id}.enabled`, false);
+	for (const key of stale) db.delete(`setup.status.${key}`);
 	writeCompose(db);
-	await runCompose(removalCommand(getEnabledTemplates(db).length));
+	const remaining = getEnabledTemplates(db);
+	await runCompose(removalCommand(remaining.length));
+	// After the container is gone: the entries being dropped live in peers that
+	// stay up, and they are only truly dead once the thing they pointed at is.
+	await runUninstallHooks(db, remaining, tpl.id);
+	// No replay here, deliberately.
 	log(`[remove] ${tpl.id} removed`);
 }

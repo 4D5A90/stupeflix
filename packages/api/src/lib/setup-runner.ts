@@ -212,6 +212,71 @@ export function pendingRuns(
 }
 
 /**
+ * Undoes what the surviving templates wrote about a service that is going.
+ *
+ * Runs **after** the container is gone: the entry being dropped lives in a peer
+ * that stays up, and it is only truly dead once the thing it pointed at is.
+ *
+ * A failure is logged and stepped over. A removal the user asked for must not be
+ * held hostage by a peer that will not answer — and the entry it leaves behind
+ * is the state we were already in before any of this existed.
+ */
+export async function runUninstallHooks(
+	db: Db,
+	templates: ServiceTemplate[],
+	removedId: string,
+): Promise<void> {
+	for (const tpl of templates) {
+		if (tpl.id === removedId) continue;
+		for (const hook of tpl.uninstall ?? []) {
+			if (hook.when !== removedId) continue;
+			for (const step of hook.steps) {
+				log(`Undoing ${tpl.id}: ${step.label}`);
+				const err = await runSetupStep(step, db, tpl.id).catch((e) =>
+					e instanceof Error ? e.message : String(e),
+				);
+				// A symbol means the step's own probe found nothing to do, which is
+				// the outcome this is after anyway.
+				if (err && err !== SKIPPED) {
+					log(`Could not undo ${tpl.id}: ${step.label} — ${err}`);
+				}
+			}
+		}
+	}
+}
+
+/**
+ * The status keys of every step that was conditional on `serviceId` being there.
+ *
+ * Removing a service takes its database with it, so an entry a peer wrote inside
+ * it is gone too — but the peer's own note still says the step is done. The two
+ * then disagree, and `pendingRuns` walks straight past the step because a step
+ * with an outcome is one it leaves alone. Reinstalling the service would never
+ * re-wire anything.
+ *
+ * Dropping the notes is what puts the step back in reach: it becomes one with no
+ * outcome, which is exactly what a later install replays.
+ *
+ * Matched on `if:` and nothing else. That is the set of steps that existed
+ * *because* the service did — a step merely mentioning it in a body would fail
+ * on its own terms, and is not this function's to guess about.
+ */
+export function statusKeysNaming(
+	db: Db,
+	templates: ServiceTemplate[],
+	serviceId: string,
+): string[] {
+	const needle = `services.${serviceId}.enabled`;
+	return templates.flatMap((tpl) =>
+		tpl.setup
+			.filter((step) =>
+				[step.if ?? []].flat().some((cond) => cond.includes(needle)),
+			)
+			.flatMap((step) => expandStep(db, tpl, step).map((run) => run.key)),
+	);
+}
+
+/**
  * Runs what every other enabled template was never able to run yet.
  *
  * Called after anything that changes `services.*.enabled`, which is the only

@@ -307,6 +307,48 @@ retries while the file is absent or does not match yet (`maxRetries`, default
       as: temp_pass
 ```
 
+## `uninstall`
+
+What to undo when a **peer** this service wired itself to is removed.
+
+The rule that decides where a cleanup lives: **clean up where the entry is, and
+do it when the thing it points at disappears.** Sonarr writes a download client
+into its own database pointing at qBittorrent, so removing qBittorrent leaves
+Sonarr holding a dead entry — and only Sonarr's API can drop it.
+
+Removing Sonarr itself needs nothing here: the entry goes with the database that
+held it.
+
+```yaml
+uninstall:
+  - when: qbittorrent
+    steps:
+      - name: drop_download_client
+        label: Disconnect qBittorrent
+        type: api_call
+        method: DELETE
+        url: http://localhost:8989/api/v3/downloadclient/{{internal.qbittorrent_client_id}}
+        headers:
+          X-Api-Key: "{{internal.api_key}}"
+        ignoreStatus: [404]
+```
+
+The id comes from `store` at creation, not from a probe at deletion:
+
+```yaml
+  - name: download_client
+    type: api_call
+    method: POST
+    store: { from: body, path: id, as: qbittorrent_client_id }
+```
+
+Runs **after** the container is gone, and a failure is logged and stepped over: a
+removal the user asked for must not be held hostage by a peer that will not
+answer, and the entry left behind is the state everything was in before.
+
+Nothing is stored when the creation step's `skipIf` found the entry already
+there — and there is then nothing this install made to undo either.
+
 ## `optional`
 
 A step whose failure is not the template's failure: it records `skipped` and the

@@ -139,6 +139,12 @@ Each template defines:
   extract, refresh }`. Read server-side by `lib/service-info.ts`; anything that
   fails reads as a dash, never as an error. An action *does* something and
   returns nothing, a readout *is* something and does nothing — do not merge them
+- `uninstall`: `{ when, steps }` — what to undo when a **peer** is removed.
+  Clean up where the entry *is*, when the thing it points at disappears: Sonarr's
+  download client lives in Sonarr's database and points at qBittorrent, so only
+  Sonarr's API can drop it, and qBittorrent leaving is what makes it dead.
+  Removing Sonarr needs nothing — the entry goes with the database that held it.
+  The id comes from `store` at creation, never from a probe at deletion
 - `actions`: on-demand steps the dashboard exposes at `/services/:name/actions/:action`.
   `label` is the button's text, and optional `icon` picks its glyph from
   `web/src/components/ui/ActionIcon.tsx` — names are case-sensitive and listed in

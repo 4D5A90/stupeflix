@@ -556,3 +556,158 @@ describe("optional steps", () => {
 		expect(db.get("setup.status.alpha.second")).toBe("failed");
 	});
 });
+
+/**
+ * Removing a service takes its database with it, so an entry a peer wrote inside
+ * it is gone — but the peer's own note still says the step is done. Dropping the
+ * note is what puts the step back within reach of a later replay.
+ */
+describe("statusKeysNaming", () => {
+	const withStep = (id: string, step: SetupStepDef): ServiceTemplate =>
+		({
+			id,
+			name: id,
+			category: "indexer",
+			container: id,
+			setup: [step],
+		}) as ServiceTemplate;
+
+	const step = (cond: SetupStepDef["if"]): SetupStepDef => ({
+		name: "register",
+		label: "Register",
+		type: "api_call",
+		if: cond,
+		url: "http://localhost:2222/apps",
+	});
+
+	it("finds the steps a single condition made conditional", () => {
+		const db = configuredDb();
+		const keys = statusKeysNaming(
+			db,
+			[withStep("alpha", step("{{services.beta.enabled}}"))],
+			"beta",
+		);
+		expect(keys).toEqual(["alpha.register"]);
+	});
+
+	// Wiring two services together needs both present, so the condition is a list
+	// and the service can sit anywhere in it.
+	it("finds them inside a list of conditions", () => {
+		const db = configuredDb();
+		const keys = statusKeysNaming(
+			db,
+			[
+				withStep(
+					"alpha",
+					step(["{{services.eta.enabled}}", "{{services.beta.enabled}}"]),
+				),
+			],
+			"beta",
+		);
+		expect(keys).toEqual(["alpha.register"]);
+	});
+
+	it("leaves a step that never named it alone", () => {
+		const db = configuredDb();
+		const keys = statusKeysNaming(
+			db,
+			[withStep("alpha", step("{{services.eta.enabled}}"))],
+			"beta",
+		);
+		expect(keys).toEqual([]);
+	});
+
+	// A `foreach` step holds one status per run, and all of them go stale together.
+	it("names every run of a repeated step", () => {
+		const db = configuredDb();
+		const repeated: SetupStepDef = {
+			...step("{{services.beta.enabled}}"),
+			foreach: "libraries",
+		};
+		expect(statusKeysNaming(db, [withStep("alpha", repeated)], "beta")).toEqual(
+			["alpha.register_Movies", "alpha.register_TvShows"],
+		);
+	});
+});
+
+/**
+ * The rule that decides where a cleanup lives: clean up where the entry is, and
+ * do it when the thing it points at disappears. Sonarr writes a download client
+ * into its own database pointing at qBittorrent, so removing qBittorrent leaves
+ * Sonarr holding a dead entry — and only Sonarr's API can drop it.
+ */
+describe("runUninstallHooks", () => {
+	type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
+
+	const hooked = (id: string, when: string): ServiceTemplate => {
+		// Annotated rather than cast: inside a nested literal TypeScript widens
+		// `type` to `string`, which then overlaps nothing in `SetupStepDef`.
+		const steps: SetupStepDef[] = [
+			{
+				name: "drop",
+				label: "Drop the entry",
+				type: "api_call",
+				method: "DELETE",
+				url: `http://localhost:1111/clients/${id}`,
+			},
+		];
+		// Built off a real fixture rather than cast from a literal: only the two
+		// fields under test are overridden, and the rest stays a template the
+		// loader actually validated.
+		return {
+			...template("alpha"),
+			id,
+			container: id,
+			uninstall: [{ when, steps }],
+		};
+	};
+
+	afterEach(() => vi.unstubAllGlobals());
+
+	const stub = () => {
+		const fetchMock = vi
+			.fn<Fetch>()
+			.mockResolvedValue(new Response(null, { status: 204 }));
+		vi.stubGlobal("fetch", fetchMock);
+		return fetchMock;
+	};
+
+	it("runs the hooks that name the service going away", async () => {
+		const fetchMock = stub();
+		await runUninstallHooks(
+			configuredDb(),
+			[hooked("alpha", "beta"), hooked("gamma", "eta")],
+			"beta",
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock.mock.calls[0][0]).toContain("/clients/alpha");
+	});
+
+	// Removing the service itself needs nothing: the entry goes with the database
+	// that held it.
+	it("never runs the departing service's own hooks", async () => {
+		const fetchMock = stub();
+		await runUninstallHooks(configuredDb(), [hooked("beta", "beta")], "beta");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * A removal the user asked for must not be held hostage by a peer that will
+	 * not answer. The dead entry left behind is the state we were already in.
+	 */
+	it("steps over a hook that fails, and keeps going", async () => {
+		const fetchMock = vi
+			.fn<Fetch>()
+			.mockRejectedValueOnce(new Error("connection refused"))
+			.mockResolvedValue(new Response(null, { status: 204 }));
+		vi.stubGlobal("fetch", fetchMock);
+		await expect(
+			runUninstallHooks(
+				configuredDb(),
+				[hooked("alpha", "beta"), hooked("gamma", "beta")],
+				"beta",
+			),
+		).resolves.toBeUndefined();
+		expect(fetchMock.mock.calls.at(-1)?.[0]).toContain("/clients/gamma");
+	});
+});

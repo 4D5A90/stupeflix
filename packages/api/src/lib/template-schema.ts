@@ -44,6 +44,7 @@ const TEMPLATE_KEY_LIST = [
 	"reset",
 	"credentials",
 	"setup",
+	"uninstall",
 	"actions",
 	"network",
 	"info",
@@ -177,6 +178,38 @@ function patternProblem(label: string, value: unknown): string | null {
 		return `${label} is longer than ${MAX_PATTERN} characters`;
 	}
 	return null;
+}
+
+/**
+ * `uninstall:` — a list of `{when, steps}`. The trigger is a service id, so it
+ * is held to the same shape as one: a template naming a peer is expected
+ * elsewhere too (`supports:`, an `if:` condition), but it still has to look like
+ * a name and not like a path.
+ */
+function uninstallProblems(where: string, hooks: unknown): string[] {
+	if (hooks === undefined) return [];
+	if (!Array.isArray(hooks)) return [`${where} must be a list`];
+	return hooks.flatMap((hook, i) => {
+		const at = `${where}[${i}]`;
+		if (!isRecord(hook)) return [`${at} must be a mapping`];
+		const problems: string[] = [];
+		for (const key of Object.keys(hook)) {
+			if (!["when", "steps"].includes(key)) {
+				problems.push(`${at}.${key} is not an uninstall field`);
+			}
+		}
+		if (!NAME.test(String(hook.when))) {
+			problems.push(`${at}.when "${hook.when}" is not a service id`);
+		}
+		if (!Array.isArray(hook.steps)) {
+			problems.push(`${at}.steps must be a list`);
+		} else {
+			hook.steps.forEach((step, j) => {
+				problems.push(...stepProblems(`${at}.steps[${j}]`, step));
+			});
+		}
+		return problems;
+	});
 }
 
 /**
@@ -452,6 +485,7 @@ export function validateTemplate(value: unknown): string[] {
 			problems.push(...stepProblems(`setup[${i}]`, step));
 		});
 	}
+	problems.push(...uninstallProblems("uninstall", value.uninstall));
 	if (value.actions !== undefined) {
 		if (!isRecord(value.actions)) {
 			problems.push("actions must be a mapping");
