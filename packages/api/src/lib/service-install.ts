@@ -145,6 +145,9 @@ export async function removeService(
 	// After the container is gone: the entries being dropped live in peers that
 	// stay up, and they are only truly dead once the thing they pointed at is.
 	await runUninstallHooks(db, remaining, tpl.id);
-	// No replay here, deliberately.
+	// No replay here, deliberately. It would only serve a step guarded on this
+	// service being *absent*, and `if:` tests equality to "true" and nothing else
+	// — there is no way to write that condition today. Adding the call now would
+	// be a mechanism for a case that cannot exist.
 	log(`[remove] ${tpl.id} removed`);
 }

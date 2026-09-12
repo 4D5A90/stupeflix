@@ -307,6 +307,19 @@ export interface ServiceTemplate {
 	reset?: { dirs?: string[] };
 	/** Absent when the service asks the user for nothing of its own. */
 	credentials?: CredentialField[];
+	/**
+	 * Categories whose members must be set up before this one.
+	 *
+	 * Without it the install order is `readdirSync`'s, which is the alphabetical
+	 * order of the *file names* — a fact no template declares and every template
+	 * depends on. `seerr.yml` sorts before `sonarr.yml`, so Seerr used to reach
+	 * for a Sonarr whose root folder did not exist yet, and said so in a `notes:`
+	 * telling the user to install them in the right order by hand.
+	 *
+	 * A category, never a service: the same rule as `requires:`. Adding a second
+	 * media manager must not need this line touched.
+	 */
+	after?: { category: string }[];
 	setup: SetupStepDef[];
 	/** What to undo when a peer this service wired itself to is removed. */
 	uninstall?: UninstallHook[];
@@ -366,6 +379,58 @@ export function loadTemplates(dir: string): void {
 			logError(`Ignored ${file}`, e instanceof Error ? e.message : e);
 		}
 	}
+	// Sorted once, here, so every consumer inherits the order rather than each
+	// deciding for itself — and so the file name stops carrying meaning.
+	templates = sortByDependencies(templates);
+}
+
+/**
+ * Templates in the order they must be set up, `after:` honoured.
+ *
+ * A stable topological sort: templates come out in their original order except
+ * where a declared dependency moves one, so a template that declares nothing
+ * keeps the position it has always had.
+ *
+ * A cycle cannot be blamed on any single file, so it does not drop one — it is
+ * logged and the original order kept. The alternative is refusing to boot over
+ * a relationship between two templates, which is worse than the ordering bug it
+ * would be protecting against.
+ */
+export function sortByDependencies(list: ServiceTemplate[]): ServiceTemplate[] {
+	const sorted: ServiceTemplate[] = [];
+	const done = new Set<string>();
+	const ready = (tpl: ServiceTemplate) =>
+		(tpl.after ?? []).every((dep) =>
+			list.every(
+				(other) =>
+					other.id === tpl.id ||
+					other.category !== dep.category ||
+					done.has(other.id),
+			),
+		);
+
+	let remaining = [...list];
+	while (remaining.length > 0) {
+		// Scanned in the original order every pass, rather than following one
+		// template's dependencies down: a depth-first walk emits whatever it
+		// reaches on the way, which drags unrelated templates along with it.
+		const next = remaining.filter(ready);
+		if (next.length === 0) {
+			logError(
+				"Ignored after: ordering",
+				`templates wait on each other in a cycle (${remaining
+					.map((t) => t.id)
+					.join(", ")}) — keeping file order`,
+			);
+			return list;
+		}
+		for (const tpl of next) {
+			sorted.push(tpl);
+			done.add(tpl.id);
+		}
+		remaining = remaining.filter((tpl) => !done.has(tpl.id));
+	}
+	return sorted;
 }
 
 export function reloadTemplates(): void {

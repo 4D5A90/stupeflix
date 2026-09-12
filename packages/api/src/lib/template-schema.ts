@@ -37,6 +37,7 @@ const TEMPLATE_KEY_LIST = [
 	"notes",
 	"requires",
 	"recommends",
+	"after",
 	"compose",
 	"volumes",
 	"generate",
@@ -445,6 +446,7 @@ export function validateTemplate(value: unknown): string[] {
 	problems.push(...listProblems("notes", value.notes, mustBeString));
 	problems.push(...listProblems("requires", value.requires, mustBeRecord));
 	problems.push(...listProblems("recommends", value.recommends, mustBeRecord));
+	problems.push(...listProblems("after", value.after, mustBeRecord));
 	problems.push(...listProblems("generate", value.generate, mustBeRecord));
 	problems.push(...listProblems("info", value.info, mustBeRecord));
 	problems.push(

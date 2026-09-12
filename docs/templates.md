@@ -307,6 +307,31 @@ retries while the file is absent or does not match yet (`maxRetries`, default
       as: temp_pass
 ```
 
+## `after`
+
+Categories whose members must be set up before this one.
+
+```yaml
+after:
+  - category: mediaServer
+  - category: mediaManager
+```
+
+Without it the install order is `readdirSync`'s — **the alphabetical order of the
+file names**, which no template declares and every template depends on.
+`seerr.yml` sorts before `sonarr.yml`, so Seerr reached for a Sonarr whose root
+folder did not exist yet, and said so in a `notes:` asking the user to install
+them in the right order by hand.
+
+A category, never a service, for the same reason `requires:` names one: adding a
+second media manager must not need this line touched.
+
+The sort is **stable** — a template that declares nothing keeps the position it
+had, so the progress screen stays predictable. A cycle is logged and the file
+order kept: it cannot be blamed on any single file, and refusing to boot over a
+relationship between two templates would be worse than the ordering bug it
+protects against.
+
 ## `uninstall`
 
 What to undo when a **peer** this service wired itself to is removed.

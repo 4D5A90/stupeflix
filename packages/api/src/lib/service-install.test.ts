@@ -86,31 +86,3 @@ describe("runServiceInstall on failure", () => {
 		expect(db.get("setup.global")).toBe("failed");
 	});
 });
-
-/**
- * "Did this service exist before this operation?" is what decides whether a
- * failure should undo the install. The flag used to be written by
- * `routes/install.ts` before the installer read it, so the answer was always
- * yes — and a failed first install left the service marked installed, showing on
- * the dashboard as exited and no longer offered under "Add service".
- */
-describe("runServiceInstall on failure", () => {
-	const failing = () => {
-		vi.mocked(runCompose).mockRejectedValue(new Error("docker is not there"));
-		return getTemplate("eta") as ServiceTemplate;
-	};
-
-	it("undoes a first install that never completed", async () => {
-		const db = configuredDb();
-		await runServiceInstall(db, failing());
-		expect(db.get("services.eta.enabled")).toBe(false);
-		expect(db.get("setup.global")).toBe("failed");
-	});
-
-	it("leaves a service the user already had installed", async () => {
-		const db = configuredDb({ "services.eta.enabled": true });
-		await runServiceInstall(db, failing());
-		expect(db.get("services.eta.enabled")).toBe(true);
-		expect(db.get("setup.global")).toBe("failed");
-	});
-});

@@ -74,6 +74,11 @@ Each template defines:
 - `notes`: manual steps or quirks, shown inline in the wizard and on the
   install/reconfigure screen — where the user is configuring, not on the
   dashboard card. Plain text, rendered as-is, no markdown
+- `after`: categories whose members are set up before this one. Without it the
+  order is `readdirSync`'s — the alphabetical order of the *file names*, which no
+  template declares and every template depended on. The sort is stable, and a
+  cycle is logged with the file order kept rather than dropping a file nobody can
+  be blamed for
 - `requires` / `recommends`: what this service needs, declared as a **category**
   and never as a service name. `requires` blocks — the wizard refuses to advance
   and `POST /install/:name` answers 409; `recommends` only warns, because Sonarr
@@ -328,8 +333,8 @@ nobody provides blocks the wizard on a box the user cannot tick, and an unknown
 
 There is no test for the docker-facing paths (`compose up`, `rm --remove-orphans`,
 live service APIs) — which now includes reconfiguring and removing a service.
-Changes there need a real run: see the isolated recipe in the README, and never
-against a live stack. That recipe works, and it is worth the trouble: it is what
+Changes there need a real run: see the isolated recipe in `docs/testing.md`, and
+never against a live stack. That recipe works, and it is worth the trouble: it is what
 caught `priority` being a top-level field of Sonarr's download client rather than
 one of its `fields[]`, which no amount of reading the API docs had revealed.
 

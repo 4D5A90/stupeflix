@@ -534,3 +534,85 @@ describe("runSetupStep: useToken", () => {
 		expect(headers().Authorization).toBeUndefined();
 	});
 });
+
+/**
+ * Without it the install order is `readdirSync`'s — the alphabetical order of
+ * the file names, which no template declares and every template depended on.
+ */
+describe("sortByDependencies", () => {
+	// Spread from a real fixture rather than cast from a literal: a literal whose
+	// optional is explicitly `undefined` overlaps nothing, and the rest stays a
+	// template the loader actually validated.
+	const tpl = (
+		id: string,
+		category: string,
+		after?: { category: string }[],
+	): ServiceTemplate => ({
+		...template("alpha"),
+		id,
+		name: id,
+		category,
+		container: id,
+		setup: [],
+		after,
+	});
+
+	it("leaves a list that declares nothing exactly as it was", () => {
+		const list = [tpl("a", "indexer"), tpl("b", "mediaServer")];
+		expect(sortByDependencies(list).map((t) => t.id)).toEqual(["a", "b"]);
+	});
+
+	it("moves a template after the category it waits on", () => {
+		const list = [
+			tpl("seerr", "requests", [{ category: "mediaManager" }]),
+			tpl("sonarr", "mediaManager"),
+		];
+		expect(sortByDependencies(list).map((t) => t.id)).toEqual([
+			"sonarr",
+			"seerr",
+		]);
+	});
+
+	// A category, never a service: adding a second media manager must not need
+	// the `after:` line touched.
+	it("waits on every member of the category, not the first", () => {
+		const list = [
+			tpl("seerr", "requests", [{ category: "mediaManager" }]),
+			tpl("sonarr", "mediaManager"),
+			tpl("radarr", "mediaManager"),
+		];
+		expect(sortByDependencies(list).map((t) => t.id)).toEqual([
+			"sonarr",
+			"radarr",
+			"seerr",
+		]);
+	});
+
+	it("is stable: a template with no reason to move does not move", () => {
+		const list = [
+			tpl("zeta", "seeder"),
+			tpl("seerr", "requests", [{ category: "mediaManager" }]),
+			tpl("alpha", "vpn"),
+			tpl("sonarr", "mediaManager"),
+		];
+		expect(sortByDependencies(list).map((t) => t.id)).toEqual([
+			"zeta",
+			"alpha",
+			"sonarr",
+			"seerr",
+		]);
+	});
+
+	/**
+	 * A cycle cannot be blamed on any single file, so nothing is dropped. Refusing
+	 * to boot over a relationship between two templates would be worse than the
+	 * ordering bug it protects against.
+	 */
+	it("keeps the original order when templates wait on each other", () => {
+		const list = [
+			tpl("a", "indexer", [{ category: "mediaServer" }]),
+			tpl("b", "mediaServer", [{ category: "indexer" }]),
+		];
+		expect(sortByDependencies(list).map((t) => t.id)).toEqual(["a", "b"]);
+	});
+});

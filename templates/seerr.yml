@@ -7,9 +7,15 @@ container: seerr
 port: 5055
 
 notes:
-  - Install Sonarr and Radarr before Seerr. Added afterwards, they are picked up
-    only when you reconfigure Seerr.
   - With Plex and no Jellyfin, finish the setup in Seerr's own wizard.
+
+# Seerr writes a Sonarr entry pointing at a root folder Sonarr creates during its
+# own setup, so the order is not a preference. It used to be a `notes:` asking
+# the user to install them in the right order by hand — the file name was doing
+# the work, and `seerr.yml` sorts before `sonarr.yml`.
+after:
+  - category: mediaServer
+  - category: mediaManager
 
 # Blocking, and not a matter of taste: Seerr's first account can only be created
 # by signing in against a media server, so without one it cannot be set up at
