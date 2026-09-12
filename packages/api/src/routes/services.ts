@@ -3,6 +3,7 @@ import type { Db } from "../db.js";
 import { containerHealth, containerStatus } from "../lib/container-status.js";
 import { credentialProblems } from "../lib/credential-rules.js";
 import { runComposeSync } from "../lib/docker-cli.js";
+import { hasLeftoverConfig } from "../lib/helpers.js";
 import { ownershipConflict } from "../lib/instance.js";
 import { checkRequirements } from "../lib/requirements.js";
 import { readServiceInfo } from "../lib/service-info.js";
@@ -75,6 +76,11 @@ export function servicesRoutes(db: Db) {
 				// A second axis, not a status: a container with no `healthcheck:`
 				// has no health to report, and that is not being unhealthy.
 				health: containerHealth(tpl.container),
+				// Whether a removal left config behind, so the install screen can ask
+				// what to do with it instead of guessing. Two `existsSync` calls per
+				// service, which is what the answer costs to be true right now
+				// rather than cached and wrong.
+				leftovers: hasLeftoverConfig(db, tpl),
 				// Blocking needs only. `recommends` warns during setup, but a
 				// service that merely runs badly is not what this badge is for.
 				unmet: missing

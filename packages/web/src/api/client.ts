@@ -137,6 +137,12 @@ export interface ServiceInfo {
 	 * broken, it is simply not installed.
 	 */
 	unmet: UnmetRequirement[];
+	/**
+	 * A removal keeps the service's own settings on disk, so installing it again
+	 * finds a service that is already configured. True when there is something
+	 * there, which is the only case where asking what to do with it makes sense.
+	 */
+	leftovers: boolean;
 	/** Absent for a headless service, which then gets no Open link. */
 	port?: number;
 	webUiPath?: string;
@@ -238,10 +244,14 @@ export const api = {
 			method: "POST",
 		}),
 
-	installService: (name: string, credentials: Record<string, string>) =>
+	installService: (
+		name: string,
+		credentials: Record<string, string>,
+		reset = false,
+	) =>
 		request<{ success: boolean }>(`/install/${name}`, {
 			method: "POST",
-			body: JSON.stringify({ credentials }),
+			body: JSON.stringify({ credentials, reset }),
 		}),
 
 	health: () => request<{ status: string }>("/health"),
