@@ -399,3 +399,115 @@ describe("runTemplateSteps", () => {
 		expect(db.get("setup.status.alpha.never")).toBeNull();
 	});
 });
+
+/**
+ * A step held back by its `if:` never enters the status list, so the absence of
+ * a status *is* the record that it was passed over. That is what lets a later
+ * install pick it up with no extra bookkeeping.
+ */
+describe("pendingRuns", () => {
+	const guarded = (steps: SetupStepDef[]): ServiceTemplate =>
+		({
+			id: "alpha",
+			name: "Alpha",
+			category: "indexer",
+			container: "alpha",
+			setup: steps,
+		}) as ServiceTemplate;
+
+	const peerStep: SetupStepDef = {
+		name: "register",
+		label: "Register with the peer",
+		type: "api_call",
+		if: "{{services.beta.enabled}}",
+		url: "http://localhost:2222/apps",
+	};
+
+	it("holds nothing back while the condition is false", () => {
+		const db = configuredDb({ "services.beta.enabled": false });
+		expect(pendingRuns(db, guarded([peerStep]))).toHaveLength(0);
+	});
+
+	it("offers the step once the condition holds and nothing has run it", () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		const pending = pendingRuns(db, guarded([peerStep]));
+		expect(pending.map((p) => p.run.key)).toEqual(["alpha.register"]);
+	});
+
+	it("leaves a step that already has an outcome alone", () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		setStepStatus(db, "alpha.register", "completed");
+		expect(pendingRuns(db, guarded([peerStep]))).toHaveLength(0);
+	});
+
+	// Including a failure: replaying it would overwrite a red tick the user is
+	// looking at, and a retry is something they ask for.
+	it("leaves a failed step alone too", () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		setStepStatus(db, "alpha.register", "failed");
+		expect(pendingRuns(db, guarded([peerStep]))).toHaveLength(0);
+	});
+
+	/**
+	 * A container reads its config at boot, so writing one now would change a
+	 * file nobody rereads. Recreating the container is a reconfigure, and the
+	 * user has to ask for that.
+	 */
+	it("never offers a config_file step, whose container would not reread it", () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		const tpl = guarded([
+			{
+				name: "conf",
+				label: "Write config",
+				type: "config_file",
+				if: "{{services.beta.enabled}}",
+				file: "alpha/alpha.conf",
+				content: "x",
+			},
+		]);
+		expect(pendingRuns(db, tpl)).toHaveLength(0);
+	});
+});
+
+describe("replayPendingSteps", () => {
+	const tplWith = (id: string, steps: SetupStepDef[]): ServiceTemplate =>
+		({
+			id,
+			name: id,
+			category: "indexer",
+			container: id,
+			setup: steps,
+		}) as ServiceTemplate;
+
+	const failing: SetupStepDef = {
+		name: "register",
+		label: "Register",
+		// No `store:` block, so it reports an error without a network.
+		type: "store",
+		if: "{{services.beta.enabled}}",
+	};
+
+	// The template that just ran its own pipeline must not run it twice.
+	it("skips the template that triggered it", async () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		await replayPendingSteps(db, [tplWith("alpha", [failing])], "alpha");
+		expect(db.get("setup.status.alpha.register")).toBeNull();
+	});
+
+	/**
+	 * The install that triggered this already succeeded. One peer that will not
+	 * wire up is not a reason to report it as failed — and it must not hide the
+	 * peers that come after it either.
+	 */
+	it("records a failure, steps over it, and carries on to the next template", async () => {
+		const db = configuredDb({ "services.beta.enabled": true });
+		await expect(
+			replayPendingSteps(db, [
+				tplWith("alpha", [failing]),
+				tplWith("gamma", [failing]),
+			]),
+		).resolves.toBeUndefined();
+		expect(db.get("setup.status.alpha.register")).toBe("failed");
+		expect(db.get("setup.status.gamma.register")).toBe("failed");
+	});
+});

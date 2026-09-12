@@ -307,6 +307,25 @@ retries while the file is absent or does not match yet (`maxRetries`, default
       as: temp_pass
 ```
 
+## Steps that run later
+
+A step held back by its `if:` **never enters the status list**, and that absence
+is the record that it was passed over. So installing the peer it was waiting for
+picks it up: after any install, every other enabled template is offered the steps
+it has no outcome for.
+
+That is what makes `recommends:` usable in both directions — Sonarr installed
+before Prowlarr still ends up registered with it.
+
+Two limits worth knowing:
+
+- **`post_up` only.** A `config_file` step is read by its container at boot, so
+  writing one after the fact changes a file nobody rereads. Recreating the
+  container is a reconfigure, and the user has to ask for that.
+- **It repairs the missing, not the stale.** A replayed step whose `skipIf` probe
+  finds an out-of-date entry leaves it exactly as it is: the probe tests
+  existence, not content.
+
 ## `api_call` options
 
 | Option | Description |

@@ -6,7 +6,7 @@ import { log, error as logError } from "./logger.js";
 import { affectedServices, resolveNetworkTopology } from "./network.js";
 import { getEnabledTemplates } from "./service-registry.js";
 import type { ServiceTemplate } from "./service-registry.js";
-import { runTemplateSteps } from "./setup-runner.js";
+import { replayPendingSteps, runTemplateSteps } from "./setup-runner.js";
 
 interface InstallOptions {
 	/**
@@ -65,6 +65,12 @@ export async function runServiceInstall(
 			...all,
 		]);
 		await runTemplateSteps(db, tpl, "post_up");
+
+		// This install is what a peer's `if:` was waiting on: a step held back for
+		// want of this service now has its condition, and nothing else would ever
+		// go back for it. Skipping `tpl` is what keeps its own pipeline from
+		// running twice.
+		await replayPendingSteps(db, getEnabledTemplates(db), tpl.id);
 
 		db.set("setup.global", "completed");
 		db.set("setup.error", null);
