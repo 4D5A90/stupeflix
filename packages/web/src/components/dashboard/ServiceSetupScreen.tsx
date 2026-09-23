@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
 	type CredentialField,
 	type ServiceMeta,
+	categoryLabel,
 	credentialsReady,
 	generatePassword,
 	generatedLengthFor,
@@ -136,7 +137,7 @@ export function ServiceSetupScreen({
 									{svc.name}
 								</span>
 								<span className="block text-xs text-gray-500">
-									{CATEGORY_LABELS[svc.category] ?? svc.category}
+									{categoryLabel(svc.category, CATEGORY_LABELS)}
 								</span>
 							</span>
 						</button>

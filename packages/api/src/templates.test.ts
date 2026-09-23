@@ -140,7 +140,14 @@ describe("every template", () => {
 		}
 	});
 
-	it("uses a category the wizard can render", () => {
+	/**
+	 * Not because an unknown one breaks anything — a dropped-in template gets a
+	 * label derived from its id, `usenetClient` reading as "Usenet Client", the
+	 * same way a service with no glyph gets `_default.svg`. This is here to catch
+	 * `mediaServr` in something we ship, where a typo would quietly open a
+	 * category of one.
+	 */
+	it("uses a category this repo has decided on", () => {
 		for (const tpl of templates) {
 			expect(KNOWN_CATEGORIES, `${tpl.id}`).toContain(tpl.category);
 		}

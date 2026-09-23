@@ -140,9 +140,9 @@ export function PathsStep({
 	return (
 		<div className="space-y-6">
 			<div>
-				<h2 className="text-xl font-semibold mb-2">Storage Paths</h2>
+				<h2 className="text-xl font-semibold mb-2">General</h2>
 				<p className="text-gray-400 text-sm">
-					Configure the directories where your media stack will store data.
+					Storage paths, libraries, and the values every service shares.
 				</p>
 			</div>
 

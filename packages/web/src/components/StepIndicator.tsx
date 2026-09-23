@@ -5,7 +5,11 @@ interface StepIndicatorProps {
 }
 
 const STEPS: { id: StepId; label: string }[] = [
-	{ id: "paths", label: "Paths" },
+	// The step holds what is asked once and shared by every service — paths,
+	// libraries, the address. Not "whatever has no other home": a field earns its
+	// place here by being reused downstream, and the id stays `paths` on purpose,
+	// since it keys nothing the user reads.
+	{ id: "paths", label: "General" },
 	{ id: "services", label: "Services" },
 	{ id: "credentials", label: "Credentials" },
 	{ id: "progress", label: "Setup" },

@@ -22,7 +22,7 @@ green, and it appears in the wizard. No file under `packages/api/src` names a se
 id: myservice
 name: My Service
 description: What it does
-category: mediaServer
+category: mediaServer       # free-form; an unknown one gets a derived label
 defaultEnabled: false
 container: myservice        # compose service name, and the container_name below
 port: 8080                  # its web UI; omit it for a headless service
@@ -306,6 +306,22 @@ retries while the file is absent or does not match yet (`maxRetries`, default
       regex: "A temporary password is provided for this session: (\\S+)"
       as: temp_pass
 ```
+
+## Categories
+
+`category:` is free-form. One this app has never been told about does not break
+anything: its heading is derived from the id — `usenetClient` reads as "Usenet
+Client" — it sorts after the ones the wizard orders explicitly, and it takes the
+default icon. The same posture `ServiceIcon` takes towards a service with no
+glyph.
+
+That is what holds until someone decides the category matters. Giving it a
+label, an icon and a place in the order means editing the frontend, and that is
+deliberate: a new *service* in an existing category costs no code, a new *kind*
+of tool is a product decision.
+
+Templates shipped in this repo are held to the list in `templates.test.ts`, so a
+typo cannot quietly open a category of one.
 
 ## `after`
 

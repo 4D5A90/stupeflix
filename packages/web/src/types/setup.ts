@@ -64,6 +64,39 @@ export function isSingleSelect(category: string): boolean {
 	return SINGLE_SELECT_CATEGORIES.includes(category);
 }
 
+/**
+ * What to call a category this app has never been told about.
+ *
+ * A template may declare any category it likes, and a dropped-in one should read
+ * as a heading rather than as an identifier: `usenetClient` becomes "Usenet
+ * Client". The same posture `ServiceIcon` takes towards a service with no glyph —
+ * fall back to something presentable instead of refusing the file.
+ *
+ * Not a replacement for naming it properly. A category that matters gets a
+ * label, an icon and a place in the order, and those are editorial choices no
+ * derivation can make. This is what holds until someone makes them.
+ *
+ * The table stays the caller's: the wizard heads a section with "Media Server"
+ * where the dashboard has room for "Media" under a service name, and that
+ * difference is deliberate.
+ */
+export function categoryLabel(
+	id: string,
+	labels: Record<string, string>,
+): string {
+	return (
+		labels[id] ??
+		id
+			// camelCase, kebab-case and snake_case all become words
+			.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+			.replace(/[-_]+/g, " ")
+			.trim()
+			.split(/\s+/)
+			.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+			.join(" ")
+	);
+}
+
 export interface UnmetRequirement {
 	service: string;
 	category: string;

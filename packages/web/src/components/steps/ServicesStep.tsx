@@ -6,7 +6,11 @@ import type {
 	Stack,
 	UnmetRequirement,
 } from "../../types/setup";
-import { checkRequirements, isSingleSelect } from "../../types/setup";
+import {
+	categoryLabel,
+	checkRequirements,
+	isSingleSelect,
+} from "../../types/setup";
 import { Button } from "../ui/Button";
 import { CategoryIcon } from "../ui/CategoryIcon";
 
@@ -136,7 +140,7 @@ export function ServicesStep({
 
 	const categories = CATEGORY_ORDER.map((id) => ({
 		id,
-		label: CATEGORY_LABELS[id] ?? id,
+		label: categoryLabel(id, CATEGORY_LABELS),
 		services: registry.filter((svc) => svc.category === id),
 	}))
 		.concat(
@@ -145,7 +149,7 @@ export function ServicesStep({
 				.filter((id) => !CATEGORY_ORDER.includes(id))
 				.map((id) => ({
 					id,
-					label: CATEGORY_LABELS[id] ?? id,
+					label: categoryLabel(id, CATEGORY_LABELS),
 					services: registry.filter((svc) => svc.category === id),
 				})),
 		)
