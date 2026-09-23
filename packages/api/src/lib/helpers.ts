@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import type { Db } from "../db.js";
 import { debug, log, error as logError } from "./logger.js";
+import { mkdirOwned } from "./owned-dir.js";
 import { underRoot } from "./safe-path.js";
 import type { ServiceTemplate } from "./service-registry.js";
 import {
@@ -14,7 +15,7 @@ import { getLibraries } from "./template-vars.js";
 export function createMediaDirs(db: Db): void {
 	const mediaPath = db.get("paths.media") as string;
 	for (const lib of getLibraries(db)) {
-		mkdirSync(underRoot(mediaPath, lib.name), { recursive: true });
+		mkdirOwned(underRoot(mediaPath, lib.name));
 	}
 	log("Media directories created");
 }
@@ -24,7 +25,7 @@ export function createTemplateDirs(db: Db, tpl: ServiceTemplate): void {
 	const configPath = db.get("paths.config") as string;
 	if (!configPath) return;
 	for (const dir of tpl.dirs ?? []) {
-		mkdirSync(underRoot(configPath, dir), { recursive: true });
+		mkdirOwned(underRoot(configPath, dir));
 	}
 }
 
