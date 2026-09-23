@@ -114,13 +114,15 @@ setup:
     useToken: 'MediaBrowser Token="{{internal.token}}"'
     store: { from: body, path: Items.0.AccessToken, as: api_key }
 
+  # `Authorization: MediaBrowser Token=…`, never `X-Emby-Token`: Jellyfin 10.11
+  # turned the legacy headers off by default, and answers them 401.
   - name: scan_libraries
     label: Scan libraries
     type: api_call
     url: http://localhost:8096/Library/Refresh
     method: POST
     headers:
-      X-Emby-Token: "{{internal.api_key}}"
+      Authorization: 'MediaBrowser Token="{{internal.api_key}}"'
 
 actions:
   scan:
@@ -131,5 +133,5 @@ actions:
     url: http://localhost:8096/Library/Refresh
     method: POST
     headers:
-      X-Emby-Token: "{{internal.api_key}}"
+      Authorization: 'MediaBrowser Token="{{internal.api_key}}"'
     maxRetries: 0
