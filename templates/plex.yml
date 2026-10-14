@@ -124,10 +124,12 @@ setup:
 
   # Unconditional on purpose: a blank field writes a blank pref, which is Plex's
   # own default, so clearing the field on a reconfigure undoes it too.
+  # The UI calls it "LAN Networks"; the pref is LanNetworksBandwidth, and Plex
+  # answers 400 to a name it does not know.
   - name: lan_access
     label: Set LAN access
     type: api_call
-    url: http://localhost:32400/:/prefs?LanNetworks={{credentials.lan_networks}}&customConnections={{credentials.lan_url}}
+    url: http://localhost:32400/:/prefs?LanNetworksBandwidth={{credentials.lan_networks}}&customConnections={{credentials.lan_url}}
     method: PUT
     headers:
       X-Plex-Token: "{{internal.token}}"
