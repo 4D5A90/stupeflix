@@ -443,6 +443,22 @@ describe("every template", () => {
 	 * that peer joins a VPN it loses its own DNS name, and the reference breaks
 	 * without an error. `{{host.<id>}}` follows it wherever it ends up.
 	 */
+	/**
+	 * A media server names itself after its hostname, which Docker fills with
+	 * the container id — so the TV lists `02b9e31b7f4` until someone renames it,
+	 * and a new id after every recreate.
+	 */
+	it("gives a media server a hostname, so it has a name to announce", () => {
+		for (const tpl of templates) {
+			if (tpl.category !== "mediaServer") continue;
+			const primary = (tpl.compose[tpl.container] ?? {}) as Record<
+				string,
+				unknown
+			>;
+			expect(primary.hostname, `${tpl.id}`).toBeTruthy();
+		}
+	});
+
 	it("addresses a peer through {{host.x}}, never by its container name", () => {
 		const peers = new Map(templates.map((t) => [t.container, t.id]));
 		for (const tpl of templates) {

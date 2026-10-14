@@ -10,6 +10,8 @@ compose:
   jellyfin:
     image: linuxserver/jellyfin:latest
     container_name: jellyfin
+    # The name it announces to apps; Docker's default is the container id
+    hostname: stupeflix
     environment:
       - PUID={{env.PUID}}
       - PGID={{env.PGID}}
