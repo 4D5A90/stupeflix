@@ -78,6 +78,15 @@ setup:
           scanner: Plex%20Music
     url: http://localhost:32400/library/sections?name={{library.name}}&type={{library.content_type}}&agent={{library.agent}}&scanner={{library.scanner}}&language=en-US&location=/media/{{library.name}}
     method: POST
+    # claimed="1" narrows the startup window above but does not close it: the
+    # flag flips once the claim is registered, and the server goes on starting
+    # after that. On a slow host (a homelab VM) the first POST lands in it, and
+    # Plex refuses it either way — 403 while the owner token is unchecked, 400
+    # "the server is still starting up" after. A refused POST created nothing,
+    # so retrying cannot duplicate a section — 20 × 3 s. The price: a request
+    # that is really malformed (400) reports a minute late.
+    retryOn: [400, 403, 503]
+    maxRetries: 20
     # Plex has no "create if absent": posting a name that already exists answers
     # 201 and makes a second section, so a re-run would duplicate every library.
     # The probe is what keeps this step idempotent — there is no status to ignore.
