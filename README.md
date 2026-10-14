@@ -100,6 +100,17 @@ Open **http://localhost:3000** and go through four steps:
 A tile per library with its item count, a card per service with its status, readouts and
 action buttons. Services are added, reconfigured and removed from there, one at a time.
 
+### 4. Update it
+
+```bash
+git pull
+docker compose up -d --build   # plus the same --profile flags you started with
+```
+
+Only Stupeflix itself is rebuilt and recreated. Your services belong to another Compose
+project (`stupeflix`) and keep running; the database, access token and generated compose
+file live in the `stupeflix-data` volume and survive the new container.
+
 ### Configuration
 
 [`.env`](.env.example) covers the common cases; the rest are environment variables on
