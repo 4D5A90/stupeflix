@@ -34,6 +34,28 @@ credentials:
     type: text
     label: Claim Token (plex.tv/claim) — first setup only
     required: false
+  # Behind Docker's bridge Plex only calls its own 172.x subnet local, so a TV on
+  # the home network reads as remote and is asked for a Remote Watch Pass. Both
+  # are spliced into a query string, hence the patterns: a stray `&` would set
+  # whatever pref follows it.
+  - key: lan_networks
+    type: text
+    label: LAN Networks — so devices at home count as local
+    placeholder: 192.168.1.0/24
+    required: false
+    rules:
+      pattern: "^[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}(,[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2})*$"
+      message: One or more subnets, comma-separated, like 192.168.1.0/24
+  # Plex advertises the container's own address to plex.tv, which nothing on the
+  # LAN can reach; this is the one it should hand out instead.
+  - key: lan_url
+    type: text
+    label: Server URL on your LAN
+    placeholder: http://192.168.1.10:32400
+    required: false
+    rules:
+      pattern: "^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$"
+      message: A URL like http://192.168.1.10:32400
 
 setup:
   # /identity answers about a second after boot, but the server only learns which
@@ -99,6 +121,17 @@ setup:
       X-Plex-Client-Identifier: stupeflix
       X-Plex-Product: Stupeflix
       Accept: application/json
+
+  # Unconditional on purpose: a blank field writes a blank pref, which is Plex's
+  # own default, so clearing the field on a reconfigure undoes it too.
+  - name: lan_access
+    label: Set LAN access
+    type: api_call
+    url: http://localhost:32400/:/prefs?LanNetworks={{credentials.lan_networks}}&customConnections={{credentials.lan_url}}
+    method: PUT
+    headers:
+      X-Plex-Token: "{{internal.token}}"
+      X-Plex-Client-Identifier: stupeflix
 
   - name: scan_libraries
     label: Scan libraries
