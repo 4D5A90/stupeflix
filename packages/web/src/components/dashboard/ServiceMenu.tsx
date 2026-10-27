@@ -11,11 +11,14 @@ export function ServiceMenu({
 	name,
 	label,
 	onReconfigure,
+	onHelp,
 	onChanged,
 }: {
 	name: string;
 	label: string;
 	onReconfigure: () => void;
+	/** Shows the template's notes; absent when it has none. */
+	onHelp?: () => void;
 	onChanged: () => void;
 }) {
 	const [open, setOpen] = useState(false);
@@ -105,6 +108,32 @@ export function ServiceMenu({
 						<ActionIcon name="cog" className="h-4 w-4" />
 						Reconfigure
 					</button>
+
+					{onHelp ? (
+						<button
+							type="button"
+							onClick={() => {
+								setOpen(false);
+								onHelp();
+							}}
+							className={item}
+						>
+							<svg
+								aria-hidden="true"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth={2}
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								className="h-4 w-4"
+							>
+								<circle cx="12" cy="12" r="9" />
+								<path d="M12 11v5M12 8h.01" />
+							</svg>
+							Help
+						</button>
+					) : null}
 
 					<div className="my-1 border-t border-line" />
 

@@ -6,6 +6,7 @@ import type { CopyCredentials } from "../../hooks/useCopyCredentials";
 import type { ServiceActions } from "../../hooks/useServiceActions";
 import { ActionIcon } from "../ui/ActionIcon";
 import { Button, buttonClass } from "../ui/Button";
+import { Collapse } from "../ui/Collapse";
 import { ServiceIcon, serviceTint } from "../ui/ServiceIcon";
 import { ServiceInfoRow } from "./ServiceInfoRow";
 import { ServiceMenu } from "./ServiceMenu";
@@ -21,18 +22,23 @@ export function Billboard({
 	credentials,
 	actions,
 	copy,
+	notes,
 	onReconfigure,
 }: {
 	service: ServiceInfo;
 	credentials?: Credentials;
 	actions: ServiceActions;
 	copy: CopyCredentials;
+	/** The template's notes, behind Help in the ⋯ menu. */
+	notes: string[];
 	onReconfigure: () => void;
 }) {
 	const queryClient = useQueryClient();
 	const { ranAction, runningAction, runAction } = actions;
 	const { copied, copyPassword } = copy;
 	const [restarting, setRestarting] = useState(false);
+	// Keyed by service, so picking another row closes it without an effect
+	const [helpFor, setHelpFor] = useState<string | null>(null);
 
 	const label = service.label ?? service.name;
 	const flags = conditions(service);
@@ -181,9 +187,44 @@ export function Billboard({
 						name={service.name}
 						label={label}
 						onReconfigure={onReconfigure}
+						onHelp={
+							notes.length > 0 ? () => setHelpFor(service.name) : undefined
+						}
 						onChanged={refresh}
 					/>
 				</div>
+
+				{/* The template's notes, for once the service runs: how to connect
+				    to it, what it will not do by itself. Under the buttons rather
+				    than in a dialog, so Open and Credentials stay usable while you
+				    read. */}
+				<Collapse open={helpFor === service.name} className="pt-2">
+					<div className="relative rounded-lg bg-fg/[0.06] py-3.5 pl-4 pr-11 shadow-[inset_0_0_0_1px_rgb(var(--fg)/0.08)]">
+						<button
+							type="button"
+							aria-label="Close help"
+							onClick={() => setHelpFor(null)}
+							className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full text-muted transition-colors hover:bg-fg/10 hover:text-fg"
+						>
+							<svg
+								aria-hidden="true"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth={2}
+								strokeLinecap="round"
+								className="h-4 w-4"
+							>
+								<path d="M6 6l12 12M18 6L6 18" />
+							</svg>
+						</button>
+						<ul className="list-disc space-y-1.5 pl-[18px] text-sm leading-normal text-muted">
+							{notes.map((note) => (
+								<li key={note}>{note}</li>
+							))}
+						</ul>
+					</div>
+				</Collapse>
 			</div>
 		</section>
 	);

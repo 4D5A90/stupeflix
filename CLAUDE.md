@@ -84,8 +84,9 @@ Each template defines:
 - `generate`: secrets minted once and kept in `internal.<id>.<key>`
 - `dirs` / `reset.dirs`: directories to create before boot / wipe on reconfigure
 - `notes`: manual steps or quirks, shown inline in the wizard and on the
-  install/reconfigure screen — where the user is configuring, not on the
-  dashboard card. Plain text, rendered as-is, no markdown
+  install/reconfigure screen, and on the dashboard under the billboard's ⋯ →
+  Help, for the setup that is already done. Never on the card itself. Plain
+  text, rendered as-is, no markdown
 - `after`: categories whose members are set up before this one. Without it the
   order is `readdirSync`'s — the alphabetical order of the *file names*, which no
   template declares and every template depended on. The sort is stable, and a

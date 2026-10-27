@@ -162,7 +162,9 @@ lg:pb-16`).
 - Buttons: `Restart` (primary, only when exited), `Open` (solid with a play
   glyph, absent when there is no port or the service is down), the template's
   `actions:` (secondary), `Credentials` (secondary, key → check "Copied"), then
-  the ⋯ menu (restart / reconfigure / remove).
+  the ⋯ menu (restart / reconfigure / help / remove). Help, present only when
+  the template has `notes`, opens them in a `Collapse` panel under the buttons,
+  closed by its X or by picking another service.
 - Watermark: the service glyph at 20rem, tinted, `right-[20%]`, `top-6` so its
   tip stays clear of the browser's edge, opacity 10% (5% when exited). It shows
   from `lg` only, and is open at the bottom so the glass passes over it.

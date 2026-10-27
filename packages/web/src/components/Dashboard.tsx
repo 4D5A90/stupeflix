@@ -152,6 +152,9 @@ export function Dashboard({ onInstall, onSettings }: DashboardProps) {
 					credentials={credentials}
 					actions={actions}
 					copy={copy}
+					notes={
+						(registry ?? []).find((svc) => svc.id === current.name)?.notes ?? []
+					}
 					onReconfigure={() => setReconfiguring(current.name)}
 				/>
 			) : null}
