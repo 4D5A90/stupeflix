@@ -8,9 +8,14 @@ port: 6060
 webUiPath: /{{credentials.path}}/ui/
 
 notes:
-  - JOAL's UI caches the secret token in your browser, so after a reconfigure the
-    cached one is stale. Copy the new token with the key icon here and paste it
-    into JOAL's connection settings.
+  - To connect JOAL's UI, open "Change connection settings" and enter the server
+    address you reach this box at (e.g. localhost), port 6060, the UI Path below
+    as the path prefix (e.g. joalui), and the Secret Token, copied with the
+    dashboard's key (credentials) button.
+  - JOAL's UI caches those settings in your browser, so after a reconfigure, or
+    over an older JOAL install, the cached token is stale and JOAL answers
+    "Authentication token does not match the expected token". Enter the new
+    token again; if it still fails, clear localStorage for this address.
 
 compose:
   joal:
