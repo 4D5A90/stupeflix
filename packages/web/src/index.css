@@ -109,10 +109,11 @@ body {
 			),
 			linear-gradient(
 				to bottom,
-				rgb(var(--page) / 0.4),
-				rgb(var(--page) / 0.8) 160px
+				rgb(var(--page) / 0.15),
+				rgb(var(--page) / 0.6) 72px,
+				rgb(var(--page)) 140px
 			);
-		backdrop-filter: blur(6px) saturate(200%);
+		backdrop-filter: blur(3px) saturate(200%);
 		box-shadow: inset 0 1px 0 rgb(var(--fg) / 0.12), inset 0 0 0 1px
 			rgb(var(--fg) / 0.05), inset 0 18px 30px -18px rgb(var(--fg) / 0.12);
 	}

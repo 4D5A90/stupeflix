@@ -64,10 +64,10 @@ Service tiles: `hsl(<hue> var(--tile-s) var(--tile-l))`. Dark mode uses
 34% / 18% with the glyph at 70% / 64%, and light mode uses 45% / 92% with the
 glyph at 55% / 34%.
 
-### Dashboard grey ladder (measured on black)
+### Dashboard grey ladder (computed from the alphas)
 
-black stage → glass sheet ≈ `#0f0f0f` → resting card ≈ `#141414` → picked row
-≈ `#313131` (≈ `raised`) → secondary button ≈ `#4c4c4c`.
+black stage → glass sheet behind the cards `#141414` (`page`) → resting card
+≈ `#191919` → picked row ≈ `#353535` (≈ `raised`) → secondary button ≈ `#4c4c4c`.
 
 ## Type
 
@@ -162,17 +162,18 @@ lg:pb-16`).
   glyph, absent when there is no port or the service is down), the template's
   `actions:` (secondary), `Credentials` (secondary, key → check "Copied"), then
   the ⋯ menu (restart / reconfigure / remove).
-- Watermark: the service glyph at 22rem, tinted, `right-[20%]`, vertically
-  centred, opacity 10% (5% when exited). It shows from `lg` only, and is clipped
-  at the top but open at the bottom so the glass passes over it.
+- Watermark: the service glyph at 20rem, tinted, `right-[20%]`, `top-6` so its
+  tip stays clear of the browser's edge, opacity 10% (5% when exited). It shows
+  from `lg` only, and is open at the bottom so the glass passes over it.
 
-**Glass sheet**: the page below the billboard is one full-width `.glass-sheet`
-(absolute, `-z-10`, down to the screen's bottom past the Shell padding). From
+**Glass sheet**: the page below the billboard is one full-width, square-cornered
+`.glass-sheet` (absolute, `-z-10`, down to the screen's bottom past the Shell padding). From
 `lg` it overlaps the billboard's last 2.5rem (`lg:-mt-10`) with the glyph
 showing through.
-- Fill: `page` at 40% at the top to 80% by 160px, plus a light sheen (`fg` 7% →
+- Fill: `page` at 15% at the top, 60% by 72px, solid by 140px — clear where it
+  crosses the billboard, grey behind the cards — plus a light sheen (`fg` 7% →
   1.5% at 56px → 0 at 120px).
-- `backdrop-filter: blur(6px) saturate(200%)`.
+- `backdrop-filter: blur(3px) saturate(200%)`.
 - Rim: inset box-shadows (1px top line at `fg` 12%, 1px all round at 5%, a soft
   18px inner glow). It is light catching an edge, not a border.
 
@@ -206,7 +207,7 @@ the service that has it, and a failure under the row that failed.
 - A flat hairline where the page meets the billboard: it read as a seam.
 - A frosted pane over the billboard itself.
 - A grey ground behind the glass: it showed as a band through it.
-- A rounded or inset sheet instead of a full-width one.
+- A rounded or inset sheet instead of a square, full-width one.
 - Opaque grey library tiles next to glass rows. Use one material on the sheet.
 - Status word or category on the billboard, and numbered rows.
 - Poster rails (empty posters with only a logo), a profile gate (it hid the

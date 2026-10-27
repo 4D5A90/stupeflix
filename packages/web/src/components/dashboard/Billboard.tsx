@@ -73,7 +73,7 @@ export function Billboard({
 			className="relative flex items-end bg-stage lg:-mt-[72px] lg:pb-16 lg:pt-[72px]"
 		>
 			{/* A watermark, not a poster: the glyph faint, taller than the
-			    billboard and cropped at the top. Decoration only — it hides at
+			    billboard, its tip kept clear of the browser's top edge. Decoration only — it hides at
 			    phone width rather than sit under the text. The bottom is left
 			    open: the page's glass (Dashboard) slides over it and fades it,
 			    where a crop drew a line through the glass. The crop is its own
@@ -83,7 +83,7 @@ export function Billboard({
 				className="pointer-events-none absolute inset-0 hidden [clip-path:inset(0_0_-50%_0)] lg:block"
 			>
 				<div
-					className={`absolute right-[20%] top-1/2 h-[22rem] w-[22rem] -translate-y-1/2 ${down ? "opacity-5" : "opacity-10"}`}
+					className={`absolute right-[20%] top-6 h-[20rem] w-[20rem] ${down ? "opacity-5" : "opacity-10"}`}
 					style={{ color: serviceTint(service.name).color }}
 				>
 					<ServiceIcon id={service.name} size="fill" />
