@@ -122,4 +122,67 @@ body {
 		box-shadow: inset 0 1px 0 rgb(var(--fg) / 0.07), inset 0 0 0 1px
 			rgb(var(--fg) / 0.05);
 	}
+	/* A service card tinted by its own hue (`--h`; `--c: 0` for a full-colour
+	   logo, which takes none), and the tint follows the state only where it
+	   is bad news: one tint while the container is up, dulled when exited, a
+	   ghost when missing. The glow arrives slowly on purpose — a click that flares at
+	   full strength read as a flash, not a selection. */
+	.tint-card {
+		--edge: inset 0 1px 0 rgb(var(--fg) / 0.08);
+		background: linear-gradient(
+				135deg,
+				hsl(var(--h) calc(30% * var(--c)) 14% / 0.65),
+				hsl(var(--h) calc(22% * var(--c)) 8% / 0.35) 70%
+			), rgb(var(--fg) / 0.02);
+		box-shadow: var(--edge), inset 0 0 0 1px rgb(var(--fg) / 0.05);
+		transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.9s
+			cubic-bezier(0.25, 0.1, 0.25, 1), opacity 0.4s ease;
+	}
+	.tint-card:hover {
+		transform: scale(1.03);
+		box-shadow: var(--edge), inset 0 0 0 1px
+			hsl(var(--h) calc(70% * var(--c)) 65% / 0.3), 0 0 20px -8px
+			hsl(var(--h) calc(70% * var(--c)) 50% / 0.35);
+	}
+	.tint-card[aria-pressed="true"] {
+		transform: scale(1.02);
+		box-shadow: var(--edge), inset 0 0 0 1px
+			hsl(var(--h) calc(70% * var(--c)) 65% / 0.6), 0 0 28px -6px
+			hsl(var(--h) calc(70% * var(--c)) 50% / 0.55);
+	}
+	.tint-card.is-off {
+		background: linear-gradient(
+				135deg,
+				hsl(var(--h) calc(8% * var(--c)) 15% / 0.8),
+				hsl(var(--h) calc(5% * var(--c)) 9% / 0.4) 70%
+			), rgb(var(--fg) / 0.02);
+	}
+	.tint-card.is-gone {
+		background: transparent;
+		opacity: 0.38;
+		filter: grayscale(1);
+		box-shadow: none;
+		outline: 1px dashed rgb(var(--fg) / 0.35);
+		outline-offset: -1px;
+	}
+	.tint-card.is-gone:hover,
+	.tint-card.is-gone[aria-pressed="true"] {
+		opacity: 0.6;
+	}
+	/* A dead service has no hue of its own to glow with. */
+	.tint-card.is-off:hover {
+		box-shadow: var(--edge), inset 0 0 0 1px rgb(var(--fg) / 0.16);
+	}
+	.tint-card.is-off[aria-pressed="true"] {
+		box-shadow: var(--edge), inset 0 0 0 1px rgb(var(--fg) / 0.35), 0 0 24px
+			-8px rgb(var(--fg) / 0.25);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.tint-card,
+		.tint-card:hover,
+		.tint-card[aria-pressed="true"] {
+			transform: none;
+			transition: none;
+		}
+	}
 }

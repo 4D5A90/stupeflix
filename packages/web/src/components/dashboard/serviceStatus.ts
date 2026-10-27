@@ -2,11 +2,12 @@ import type { ServiceInfo } from "../../api/client";
 
 export type Tone = "ok" | "warn" | "fail" | "faint";
 
-export const TONE_TEXT: Record<Tone, string> = {
-	ok: "text-ok",
-	warn: "text-warn",
-	fail: "text-fail",
-	faint: "text-faint",
+/** The badge's dot: the only place a row's state is coloured. */
+export const TONE_DOT: Record<Tone, string> = {
+	ok: "bg-ok",
+	warn: "bg-warn",
+	fail: "bg-fail",
+	faint: "bg-faint",
 };
 
 export interface StatusWord {

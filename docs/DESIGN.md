@@ -67,7 +67,8 @@ glyph at 55% / 34%.
 ### Dashboard grey ladder (computed from the alphas)
 
 black stage → glass sheet behind the cards `#141414` (`page`) → resting card
-≈ `#191919` → picked row ≈ `#353535` (≈ `raised`) → secondary button ≈ `#4c4c4c`.
+≈ `#191919` (library tile) → secondary button ≈ `#4c4c4c`. Service cards
+leave the ladder: their ground is their hue.
 
 ## Type
 
@@ -90,7 +91,7 @@ black stage → glass sheet behind the cards `#141414` (`page`) → resting card
 ## Shape
 
 - Use `rounded` (4px) for controls, fields and tiles. Use `rounded-lg` (8px) for
-  cards (Settings and wizard cards, service rows, library tiles). Use
+  cards (Settings and wizard cards, library tiles; service cards are 10px). Use
   `rounded-full` only for the switch, dots and the ⋯ button.
 - Light screens are flat: no shadows, no gradients. Depth comes from `page` →
   `card`.
@@ -155,7 +156,7 @@ install) and `Settings` (ghost sm, cog).
 **Billboard** (`dashboard/Billboard.tsx`): the selected service on
 `bg-stage`, starting under the bar from `lg` (`lg:-mt-[72px] lg:pt-[72px]
 lg:pb-16`).
-- Name only, with no status word and no category, since the picked row shows
+- Name only, with no status word and no category, since the picked card shows
   both. Below it are the `info:` readouts row (15px muted), then condition
   reasons in `warn`, then the buttons.
 - Buttons: `Restart` (primary, only when exited), `Open` (solid with a play
@@ -178,20 +179,35 @@ showing through.
   18px inner glow). It is light catching an edge, not a border.
 
 **Services** (`ServicesSection.tsx`): heading plus "N of M running" (`ok` when
-all are up, `warn` when some are, `faint` when none are). Rows sit in a grid
-(`minmax(340px,1fr)`). Each row is `.glass-card rounded-lg`: a 112×63 tinted
-tile with the glyph (35% opacity when exited), name and category, and one status
-word on the right (`rowStatus`). "Running" is green. A non-running state wins
-over the first condition. There are no row numbers. Hover is `bg-fg/[0.05]` and
-picked is `bg-fg/[0.14]`. Picking a row swaps the billboard.
+all are up, `warn` when some are, `faint` when none are). Cards sit in a grid
+(`minmax(250px,1fr)`, `gap-5`: the zoom needs the room). Each card is
+`.tint-card`, 104px high, `rounded-[10px]`: a 135° gradient in the service's
+hue (`serviceHue`, `--h`; `--c: 0` turns it grey for a full-colour logo), name
+(17px bold) and category at the top, the glyph as a 110px watermark cut by the
+bottom-right corner (22% opacity), and the status badge at the bottom
+(`rowStatus`): a glass pill (`bg-fg/[0.07]`, inset 1px rim) with white text,
+colour only in its 7px dot (`TONE_DOT`). Every badge is `w-[5.5rem]` whatever
+the word, content centred; "Incomplete" is the longest and fits. A non-running
+state wins over the first condition.
+
+The tint says the state only when it is bad news. Running and the warn states
+share one tint. **Exited** (`is-off`) dulls it to 8% saturation, the glyph to
+12% and desaturated, the text to muted. Only the red dot keeps its colour.
+**Missing** (`is-gone`) is a ghost: no fill, a dashed 1px outline,
+`grayscale(1)` at 38% opacity (60% on hover or picked).
+
+Hover zooms to 103% and draws a rim and halo in the card's own hue. Picked
+holds 102% with a stronger rim (60%) and a `0 0 28px -6px` halo. Exited and
+Missing glow white, having no hue worth showing. The glow fades in over 0.9s,
+the zoom over 0.35s. A glow at full strength on click reads as a flash.
+Reduced motion drops the zoom. Picking a card swaps the billboard.
 
 **Libraries** (`LibraryTiles.tsx`): `.glass-card rounded-lg` tiles, one per
 library (count at 22px) plus Disk (used of total, a 4px `track` bar filled with
 `accent`).
 
 `.glass-card`: `fg` at 2% with an inset 1px top line at 7% and 1px all round at
-5%. It is in the components layer so the row's hover and picked fills win over
-it.
+5%, in the components layer so utilities win over it.
 
 ## Configure screens (light, or night)
 

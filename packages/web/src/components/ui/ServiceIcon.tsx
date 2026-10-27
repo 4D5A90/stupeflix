@@ -107,14 +107,21 @@ const NEUTRAL_TILE = {
 	color: "inherit",
 };
 
+/** The service's hue, or `null` for a full-colour logo, which takes none. */
+export function serviceHue(id: string): number | null {
+	const svg = icons[id];
+	if (svg && !svg.includes("currentColor")) return null;
+	return (TINTS[id] ?? { hue: hueOf(id) }).hue;
+}
+
 export function serviceTint(id: string): {
 	backgroundColor: string;
 	color: string;
 } {
-	const svg = icons[id];
-	if (svg && !svg.includes("currentColor")) return NEUTRAL_TILE;
+	const hue = serviceHue(id);
+	if (hue === null) return NEUTRAL_TILE;
 
-	const tint = TINTS[id] ?? { hue: hueOf(id), tone: "bright" as const };
+	const tint = { hue, tone: TINTS[id]?.tone ?? "bright" };
 	// The glyph carries the hue; the square behind it only separates the tile
 	// from the card, so it stays well below the glyph's contrast. Saturation and
 	// lightness are the mode's (`index.css`): a dark ground under a light glyph

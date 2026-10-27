@@ -365,7 +365,7 @@ src/
 ├── components/
 │   ├── Wizard.tsx    # Main wizard container, left nav + one step
 │   ├── StepNav.tsx   # The wizard's step list — back to a past step, locked in a run
-│   ├── Dashboard.tsx # Billboard + service rows + libraries; add/reconfigure screens
+│   ├── Dashboard.tsx # Billboard + service cards + libraries; add/reconfigure screens
 │   ├── Settings.tsx  # Templates, Configuration, Access token (settings/)
 │   ├── dashboard/    # Billboard, ServicesSection, LibraryTiles, ServiceMenu…
 │   ├── steps/        # PathsStep, CredentialsStep, ServicesStep, ProgressStep,
