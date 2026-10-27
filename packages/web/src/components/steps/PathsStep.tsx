@@ -1,13 +1,34 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+	type Dispatch,
+	type SetStateAction,
+	useCallback,
+	useEffect,
+	useState,
+} from "react";
 import { api } from "../../api/client";
 import type { Library, SetupConfig } from "../../types/setup";
 import { Button } from "../ui/Button";
 import { fieldClass } from "../ui/Input";
 import { Switch } from "../ui/Toggle";
 
+/**
+ * What the user typed above the three paths. Not part of `SetupConfig` — the
+ * API never sees it, only the paths it fills in — but it is input all the same,
+ * so the wizard keeps it rather than this step: a step unmounts the moment the
+ * user moves on, and its own state goes with it.
+ */
+export interface BasePath {
+	enabled: boolean;
+	value: string;
+}
+
+export const INITIAL_BASE_PATH: BasePath = { enabled: true, value: "" };
+
 interface PathsStepProps {
 	config: SetupConfig;
 	onChange: (config: SetupConfig) => void;
+	base: BasePath;
+	onBaseChange: Dispatch<SetStateAction<BasePath>>;
 	onNext: () => void;
 	onCancel: () => void;
 }
@@ -21,11 +42,12 @@ export const LIBRARY_TYPES: { value: Library["type"]; label: string }[] = [
 export function PathsStep({
 	config,
 	onChange,
+	base,
+	onBaseChange,
 	onNext,
 	onCancel,
 }: PathsStepProps) {
-	const [useBasePath, setUseBasePath] = useState(true);
-	const [basePath, setBasePath] = useState("");
+	const { enabled: useBasePath, value: basePath } = base;
 	const [mountedRoot, setMountedRoot] = useState("");
 
 	const updatePath = (key: keyof SetupConfig["paths"], value: string) => {
@@ -36,7 +58,7 @@ export function PathsStep({
 	};
 
 	const updateBasePath = (value: string) => {
-		setBasePath(value);
+		onBaseChange((current) => ({ ...current, value }));
 		const base = value.replace(/\/+$/, "");
 		if (base) {
 			onChange({
@@ -56,7 +78,7 @@ export function PathsStep({
 	};
 
 	const toggleBasePath = (checked: boolean) => {
-		setUseBasePath(checked);
+		onBaseChange((current) => ({ ...current, enabled: checked }));
 		if (checked && basePath) {
 			updateBasePath(basePath);
 		}
@@ -73,7 +95,9 @@ export function PathsStep({
 			.then((runtime) => {
 				if (cancelled || !runtime.root) return;
 				setMountedRoot(runtime.root);
-				setBasePath((current) => current || runtime.root);
+				onBaseChange((current) =>
+					current.value ? current : { ...current, value: runtime.root },
+				);
 				onChange({
 					...config,
 					paths: config.paths.config

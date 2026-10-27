@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect } from "react";
 import { useStacks } from "../../hooks/useStacks";
 import type {
 	ServiceMeta,
@@ -18,6 +18,8 @@ interface ServicesStepProps {
 	registry: ServiceMeta[];
 	config: SetupConfig;
 	onChange: (config: SetupConfig) => void;
+	choice: ServicesChoice;
+	onChoiceChange: (choice: ServicesChoice) => void;
 	onNext: () => void;
 	onBack: () => void;
 }
@@ -57,17 +59,33 @@ const CATEGORY_ORDER = [
  */
 type Mode = "fork" | "stack" | "manual";
 
+/**
+ * Which way the user went, kept by the wizard and not by this step: the ticks
+ * live in `config`, but without this the step remounts on the fork and hides
+ * them behind a choice the user already made.
+ */
+export interface ServicesChoice {
+	mode: Mode;
+	stackId: string | null;
+}
+
+export const INITIAL_SERVICES_CHOICE: ServicesChoice = {
+	mode: "fork",
+	stackId: null,
+};
+
 export function ServicesStep({
 	registry,
 	config,
 	onChange,
+	choice,
+	onChoiceChange,
 	onNext,
 	onBack,
 }: ServicesStepProps) {
 	const { data: stacks } = useStacks();
 	const available = stacks ?? [];
-	const [mode, setMode] = useState<Mode>("fork");
-	const [stackId, setStackId] = useState<string | null>(null);
+	const { mode, stackId } = choice;
 
 	// Derived rather than synced: with nothing to choose from there is no fork
 	// to draw, and no state to keep in step with a list that arrives late.
@@ -123,16 +141,14 @@ export function ServicesStep({
 	// A radio: picking the chosen stack again is not a change, so there is no
 	// toggling off to handle — leaving a stack is picking something else.
 	const pickStack = (stack: Stack) => {
-		setStackId(stack.id);
-		setMode("stack");
+		onChoiceChange({ mode: "stack", stackId: stack.id });
 		select(stack.services);
 	};
 
 	// The stack's services stay ticked: going one by one from a stack is
 	// adjusting it, not starting over.
 	const pickManual = () => {
-		setStackId(null);
-		setMode("manual");
+		onChoiceChange({ mode: "manual", stackId: null });
 	};
 
 	const categories = CATEGORY_ORDER.map((id) => ({

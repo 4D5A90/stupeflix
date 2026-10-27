@@ -9,9 +9,13 @@ import {
 } from "../types/setup";
 import { StepNav } from "./StepNav";
 import { CredentialsStep } from "./steps/CredentialsStep";
-import { PathsStep } from "./steps/PathsStep";
+import { type BasePath, INITIAL_BASE_PATH, PathsStep } from "./steps/PathsStep";
 import { ProgressStep, type SetupPhase } from "./steps/ProgressStep";
-import { ServicesStep } from "./steps/ServicesStep";
+import {
+	INITIAL_SERVICES_CHOICE,
+	type ServicesChoice,
+	ServicesStep,
+} from "./steps/ServicesStep";
 import { NavLayout } from "./ui/NavLayout";
 import { Shell, Spinner } from "./ui/Shell";
 
@@ -40,6 +44,11 @@ export function Wizard({ onComplete }: WizardProps) {
 		[registry],
 	);
 	const [config, setConfig] = useState<SetupConfig | null>(null);
+	// Input that is not configuration, held here for the same reason `config`
+	// is: only one step is mounted at a time, so a step's own state is gone by
+	// the time the user comes back to it.
+	const [base, setBase] = useState<BasePath>(INITIAL_BASE_PATH);
+	const [choice, setChoice] = useState<ServicesChoice>(INITIAL_SERVICES_CHOICE);
 
 	const activeConfig = config ?? defaultConfig;
 
@@ -71,6 +80,8 @@ export function Wizard({ onComplete }: WizardProps) {
 	const handleRestart = useCallback(() => {
 		setStep("paths");
 		setConfig(null);
+		setBase(INITIAL_BASE_PATH);
+		setChoice(INITIAL_SERVICES_CHOICE);
 		setPhase("review");
 	}, []);
 
@@ -101,6 +112,8 @@ export function Wizard({ onComplete }: WizardProps) {
 					<PathsStep
 						config={activeConfig}
 						onChange={setConfig}
+						base={base}
+						onBaseChange={setBase}
 						onNext={goToServices}
 						onCancel={goToHome}
 					/>
@@ -111,6 +124,8 @@ export function Wizard({ onComplete }: WizardProps) {
 						registry={registry}
 						config={activeConfig}
 						onChange={setConfig}
+						choice={choice}
+						onChoiceChange={setChoice}
 						onNext={goToCredentials}
 						onBack={goToPaths}
 					/>
