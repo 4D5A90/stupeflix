@@ -30,7 +30,7 @@
 	--muted: 179 179 179;
 	--faint: 128 128 128;
 	--track: 95 95 95;
-	--field: 128 128 128;
+	--field: 70 70 70; /* a hairline: hover and focus carry the edge */
 	--ok: 70 211 105;
 	--warn: 227 166 74;
 	--fail: 246 67 79;
