@@ -73,8 +73,10 @@ Each template defines:
   des choix éditoriaux qu'aucune dérivation ne fait à ta place. Adapter le produit
   quand un nouveau *type* d'outil entre fait partie du produit — les catégories
   déclaratives ont été écartées pour ça. Les libellés sont **volontairement en
-  double** (`steps/ServicesStep.tsx` titre une section « Media Server »,
-  `dashboard/categories.ts` a la place pour « Media » sous un nom de service)
+  double** (`steps/ServicesStep.tsx` titre une section du wizard,
+  `dashboard/categories.ts` nomme la catégorie sous un service — dashboard,
+  Settings, écran d'ajout ; les deux disent aujourd'hui « Media Server », rien ne
+  les oblige à le rester)
 - `port`: where its web UI answers. **Optional** — a headless service (a VPN
   tunnel exposes a control API, not a UI) omits it, and the dashboard shows no
   Open link rather than a dead one
@@ -361,12 +363,14 @@ src/
 ├── api/client.ts     # API client
 ├── hooks/            # React Query hooks
 ├── components/
-│   ├── Wizard.tsx    # Main wizard container
-│   ├── Dashboard.tsx # Library tiles, service cards, add/reconfigure screens
-│   ├── StepIndicator.tsx
+│   ├── Wizard.tsx    # Main wizard container, left nav + one step
+│   ├── StepNav.tsx   # The wizard's step list — back to a past step, locked in a run
+│   ├── Dashboard.tsx # Billboard + service rows + libraries; add/reconfigure screens
+│   ├── Settings.tsx  # Templates, Configuration, Access token (settings/)
+│   ├── dashboard/    # Billboard, ServicesSection, LibraryTiles, ServiceMenu…
 │   ├── steps/        # PathsStep, CredentialsStep, ServicesStep, ProgressStep,
 │   │             #   StepMatrix, SetupPreflight
-│   └── ui/           # Button, Input, Select, Toggle, StatusBadge, ActionIcon
+│   └── ui/           # Shell, NavLayout, Button, Input, Select, Toggle…
 └── types/setup.ts    # TypeScript interfaces
 ```
 
@@ -414,13 +418,29 @@ so everything path- or host-related goes through `lib/env.ts`:
 ## UI Conventions
 
 - All user-facing text must be in English
-- UI components: Button, Input, Select, Toggle, StatusBadge, RadioGroup,
-  Accordion, ActionIcon, ServiceIcon (`packages/web/src/components/ui/`)
-- **Colours come from `tailwind.config.js`, never Tailwind's stock greys.**
-  `brand` is the logo's neon rose; `ink` is three grounds — `950` page, `900`
-  panel, `800` card, `700` icon tile. Edges are white-alpha hairlines
-  (`border-white/[0.07]`, `/[0.12]`), not solid greys: a grey line on a dark
-  ground muddies everything.
+- UI components: Shell (top bar + mode), NavLayout, Button, Input, Select,
+  Toggle/Switch, StatusBadge, RadioGroup, Collapse, ActionIcon, ServiceIcon
+  (`packages/web/src/components/ui/`). Extend them with a variant —
+  `Button` primary / secondary / solid / outline / ghost and sm / md / lg,
+  `Input` `error` / `mono`, `fieldClass()` for a hand-laid field, `ServiceIcon`
+  `size` — rather than copying their classes.
+- **Colours are semantic tokens, never a colour name.** The values live in
+  `src/index.css` as RGB channels, per mode; `tailwind.config.js` maps them
+  (`bg-page`, `bg-card`, `text-fg`, `text-muted`, `text-faint`, `border-line`,
+  `text-ok` / `warn` / `fail`, `bg-fail-bg`, `bg-accent`, `bg-stage`…). The
+  palette *replaces* Tailwind's, so a stock grey does not even generate. The
+  design system is `docs/DESIGN.md`.
+- **Two modes, never mixed on one screen**, set by `Shell mode=`: `dark` is the
+  dashboard, `light` everything you configure — Settings, the wizard, Unlock,
+  Add / Reconfigure, the install screen. A component names a role and the mode
+  decides what it is, so nothing in `ui/` branches on the mode. The black top
+  bar is the one shared thing, pinned to the dark tokens. A light screen can
+  be switched to night from the bar (`hooks/useNight.ts`, kept in this
+  browser): `Shell` then gives the whole screen the dark tokens, so the two
+  modes still never mix.
+- **The accent is the next step only** — Add service, Restart, Next, Start
+  Setup — and a fill under white text, never text. Its hover and pressed tones
+  derive from `--accent`, so switching it is one line of `index.css`.
 - Changing `tailwind.config.js` needs a dev-server restart — Vite does not pick it
   up hot, and `@apply` with a new token fails the PostCSS build until it does.
 - **Anything that opens or closes uses `ui/Collapse`.** It measures its content
@@ -443,7 +463,10 @@ so everything path- or host-related goes through `lib/env.ts`:
   variant** and give its root `fill="currentColor"`: Prowlarr's colour
   illustration weighed 11 kB and turned to mush at 20px, its mono mark is 3 kB
   and takes the tint.
-- **A service's glyph is a file, not code**: `web/src/assets/icons/<id>.svg`,
+  The tile is one formula, `hsl(<hue> var(--tile-s) var(--tile-l))`: the hue is
+  the service's, the mode supplies saturation and lightness — a dark ground
+  under a light glyph on the dashboard, the reverse on the light screens.
+- **A service's glyph is a file, not code**: `web/src/icons/<id>.svg`,
   found by filename. `ServiceIcon` globs the directory at build time, so adding a
   service is dropping its `.svg` beside the others and touching nothing else —
   the same invariant the API holds for `templates/`. Author it with
