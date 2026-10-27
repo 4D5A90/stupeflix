@@ -116,9 +116,22 @@ async function runSetup(db: Db) {
 		log("Setup complete!");
 	} catch (e) {
 		error("Setup failed", e);
-		db.set("setup.global", "failed");
-		db.set("setup.error", e instanceof Error ? e.message : String(e));
+		failRun(db, e);
 	}
+}
+
+/**
+ * Record a run that threw. A template step marks itself failed before throwing,
+ * but the runner's own steps do not — `docker compose up` failing left
+ * "Start containers" in progress, and a screen that reads the steps kept
+ * polling a run that had already ended.
+ */
+export function failRun(db: Db, e: unknown) {
+	for (const [step, status] of Object.entries(getStatus(db))) {
+		if (status === "in_progress") setStepStatus(db, step, "failed");
+	}
+	db.set("setup.global", "failed");
+	db.set("setup.error", e instanceof Error ? e.message : String(e));
 }
 
 /**
