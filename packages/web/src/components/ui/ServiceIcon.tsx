@@ -21,12 +21,28 @@ const icons: Record<string, string> = Object.fromEntries(
 	]),
 );
 
+/**
+ * 20px in a 36px tile, 34px in a service row's 16:9 tile, and `fill` for the
+ * billboard's key art, which sizes the box itself.
+ */
+const SIZES = {
+	sm: "h-5 w-5",
+	md: "h-[34px] w-[34px]",
+	fill: "h-full w-full",
+} as const;
+
 /** A service whose icon has not been drawn yet still gets a readable tile. */
-export function ServiceIcon({ id }: { id: string }) {
+export function ServiceIcon({
+	id,
+	size = "sm",
+}: {
+	id: string;
+	size?: keyof typeof SIZES;
+}) {
 	return (
 		<span
 			aria-hidden="true"
-			className="w-5 h-5 [&>svg]:w-full [&>svg]:h-full"
+			className={`block ${SIZES[size]} [&>svg]:h-full [&>svg]:w-full`}
 			// The markup is a build-time constant read from this repo's own assets
 			// directory: no runtime input reaches it, and inlining is what keeps
 			// the glyph on `currentColor` so the tile's tint applies.
@@ -87,7 +103,7 @@ function hueOf(id: string): number {
  * gets a neutral tile and speaks for itself.
  */
 const NEUTRAL_TILE = {
-	backgroundColor: "rgb(255 255 255 / 0.06)",
+	backgroundColor: "rgb(var(--fg) / 0.08)",
 	color: "inherit",
 };
 
@@ -100,14 +116,13 @@ export function serviceTint(id: string): {
 
 	const tint = TINTS[id] ?? { hue: hueOf(id), tone: "bright" as const };
 	// The glyph carries the hue; the square behind it only separates the tile
-	// from the card, so it stays well below the glyph's contrast.
-	return tint.tone === "deep"
-		? {
-				backgroundColor: `hsl(${tint.hue} 58% 46% / 0.22)`,
-				color: `hsl(${tint.hue} 56% 64%)`,
-			}
-		: {
-				backgroundColor: `hsl(${tint.hue} 70% 60% / 0.18)`,
-				color: `hsl(${tint.hue} 74% 72%)`,
-			};
+	// from the card, so it stays well below the glyph's contrast. Saturation and
+	// lightness are the mode's (`index.css`): a dark ground under a light glyph
+	// on the dashboard, the reverse in the light screens, from one formula.
+	// `tone` nudges the glyph only, away from the ground in either mode.
+	const step = tint.tone === "bright" ? "8%" : "0%";
+	return {
+		backgroundColor: `hsl(${tint.hue} var(--tile-s) var(--tile-l))`,
+		color: `hsl(${tint.hue} var(--glyph-s) calc(var(--glyph-l) + ${step} * var(--glyph-dir)))`,
+	};
 }

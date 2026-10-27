@@ -19,9 +19,7 @@ export function RadioGroup({
 }: RadioGroupProps) {
 	return (
 		<div className="space-y-2">
-			{label ? (
-				<span className="text-gray-300 font-medium">{label}</span>
-			) : null}
+			{label ? <span className="font-bold">{label}</span> : null}
 			<div className="grid grid-cols-1 gap-2">
 				{options.map((option) => {
 					const selected = option.value === value;
@@ -30,25 +28,23 @@ export function RadioGroup({
 							key={option.value}
 							type="button"
 							onClick={() => onChange(option.value)}
-							className={`flex items-center gap-3 px-4 py-3 rounded-md text-left transition-colors ${
-								selected
-									? "bg-brand-600/20 border border-brand-500"
-									: "bg-gray-700 border border-transparent hover:bg-gray-600"
+							className={`flex items-center gap-3 rounded-lg border-2 bg-card px-4 py-3 text-left transition-colors ${
+								selected ? "border-fg" : "border-transparent hover:border-line"
 							}`}
 						>
 							<div
 								className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-									selected ? "border-brand-500" : "border-gray-500"
+									selected ? "border-fg" : "border-faint"
 								}`}
 							>
 								{selected ? (
-									<div className="w-2 h-2 rounded-full bg-brand-500" />
+									<div className="w-2 h-2 rounded-full bg-fg" />
 								) : null}
 							</div>
 							<div>
-								<span className="text-gray-100">{option.label}</span>
+								<span className="font-bold">{option.label}</span>
 								{option.description ? (
-									<p className="text-gray-400 text-sm">{option.description}</p>
+									<p className="text-sm text-muted">{option.description}</p>
 								) : null}
 							</div>
 						</button>

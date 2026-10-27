@@ -1,4 +1,5 @@
 import type { SelectHTMLAttributes } from "react";
+import { fieldClass } from "./Input";
 
 export interface SelectOption {
 	value: string;
@@ -22,10 +23,10 @@ export function Select({
 	...props
 }: SelectProps) {
 	return (
-		<label className="block">
-			<span className="text-sm text-gray-400">{label}</span>
+		<label className="flex flex-col gap-1.5">
+			<span className="text-sm font-bold">{label}</span>
 			<select
-				className={`mt-1 block w-full px-3 py-2 bg-ink-950 border border-white/[0.12] rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent ${className}`}
+				className={`${fieldClass({ select: true })} ${className}`}
 				{...props}
 			>
 				{options.map((option) => (
