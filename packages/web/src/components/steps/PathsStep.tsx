@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { Library, SetupConfig } from "../../types/setup";
-import { Accordion } from "../ui/Accordion";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
+import { fieldClass } from "../ui/Input";
+import { Switch } from "../ui/Toggle";
 
 interface PathsStepProps {
 	config: SetupConfig;
@@ -12,7 +12,7 @@ interface PathsStepProps {
 	onCancel: () => void;
 }
 
-const LIBRARY_TYPES: { value: Library["type"]; label: string }[] = [
+export const LIBRARY_TYPES: { value: Library["type"]; label: string }[] = [
 	{ value: "movies", label: "Movies" },
 	{ value: "tvshows", label: "TV Shows" },
 	{ value: "music", label: "Music" },
@@ -137,170 +137,164 @@ export function PathsStep({
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [handleKeyDown]);
 
+	const paths: { key: keyof SetupConfig["paths"]; label: string }[] = [
+		{ key: "config", label: "Config Path" },
+		{ key: "media", label: "Media Path" },
+		{ key: "torrents", label: "Torrents Path" },
+	];
+
 	return (
-		<div className="space-y-6">
-			<div>
-				<h2 className="text-xl font-semibold mb-2">General</h2>
-				<p className="text-gray-400 text-sm">
+		<>
+			<div className="flex flex-col gap-1.5">
+				<h2 className="text-[32px] font-bold leading-tight">General</h2>
+				<p className="text-muted">
 					Storage paths, libraries, and the values every service shares.
 				</p>
 			</div>
 
-			<div className="space-y-3">
-				<div className="flex items-center gap-3">
-					<button
-						type="button"
-						role="switch"
-						aria-checked={useBasePath}
-						onClick={() => toggleBasePath(!useBasePath)}
-						className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-							useBasePath ? "bg-brand-600" : "bg-gray-700"
-						}`}
-					>
-						<span
-							className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-								useBasePath ? "translate-x-6" : "translate-x-1"
-							}`}
+			<section className="rounded-lg bg-card px-6 py-1">
+				<div className="flex flex-col gap-2 py-[18px]">
+					<div className={row}>
+						<span className={`${rowLabel} flex min-h-11 items-center gap-3`}>
+							<Switch
+								label="Base Path"
+								checked={useBasePath}
+								onChange={toggleBasePath}
+							/>
+							Base Path
+						</span>
+						<input
+							aria-label="Base Path"
+							placeholder={mountedRoot || "/path/to/stupeflix"}
+							value={basePath}
+							onChange={(e) => updateBasePath(e.target.value)}
+							disabled={!useBasePath}
+							className={`${fieldClass({ mono: true })} ${rowField}`}
 						/>
-					</button>
-					<span className="text-sm text-gray-300">Base Path</span>
+					</div>
+					{mountedRoot && (
+						<p className="text-[13px] leading-[1.45] text-muted md:ml-[184px]">
+							Running in Docker — paths must stay inside{" "}
+							<code className="font-mono text-xs">{mountedRoot}</code>, the
+							directory mounted from the host.
+						</p>
+					)}
 				</div>
-				<input
-					placeholder={mountedRoot || "/path/to/stupeflix"}
-					value={basePath}
-					onChange={(e) => updateBasePath(e.target.value)}
-					disabled={!useBasePath}
-					className="block w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent disabled:opacity-50"
-				/>
-				{mountedRoot && (
-					<p className="text-xs text-gray-500">
-						Running in Docker — paths must stay inside {mountedRoot}, the
-						directory mounted from the host.
-					</p>
-				)}
-			</div>
-
-			<div className="space-y-4">
-				<Input
-					label="Config Path"
-					placeholder="/path/to/config"
-					value={config.paths.config}
-					onChange={(e) => updatePath("config", e.target.value)}
-					disabled={useBasePath}
-				/>
-				<Input
-					label="Media Path"
-					placeholder="/path/to/media"
-					value={config.paths.media}
-					onChange={(e) => updatePath("media", e.target.value)}
-					disabled={useBasePath}
-				/>
-
-				<div className="ml-4 pl-4 border-l-2 border-gray-700">
-					<Accordion
-						label="Libraries"
-						summary={config.libraries.map((l) => l.name).join(", ")}
-						small
+				{paths.map((path) => (
+					<label
+						key={path.key}
+						className={`${row} border-t border-line py-3.5`}
 					>
-						<div className="space-y-1.5">
-							{config.libraries.map((lib, i) => (
-								// A library is identified only by its position, so removing a row
-								// renumbers every row under it and React reuses the wrong DOM node.
-								// Harmless today — both fields are controlled and a row holds no state
-								// of its own — but it silently misfires the moment one does.
-								// biome-ignore lint/suspicious/noArrayIndexKey: no stable id on a library yet
-								<div key={i} className="flex items-center gap-1.5">
-									<input
-										placeholder="Folder name"
-										value={lib.name}
-										onChange={(e) => updateLibrary(i, "name", e.target.value)}
-										className="flex-1 px-2 py-1 text-xs bg-gray-800 border border-gray-700 rounded text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-transparent"
-									/>
-									<select
-										value={lib.type}
-										onChange={(e) => updateLibrary(i, "type", e.target.value)}
-										className="px-1.5 py-1 text-xs bg-gray-800 border border-gray-700 rounded text-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
-									>
-										{LIBRARY_TYPES.map((t) => (
-											<option key={t.value} value={t.value}>
-												{t.label}
-											</option>
-										))}
-									</select>
-									<button
-										type="button"
-										onClick={() => removeLibrary(i)}
-										disabled={config.libraries.length <= 1}
-										className="p-1 text-gray-600 hover:text-red-400 transition-colors disabled:opacity-30 disabled:hover:text-gray-600"
-									>
-										<svg
-											aria-hidden="true"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth={2}
-											className="w-3 h-3"
-										>
-											<path
-												strokeLinecap="round"
-												strokeLinejoin="round"
-												d="M6 18L18 6M6 6l12 12"
-											/>
-										</svg>
-									</button>
-								</div>
-							))}
-							<button
-								type="button"
-								onClick={addLibrary}
-								className="flex items-center gap-1 text-xs text-gray-500 hover:text-brand-400 transition-colors"
-							>
-								<svg
-									aria-hidden="true"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth={2}
-									className="w-3 h-3"
-								>
-									<path
-										strokeLinecap="round"
-										strokeLinejoin="round"
-										d="M12 4v16m8-8H4"
-									/>
-								</svg>
-								Add
-							</button>
-						</div>
-					</Accordion>
+						<span className={rowLabel}>{path.label}</span>
+						<input
+							placeholder={`/path/to/${path.key}`}
+							value={config.paths[path.key]}
+							onChange={(e) => updatePath(path.key, e.target.value)}
+							disabled={useBasePath}
+							className={`${fieldClass({ mono: true })} ${rowField}`}
+						/>
+					</label>
+				))}
+			</section>
+
+			<section className="flex flex-col gap-2.5 rounded-lg bg-card px-6 py-[18px]">
+				<div className="flex flex-col gap-1">
+					<h3 className="text-lg font-bold">Libraries</h3>
+					<p className="text-sm text-muted">
+						One folder per library, created inside{" "}
+						{config.paths.media ? (
+							<code className="font-mono text-[13px] text-fg">
+								{config.paths.media}
+							</code>
+						) : (
+							"the Media Path"
+						)}
+						.
+					</p>
 				</div>
+				{config.libraries.map((lib, i) => (
+					// A library is identified only by its position, so removing a row
+					// renumbers every row under it and React reuses the wrong DOM node.
+					// Harmless today — both fields are controlled and a row holds no state
+					// of its own — but it silently misfires the moment one does.
+					// biome-ignore lint/suspicious/noArrayIndexKey: no stable id on a library yet
+					<div key={i} className="flex items-center gap-2">
+						<input
+							aria-label="Folder name"
+							placeholder="Folder name"
+							value={lib.name}
+							onChange={(e) => updateLibrary(i, "name", e.target.value)}
+							className={`${fieldClass({ mono: true })} flex-auto`}
+						/>
+						<select
+							aria-label="Library type"
+							value={lib.type}
+							onChange={(e) => updateLibrary(i, "type", e.target.value)}
+							className={`${fieldClass({ select: true })} flex-[0_0_140px]`}
+						>
+							{LIBRARY_TYPES.map((t) => (
+								<option key={t.value} value={t.value}>
+									{t.label}
+								</option>
+							))}
+						</select>
+						<button
+							type="button"
+							aria-label={`Remove ${lib.name || "library"}`}
+							onClick={() => removeLibrary(i)}
+							disabled={config.libraries.length <= 1}
+							className="grid h-11 w-11 flex-none place-items-center rounded text-muted transition-colors hover:text-fail disabled:opacity-30 disabled:hover:text-muted"
+						>
+							<svg
+								aria-hidden="true"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth={2.2}
+								strokeLinecap="round"
+								className="h-[18px] w-[18px]"
+							>
+								<path d="M6 6l12 12M18 6L6 18" />
+							</svg>
+						</button>
+					</div>
+				))}
+				<button
+					type="button"
+					onClick={addLibrary}
+					className="self-start py-2.5 text-[15px] font-bold text-link hover:text-link-hover"
+				>
+					+ Add
+				</button>
+			</section>
 
-				<Input
-					label="Torrents Path"
-					placeholder="/path/to/torrents"
-					value={config.paths.torrents}
-					onChange={(e) => updatePath("torrents", e.target.value)}
-					disabled={useBasePath}
-				/>
+			<section className="rounded-lg bg-card px-6 py-1">
+				<label className={`${row} py-[18px]`}>
+					<span className={rowLabel}>Admin Email (optional)</span>
+					<input
+						type="email"
+						autoComplete="email"
+						placeholder="admin@example.com"
+						value={config.email ?? ""}
+						onChange={(e) => onChange({ ...config, email: e.target.value })}
+						className={`${fieldClass()} ${rowField}`}
+					/>
+				</label>
+			</section>
 
-				<Input
-					label="Admin Email (optional)"
-					type="email"
-					autoComplete="email"
-					placeholder="admin@example.com"
-					value={config.email ?? ""}
-					onChange={(e) => onChange({ ...config, email: e.target.value })}
-				/>
-			</div>
-
-			<div className="flex justify-between">
-				<Button variant="secondary" onClick={onCancel}>
+			<div className="mt-2 flex justify-end gap-2">
+				<Button variant="outline" onClick={onCancel}>
 					Cancel
 				</Button>
 				<Button onClick={onNext} disabled={!isValid}>
 					Next
 				</Button>
 			</div>
-		</div>
+		</>
 	);
 }
+
+/** A label column and a field beside it, wrapping to one column on a phone. */
+const row = "flex flex-wrap items-center gap-x-6 gap-y-2";
+const rowLabel = "flex-[0_0_160px] font-bold";
+const rowField = "flex-[1_1_280px]";

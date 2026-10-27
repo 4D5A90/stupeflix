@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useStacks } from "../../hooks/useStacks";
 import type {
 	ServiceMeta,
@@ -12,7 +12,7 @@ import {
 	isSingleSelect,
 } from "../../types/setup";
 import { Button } from "../ui/Button";
-import { CategoryIcon } from "../ui/CategoryIcon";
+import { ServiceIcon, serviceTint } from "../ui/ServiceIcon";
 
 interface ServicesStepProps {
 	registry: ServiceMeta[];
@@ -50,9 +50,10 @@ const CATEGORY_ORDER = [
 ];
 
 /**
- * `fork` offers both paths, `stack` and `manual` each fold the other away. A
- * stack never mixes with a hand-built selection — that exclusivity is the whole
- * promise of the OR rule.
+ * `fork` is before any choice: the stacks are offered, nothing is ticked.
+ * `stack` and `manual` are the two answers to one radio group, so a stack never
+ * mixes with a hand-built selection — that exclusivity is the whole promise of
+ * the OR rule.
  */
 type Mode = "fork" | "stack" | "manual";
 
@@ -119,23 +120,19 @@ export function ServicesStep({
 		select([...freed, svc.id]);
 	};
 
+	// A radio: picking the chosen stack again is not a change, so there is no
+	// toggling off to handle — leaving a stack is picking something else.
 	const pickStack = (stack: Stack) => {
-		// Clicking the chosen one again releases it: never a one-way door
-		if (stackId === stack.id) {
-			setStackId(null);
-			setMode("fork");
-			select([]);
-			return;
-		}
 		setStackId(stack.id);
 		setMode("stack");
 		select(stack.services);
 	};
 
-	const goTo = (next: Mode) => {
-		setMode(next);
+	// The stack's services stay ticked: going one by one from a stack is
+	// adjusting it, not starting over.
+	const pickManual = () => {
 		setStackId(null);
-		select([]);
+		setMode("manual");
 	};
 
 	const categories = CATEGORY_ORDER.map((id) => ({
@@ -155,369 +152,218 @@ export function ServicesStep({
 		)
 		.filter((c) => c.services.length > 0);
 
+	const missingFor = (id: string) =>
+		report.missing.filter((m) => m.service === id);
+	const warningsFor = (id: string) =>
+		report.warnings.filter((m) => m.service === id);
+	const blockedCount = new Set(report.missing.map((m) => m.service)).size;
+
 	return (
-		<div className="space-y-6">
-			<div>
-				<h2 className="text-xl font-semibold mb-2">Services</h2>
-				<p className="text-sm text-gray-400">
-					{view === "manual"
+		<>
+			<div className="flex flex-col gap-1.5">
+				<h2 className="text-[32px] font-bold leading-tight">Services</h2>
+				<p className="text-muted">
+					{available.length === 0
 						? "Choose which services to use in your media stack."
 						: "Start from a stack, or choose services one by one."}
 				</p>
 			</div>
 
-			<Alerts missing={report.missing} warnings={report.warnings} />
+			{available.length > 0 ? (
+				<section
+					role="radiogroup"
+					aria-label="Start from a stack"
+					className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3"
+				>
+					{available.map((stack) => (
+						<StackCard
+							key={stack.id}
+							name={stack.name}
+							emoji={stack.emoji}
+							description={stack.description}
+							count={`${stack.services.length} services`}
+							picked={view === "stack" && stackId === stack.id}
+							onPick={() => pickStack(stack)}
+						>
+							{/* The list is only worth reading once a stack is in play. */}
+							{view === "stack" && stackId === stack.id ? (
+								<span className="text-[13px] leading-snug text-muted">
+									{stack.services
+										.map((id) => registry.find((s) => s.id === id)?.name ?? id)
+										.join(" · ")}
+								</span>
+							) : null}
+						</StackCard>
+					))}
+					<StackCard
+						name="Choose services one by one"
+						description="Choose which services to use in your media stack."
+						picked={view === "manual"}
+						onPick={pickManual}
+					/>
+				</section>
+			) : null}
 
 			{view === "manual" ? (
-				<div className="space-y-4">
-					{available.length > 0 ? (
-						<button
-							type="button"
-							onClick={() => goTo("fork")}
-							className="inline-flex items-center gap-2 rounded-lg border border-white/[0.07] bg-ink-800 py-1.5 pl-2.5 pr-3 text-xs text-gray-400 transition-colors hover:border-white/[0.12] hover:text-gray-200"
+				<div className="mt-1 grid grid-cols-[repeat(auto-fill,minmax(360px,1fr))] items-start gap-4">
+					{categories.map((cat) => (
+						<section
+							key={cat.id}
+							className="flex flex-col rounded-lg bg-card px-5 pb-0.5 pt-4"
 						>
-							<Arrow className="rotate-180" />
-							Start from a stack instead
-						</button>
-					) : null}
-
-					<div className="overflow-hidden rounded-xl border border-white/[0.07]">
-						{categories.map((cat) => (
-							<div
-								key={cat.id}
-								/* The rule is drawn once for the group: taken per row it would
-								   chop a category label that spans three services. */
-								className="relative before:absolute before:inset-y-0 before:left-[60px] before:w-px before:bg-white/[0.07] before:content-[''] md:before:left-[170px] [&+div]:border-t [&+div]:border-white/[0.07]"
-							>
-								{cat.services.map((svc, i) => (
+							<h3 className="mb-1 flex items-baseline gap-2.5 text-lg font-bold">
+								{cat.label}
+								{isSingleSelect(cat.id) ? (
+									<span className="text-sm font-normal text-muted">
+										One at most
+									</span>
+								) : null}
+							</h3>
+							<div>
+								{cat.services.map((svc) => (
 									<ServiceRow
 										key={svc.id}
 										service={svc}
-										category={cat}
-										first={i === 0}
 										enabled={isEnabled(svc.id)}
-										blocked={report.missing.some((m) => m.service === svc.id)}
+										missing={missingFor(svc.id)}
+										warnings={warningsFor(svc.id)}
 										onToggle={() => toggle(svc)}
 									/>
 								))}
 							</div>
-						))}
-					</div>
-
-					<Notes services={enabled} />
+						</section>
+					))}
 				</div>
-			) : (
-				<div className="space-y-5">
-					<StackCarousel
-						stacks={available}
-						registry={registry}
-						pickedId={stackId}
-						onPick={pickStack}
-					/>
+			) : null}
 
-					<div className="flex items-center gap-3.5">
-						<span className="h-px flex-1 bg-white/[0.07]" />
-						<span className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-gray-500">
-							or
-						</span>
-						<span className="h-px flex-1 bg-white/[0.07]" />
-					</div>
+			{view !== "fork" ? <Notes services={enabled} /> : null}
 
-					<button
-						type="button"
-						onClick={() => goTo("manual")}
-						className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-dashed border-white/[0.12] py-3.5 text-sm text-gray-400 transition-colors hover:border-brand-500 hover:bg-brand-600/5 hover:text-gray-200"
-					>
-						Choose services one by one
-						<Arrow />
-					</button>
-				</div>
-			)}
-
-			<div className="flex items-center justify-between">
-				<Button variant="secondary" onClick={onBack}>
+			<div className="mt-2 flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+				<span className="mr-auto font-mono text-sm text-muted">
+					{enabled.length} selected
+				</span>
+				{/* The row says what is wrong; this only says that something is, next
+				    to the button it disables. */}
+				<span aria-live="polite" className="text-sm font-bold text-fail">
+					{blockedCount > 0
+						? `${blockedCount} ${blockedCount > 1 ? "services are" : "service is"} missing something`
+						: ""}
+				</span>
+				<Button variant="outline" onClick={onBack}>
 					Back
 				</Button>
-				<div className="flex items-center gap-3.5">
-					<span className="font-mono text-xs text-gray-500">
-						{enabled.length} selected
-					</span>
-					{/* Still "Next": the alert above says what is wrong, and a button
-					    that renames itself explains a state it does not own. Disabled
-					    is already the whole message. */}
-					<Button onClick={onNext} disabled={stalled}>
-						Next
-					</Button>
-				</div>
+				{/* Still "Next": a button that renames itself explains a state it
+				    does not own. Disabled is already the whole message. */}
+				<Button onClick={onNext} disabled={stalled}>
+					Next
+				</Button>
 			</div>
-		</div>
+		</>
 	);
 }
 
 function ServiceRow({
 	service,
-	category,
-	first,
 	enabled,
-	blocked,
+	missing,
+	warnings,
 	onToggle,
 }: {
 	service: ServiceMeta;
-	category: { id: string; label: string };
-	first: boolean;
 	enabled: boolean;
-	blocked: boolean;
+	/** What it requires and does not have — only ever set in the manual view. */
+	missing: UnmetRequirement[];
+	warnings: UnmetRequirement[];
 	onToggle: () => void;
 }) {
 	return (
-		<button
-			type="button"
-			onClick={onToggle}
-			/* The tint covers the whole row, category column included — stopping at
-			   the gutter leaves a step. The rule between rows starts at the gutter,
-			   for the reason above. Hence a pseudo-element, not a border. */
-			className={`relative grid w-full grid-cols-[40px_minmax(0,1fr)_36px] items-center gap-3 px-3.5 py-1.5 text-left transition-colors md:grid-cols-[150px_122px_minmax(0,1fr)_36px] [&+button]:before:absolute [&+button]:before:left-[60px] [&+button]:before:right-0 [&+button]:before:top-0 [&+button]:before:h-px [&+button]:before:bg-white/[0.07] [&+button]:before:content-[''] md:[&+button]:before:left-[170px] ${
-				enabled ? "bg-brand-600/[0.09]" : "hover:bg-white/[0.035]"
-			} ${blocked ? "shadow-[inset_2px_0_0_theme(colors.brand.700)]" : ""}`}
-		>
-			<span className="flex min-w-0 items-center gap-2.5 text-[11px] font-semibold uppercase leading-tight tracking-[0.07em] text-gray-500">
+		<div className="flex flex-col gap-2 border-t border-line py-3.5 first:border-t-0">
+			<label className="flex cursor-pointer items-center gap-3.5">
 				<span
-					className={`grid h-6 w-6 shrink-0 place-items-center rounded-md bg-ink-700 text-brand-300 ${
-						first ? "" : "invisible"
-					}`}
+					className="grid h-9 w-9 flex-none place-items-center rounded"
+					style={serviceTint(service.id)}
 				>
-					<CategoryIcon category={category.id} className="h-3.5 w-3.5" />
+					<ServiceIcon id={service.id} />
 				</span>
-				<span className="hidden md:inline">{first ? category.label : ""}</span>
-			</span>
-
-			<span className="truncate pl-2 text-[13.5px] font-medium text-gray-100">
-				{service.name}
-			</span>
-
-			<span className="hidden truncate text-xs text-gray-500 md:block">
-				{service.description}
-			</span>
-
-			<Switch on={enabled} />
-		</button>
-	);
-}
-
-/**
- * Stacks scroll rather than wrap. A grid grew a row for every stack shipped,
- * pushing the manual path — the one most people end on — below the fold. The
- * track is a native scroller, so touch and trackpad already work; the arrows
- * exist for the mouse, and hide when there is nothing to scroll to.
- */
-function StackCarousel({
-	stacks,
-	registry,
-	pickedId,
-	onPick,
-}: {
-	stacks: Stack[];
-	registry: ServiceMeta[];
-	pickedId: string | null;
-	onPick: (stack: Stack) => void;
-}) {
-	const track = useRef<HTMLDivElement>(null);
-	const [atStart, setAtStart] = useState(true);
-	const [atEnd, setAtEnd] = useState(true);
-
-	const measure = useCallback(() => {
-		const el = track.current;
-		if (!el) return;
-		setAtStart(el.scrollLeft <= 1);
-		setAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
-	}, []);
-
-	// Also on resize: a window wide enough to show everything must drop the arrows.
-	useEffect(() => {
-		measure();
-		window.addEventListener("resize", measure);
-		return () => window.removeEventListener("resize", measure);
-	}, [measure]);
-
-	const page = (direction: -1 | 1) => {
-		const el = track.current;
-		if (!el) return;
-		el.scrollBy({ left: direction * el.clientWidth, behavior: "smooth" });
-	};
-
-	const hidden = atStart && atEnd;
-
-	return (
-		<div className="flex items-stretch gap-2">
-			<ScrollButton
-				direction="left"
-				hidden={hidden}
-				disabled={atStart}
-				onClick={() => page(-1)}
-			/>
-			<div
-				ref={track}
-				onScroll={measure}
-				className="flex flex-1 snap-x snap-mandatory items-stretch gap-2.5 overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-			>
-				{stacks.map((stack) => (
-					<StackCard
-						key={stack.id}
-						stack={stack}
-						registry={registry}
-						picked={pickedId === stack.id}
-						onPick={() => onPick(stack)}
-					/>
-				))}
-			</div>
-			<ScrollButton
-				direction="right"
-				hidden={hidden}
-				disabled={atEnd}
-				onClick={() => page(1)}
-			/>
+				<span className="flex min-w-0 flex-auto flex-col gap-0.5">
+					<strong>{service.name}</strong>
+					<span className="text-sm text-muted">{service.description}</span>
+				</span>
+				<input
+					type="checkbox"
+					checked={enabled}
+					onChange={onToggle}
+					className="h-[22px] w-[22px] flex-none accent-fg"
+				/>
+			</label>
+			{/* Under the row that has the problem, not in a banner above them all:
+			    a requirement belongs to its service. */}
+			{missing.map((u) => (
+				<p
+					key={u.category}
+					role="alert"
+					className="ml-[50px] rounded bg-fail-bg px-3.5 py-2.5 text-sm font-bold leading-[1.45] text-fail"
+				>
+					{u.reason}
+				</p>
+			))}
+			{warnings.map((u) => (
+				<p
+					key={u.category}
+					className="ml-[50px] text-sm leading-[1.45] text-warn"
+				>
+					<strong>Worth knowing</strong> — {u.reason}
+				</p>
+			))}
 		</div>
 	);
 }
 
-function ScrollButton({
-	direction,
-	hidden,
-	disabled,
-	onClick,
-}: {
-	direction: "left" | "right";
-	hidden: boolean;
-	disabled: boolean;
-	onClick: () => void;
-}) {
-	if (hidden) return null;
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			disabled={disabled}
-			aria-label={direction === "left" ? "Previous stacks" : "Next stacks"}
-			className="shrink-0 self-center rounded-lg border border-white/[0.07] bg-ink-800 p-1.5 text-gray-400 transition-colors hover:border-white/[0.12] hover:text-gray-200 disabled:pointer-events-none disabled:opacity-25"
-		>
-			<Arrow className={direction === "left" ? "rotate-180" : ""} />
-		</button>
-	);
-}
-
+/** A radio dressed as a card; the input stays the real control. */
 function StackCard({
-	stack,
-	registry,
+	name,
+	emoji,
+	description,
+	count,
 	picked,
 	onPick,
+	children,
 }: {
-	stack: Stack;
-	registry: ServiceMeta[];
+	name: string;
+	emoji?: string;
+	description: string;
+	count?: string;
 	picked: boolean;
 	onPick: () => void;
+	children?: ReactNode;
 }) {
 	return (
-		<button
-			type="button"
-			onClick={onPick}
-			aria-pressed={picked}
-			className={`relative flex w-full shrink-0 snap-start flex-col gap-2 rounded-xl border p-3.5 text-left transition-colors sm:w-[calc((100%-0.625rem)/2)] md:w-[calc((100%-1.25rem)/3)] ${
-				picked
-					? "border-brand-500 bg-brand-600/10"
-					: "border-white/[0.07] bg-ink-800 hover:border-white/[0.12]"
+		<label
+			className={`flex cursor-pointer flex-col gap-1.5 rounded-lg border-2 bg-card p-4 transition-colors ${
+				picked ? "border-fg" : "border-transparent hover:border-line"
 			}`}
 		>
-			{/* Out of the flow: holding its width while invisible would leave a
-			    hole before every unselected title. */}
-			<Check
-				className={`absolute right-3 top-3 h-3.5 w-3.5 text-brand-400 ${
-					picked ? "" : "invisible"
-				}`}
-			/>
-			<span className="flex items-baseline gap-1.5 pr-6 text-sm font-semibold text-gray-100">
-				{stack.emoji ? (
-					<span aria-hidden="true" className="text-base leading-none">
-						{stack.emoji}
+			<span className="flex items-center justify-between gap-2">
+				<input
+					type="radio"
+					name="stack"
+					checked={picked}
+					onChange={onPick}
+					className="m-0 h-5 w-5 accent-fg"
+				/>
+				{count ? <span className="text-[13px] text-muted">{count}</span> : null}
+			</span>
+			<strong className="flex items-baseline gap-1.5">
+				{emoji ? (
+					<span aria-hidden="true" className="leading-none">
+						{emoji}
 					</span>
 				) : null}
-				{stack.name}
-			</span>
-			<span className="line-clamp-2 flex-1 text-xs leading-relaxed text-gray-500">
-				{stack.description}
-			</span>
-			{/* The chip list is what made these cards tall, and it is only worth
-			    reading once a stack is in play. Folded it is a count; the click
-			    that selects is already the click that would expand, so there is no
-			    second control for it. */}
-			{picked ? (
-				<span className="flex flex-wrap gap-1">
-					{stack.services.map((id) => (
-						<span
-							key={id}
-							className="rounded bg-ink-700 px-1.5 py-0.5 font-mono text-[10px] text-gray-400"
-						>
-							{registry.find((s) => s.id === id)?.name ?? id}
-						</span>
-					))}
-				</span>
-			) : (
-				<span className="font-mono text-[10px] text-gray-600">
-					{stack.services.length} services
-				</span>
-			)}
-		</button>
-	);
-}
-
-/** Everything the current selection is missing, above everything else. */
-function Alerts({
-	missing,
-	warnings,
-}: {
-	missing: UnmetRequirement[];
-	warnings: UnmetRequirement[];
-}) {
-	if (missing.length === 0 && warnings.length === 0) return null;
-	return (
-		<div className="space-y-2">
-			{missing.length > 0 ? (
-				<div
-					role="alert"
-					className="flex gap-3 rounded-xl border border-brand-800 bg-brand-900/40 p-3.5 text-brand-200"
-				>
-					<Warn className="mt-0.5 h-5 w-5 shrink-0" />
-					<div>
-						<p className="text-[13px] font-semibold">
-							Can’t continue — {missing.length}{" "}
-							{missing.length > 1
-								? "services are missing something they need"
-								: "service is missing something it needs"}
-						</p>
-						<ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs leading-relaxed">
-							{missing.map((u) => (
-								<li key={`${u.service}.${u.category}`}>{u.reason}</li>
-							))}
-						</ul>
-					</div>
-				</div>
-			) : null}
-
-			{warnings.length > 0 ? (
-				<div className="flex gap-3 rounded-xl border border-amber-700/60 bg-amber-500/[0.08] p-3.5 text-amber-300">
-					<Warn className="mt-0.5 h-5 w-5 shrink-0" />
-					<div>
-						<p className="text-[13px] font-semibold">
-							Worth knowing — you can carry on
-						</p>
-						<ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs leading-relaxed">
-							{warnings.map((u) => (
-								<li key={`${u.service}.${u.category}`}>{u.reason}</li>
-							))}
-						</ul>
-					</div>
-				</div>
-			) : null}
-		</div>
+				{name}
+			</strong>
+			<span className="text-sm leading-snug text-muted">{description}</span>
+			{children}
+		</label>
 	);
 }
 
@@ -526,89 +372,24 @@ function Notes({ services }: { services: ServiceMeta[] }) {
 	const withNotes = services.filter((svc) => svc.notes?.length > 0);
 	if (withNotes.length === 0) return null;
 	return (
-		<div className="space-y-2.5 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3.5">
+		<section
+			aria-label="Notes"
+			className="flex flex-col rounded-lg bg-card px-6 pb-2 pt-4"
+		>
+			<h3 className="mb-1 text-lg font-bold">Notes</h3>
 			{withNotes.map((svc) => (
-				<div key={svc.id}>
-					<p className="text-xs font-semibold text-gray-300">{svc.name}</p>
-					<ul className="mt-1 space-y-1 text-xs leading-relaxed text-gray-500">
+				<div
+					key={svc.id}
+					className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line py-3"
+				>
+					<strong className="flex-[0_0_120px] text-[15px]">{svc.name}</strong>
+					<ul className="min-w-0 flex-[1_1_400px] list-disc pl-[18px] text-sm leading-normal text-muted">
 						{svc.notes.map((note) => (
-							<li key={note} className="flex gap-1.5">
-								<span aria-hidden="true">•</span>
-								<span>{note}</span>
-							</li>
+							<li key={note}>{note}</li>
 						))}
 					</ul>
 				</div>
 			))}
-		</div>
-	);
-}
-
-function Switch({ on }: { on: boolean }) {
-	return (
-		<span className="flex justify-end">
-			<span
-				className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-					on ? "bg-brand-600" : "bg-ink-700"
-				}`}
-			>
-				<span
-					className={`absolute top-1 inline-block h-3 w-3 rounded-full bg-white transition-transform ${
-						on ? "translate-x-5" : "translate-x-1"
-					}`}
-				/>
-			</span>
-		</span>
-	);
-}
-
-function Arrow({ className = "" }: { className?: string }) {
-	return (
-		<svg
-			aria-hidden="true"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth={2}
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			className={`h-3.5 w-3.5 ${className}`}
-		>
-			<path d="M5 12h14m0 0l-6-6m6 6l-6 6" />
-		</svg>
-	);
-}
-
-function Check({ className = "" }: { className?: string }) {
-	return (
-		<svg
-			aria-hidden="true"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth={2.4}
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			className={className}
-		>
-			<path d="M5 13l4 4L19 7" />
-		</svg>
-	);
-}
-
-function Warn({ className = "" }: { className?: string }) {
-	return (
-		<svg
-			aria-hidden="true"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth={1.8}
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			className={className}
-		>
-			<path d="M12 9v4m0 4h.01M10.3 3.9L2.5 17.4A2 2 0 004.2 20.4h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" />
-		</svg>
+		</section>
 	);
 }

@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { useSetupStatus } from "../../hooks/useSetupStatus";
 import type { ServiceMeta, SetupConfig, StepStatus } from "../../types/setup";
 import { Button } from "../ui/Button";
 import { Collapse } from "../ui/Collapse";
+import { Spinner } from "../ui/Shell";
 import { SetupPreflight } from "./SetupPreflight";
 import { StepMatrix } from "./StepMatrix";
 
@@ -15,7 +16,11 @@ interface ProgressStepProps {
 	onBack: () => void;
 	onRestart: () => void;
 	onComplete?: () => void;
+	/** Where the run is, for the nav beside this step. */
+	onPhase?: (phase: SetupPhase) => void;
 }
+
+export type SetupPhase = "review" | "running" | "failed" | "ready";
 
 const DONE: StepStatus[] = ["completed", "skipped"];
 
@@ -37,12 +42,6 @@ function failure(
 	};
 }
 
-const loadingSpinner = (
-	<div className="flex items-center justify-center py-12">
-		<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
-	</div>
-);
-
 export function ProgressStep({
 	registry,
 	config,
@@ -50,6 +49,7 @@ export function ProgressStep({
 	onBack,
 	onRestart,
 	onComplete,
+	onPhase,
 }: ProgressStepProps) {
 	// Two flags, not one. `started` is the screen: the pre-flight goes, the grid
 	// stays. `launched` is the server: only once the run has been accepted are
@@ -73,21 +73,42 @@ export function ProgressStep({
 	// The cold grid stands in until the first real status arrives, so the wait
 	// shows the same rows rather than a spinner where the grid was.
 	const source = launched ? (status ?? preview) : preview;
-	if (!source) return loadingSpinner;
 	const live = launched && Boolean(status) && !isLoading;
 
-	const stepValues = Object.values(source.steps);
+	const stepValues = Object.values(source?.steps ?? {});
 	const total = stepValues.length;
 	const done = live ? stepValues.filter((s) => DONE.includes(s)).length : 0;
 	const hasFailed = live && stepValues.some((s) => s === "failed");
 	const allCompleted = live && total > 0 && done === total;
-	const running = live
-		? Object.keys(source.steps).find(
-				(key) => source.steps[key] === "in_progress",
-			)
-		: undefined;
-	const failed = failure(source.steps, source.labels, registry);
+	const running =
+		live && source
+			? Object.keys(source.steps).find(
+					(key) => source.steps[key] === "in_progress",
+				)
+			: undefined;
+	const phase: SetupPhase = !started
+		? "review"
+		: hasFailed
+			? "failed"
+			: allCompleted
+				? "ready"
+				: "running";
 
+	useEffect(() => {
+		onPhase?.(phase);
+	}, [onPhase, phase]);
+
+	if (!source) return <Spinner />;
+	const failed = failure(source.steps, source.labels, registry);
+	const services = registry.filter(
+		(svc) => config.services[svc.id]?.enabled,
+	).length;
+
+	const title = !started
+		? "Summary"
+		: allCompleted
+			? "Your media stack is ready"
+			: "Setup Progress";
 	const message = !started
 		? "Review your configuration before starting the setup."
 		: hasFailed
@@ -95,48 +116,80 @@ export function ProgressStep({
 				? `Setup stopped — ${failed.service} could not finish`
 				: "Setup stopped."
 			: allCompleted
-				? "Setup completed successfully"
+				? `${total} steps · ${services} services`
 				: running
 					? `${source.labels[running] ?? running}\u2026`
 					: "Setting up your media stack\u2026";
 
 	return (
-		<div className="flex flex-col gap-4">
-			<div className="flex items-end justify-between gap-4">
-				<div className="min-w-0">
-					<h2 className="text-lg font-semibold">
-						{started ? "Setup Progress" : "Summary"}
-					</h2>
+		<>
+			<div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+				<div className="flex min-w-0 flex-col gap-1.5">
+					<h2 className="text-[32px] font-bold leading-tight">{title}</h2>
 					<p
-						className={`text-sm mt-0.5 truncate ${hasFailed ? "text-brand-300" : "text-gray-400"}`}
+						className={
+							hasFailed
+								? "font-bold text-fail"
+								: started && !allCompleted
+									? "text-fg"
+									: "text-muted"
+						}
 					>
 						{message}
 					</p>
 				</div>
-				<span className="text-sm font-mono text-gray-400 tabular-nums shrink-0">
-					{started
-						? `${total ? Math.round((done / total) * 100) : 0}%`
-						: `${total} steps`}
+				<span className="text-[32px] font-extrabold tabular-nums">
+					{!started
+						? `${total} steps`
+						: allCompleted
+							? ""
+							: `${total ? Math.round((done / total) * 100) : 0}%`}
 				</span>
 			</div>
 
-			<div className="h-1 rounded-full bg-step-idle overflow-hidden shrink-0">
+			{/* Kept under the heading: without it the run's progress is only the
+			    percentage. */}
+			<div className="h-1 shrink-0 overflow-hidden bg-track">
 				<div
-					className={`h-full rounded-full transition-[width] duration-500 ${
-						hasFailed
-							? "bg-step-fail"
-							: allCompleted
-								? "bg-step-done"
-								: "bg-gradient-to-r from-brand-600 to-brand-400"
+					className={`h-full transition-[width] duration-500 ${
+						hasFailed ? "bg-fail" : allCompleted ? "bg-ok" : "bg-accent"
 					}`}
 					style={{ width: total ? `${(done / total) * 100}%` : "0%" }}
 				/>
 			</div>
 
+			{/* Above the grid once it is all done: the next step is the only thing
+			    left to read. */}
+			{allCompleted && onComplete ? (
+				<Button className="self-start" onClick={onComplete}>
+					Go to dashboard
+				</Button>
+			) : null}
+
 			<StepMatrix
 				registry={registry}
 				steps={source.steps}
 				labels={source.labels}
+				failure={
+					hasFailed ? (
+						<div className="mb-4 flex flex-col gap-3 rounded bg-fail-bg p-4 md:ml-[52px]">
+							<strong className="text-fail">
+								{failed
+									? `${failed.service} · ${failed.label}`
+									: "Setup failed"}
+							</strong>
+							{/* The error as the server wrote it: an *arr rejection is a JSON
+							    array of validations, not a sentence, so it scrolls inside
+							    its box instead of pushing the grid off the screen. */}
+							<pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-card px-3.5 py-3 font-mono text-[13px] leading-relaxed">
+								{status?.error}
+							</pre>
+							<Button className="self-start" onClick={onRestart}>
+								Try again
+							</Button>
+						</div>
+					) : null
+				}
 			/>
 
 			{/* Everything that stops being true the moment the run starts. It sits
@@ -146,8 +199,8 @@ export function ProgressStep({
 			</Collapse>
 
 			{!started ? (
-				<div className="flex justify-between">
-					<Button variant="secondary" onClick={onBack}>
+				<div className="mt-2 flex justify-end gap-2">
+					<Button variant="outline" onClick={onBack}>
 						Back
 					</Button>
 					<Button
@@ -161,50 +214,6 @@ export function ProgressStep({
 					</Button>
 				</div>
 			) : null}
-
-			{hasFailed ? (
-				<div className="flex items-center gap-4 p-4 rounded-xl bg-step-fail/[0.08] border border-step-fail/30">
-					<div className="flex-1 min-w-0 flex flex-col gap-1">
-						<h3 className="text-sm font-semibold text-step-fail">
-							{failed ? `${failed.service} · ${failed.label}` : "Setup failed"}
-						</h3>
-						{/* An *arr rejection is a JSON array of validations, not a
-						    sentence: it scrolls inside its box instead of pushing the
-						    matrix out of the screen. */}
-						<pre className="text-[11px] leading-relaxed font-mono text-gray-400 whitespace-pre-wrap break-words max-h-28 overflow-y-auto">
-							{status?.error}
-						</pre>
-					</div>
-					<Button onClick={onRestart}>Try again</Button>
-				</div>
-			) : null}
-
-			{allCompleted ? (
-				<div className="flex items-center gap-4 p-4 rounded-xl bg-step-done/[0.07] border border-step-done/30">
-					<div className="flex-1 min-w-0 flex flex-col gap-1">
-						<h3 className="text-sm font-semibold text-step-done">
-							Your media stack is ready
-						</h3>
-						<div className="flex gap-4 text-[11px] font-mono text-gray-500 tabular-nums">
-							<span>
-								<b className="font-medium text-gray-400">{total}</b> steps
-							</span>
-							<span>
-								<b className="font-medium text-gray-400">
-									{
-										registry.filter((svc) => config.services[svc.id]?.enabled)
-											.length
-									}
-								</b>{" "}
-								services
-							</span>
-						</div>
-					</div>
-					{onComplete ? (
-						<Button onClick={onComplete}>Go to dashboard</Button>
-					) : null}
-				</div>
-			) : null}
-		</div>
+		</>
 	);
 }

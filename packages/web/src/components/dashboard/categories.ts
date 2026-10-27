@@ -1,10 +1,10 @@
 export const CATEGORY_LABELS: Record<string, string> = {
-	torrentClient: "Torrent",
+	torrentClient: "Torrent Client",
 	vpn: "VPN",
 	indexer: "Indexer",
-	mediaServer: "Media",
-	mediaManager: "Manager",
+	mediaServer: "Media Server",
+	mediaManager: "Media Manager",
 	requests: "Requests",
 	seeder: "Seeder",
-	stats: "Stats",
+	stats: "Statistics",
 };

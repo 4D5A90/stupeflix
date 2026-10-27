@@ -1,4 +1,4 @@
-import { useState } from "react";
+import type { ReactNode } from "react";
 import type { ServiceMeta, StepStatus } from "../../types/setup";
 import { ServiceIcon, serviceTint } from "../ui/ServiceIcon";
 
@@ -6,6 +6,8 @@ interface StepMatrixProps {
 	registry: ServiceMeta[];
 	steps: Record<string, StepStatus>;
 	labels: Record<string, string>;
+	/** What stopped the run, drawn under the row it belongs to. */
+	failure?: ReactNode;
 }
 
 interface Cell {
@@ -24,9 +26,8 @@ interface Row {
 const RUNNER_ROW = "_runner";
 
 /**
- * One row per service, one cell per step. Whatever the size of the stack, the
- * whole run stays on screen without scrolling — which a list of forty labelled
- * rows cannot do.
+ * One row per service, one cell per step: forty steps read as eight rows, which
+ * a list of forty labelled lines cannot do.
  */
 function toRows(
 	steps: Record<string, StepStatus>,
@@ -63,15 +64,15 @@ function toRows(
 }
 
 const CELL_TONE: Record<StepStatus, string> = {
-	pending: "bg-step-idle",
-	// White, not the brand rose: a rose cell next to a red failure state reads
-	// as an error rather than as the step in flight. Blinking carries "now".
-	in_progress: "bg-white/80 animate-pulse",
-	completed: "bg-step-done/60",
-	// Same tone as completed: it is done. Only the hovered readout says that
-	// nothing was sent for this one.
-	skipped: "bg-step-done/60",
-	failed: "bg-step-fail ring-2 ring-step-fail/30",
+	pending: "bg-track",
+	// The foreground, not the accent: an accent cell next to a red failure
+	// reads as an error rather than as the step in flight. Blinking carries "now".
+	in_progress: "bg-fg animate-pulse",
+	completed: "bg-ok",
+	// Done, and drawn so: the same green — but hollow, because nothing was sent
+	// for it. A skip passed off as a success is what let a stale peer hide.
+	skipped: "border-2 border-ok",
+	failed: "bg-fail",
 };
 
 /**
@@ -94,7 +95,7 @@ function rowState(cells: Cell[]): "running" | "failed" | "done" | "idle" {
 	return "idle";
 }
 
-/** What the row says when nothing is hovered: where it is, in its own words. */
+/** What the row says: where it is, in its own words. */
 function readout(cells: Cell[]): string {
 	const failed = cells.find((c) => c.status === "failed");
 	if (failed) return `${failed.label} — failed`;
@@ -103,88 +104,74 @@ function readout(cells: Cell[]): string {
 	const done = cells.filter(
 		(c) => c.status === "completed" || c.status === "skipped",
 	).length;
+	const steps = (n: number) => `${n} step${n > 1 ? "s" : ""}`;
 	// Before it starts, a row says how much work it is — which is what makes the
 	// same grid readable on the summary screen, where nothing has run yet.
-	if (done === 0) return `${cells.length} step${cells.length > 1 ? "s" : ""}`;
-	return `${done} step${done > 1 ? "s" : ""} done`;
+	if (done === 0) return steps(cells.length);
+	const skipped = cells.filter((c) => c.status === "skipped").length;
+	return done === cells.length && skipped > 0
+		? `${steps(done)} done · ${skipped} already configured`
+		: `${steps(done)} done`;
 }
 
-export function StepMatrix({ registry, steps, labels }: StepMatrixProps) {
-	// The key, not the cell: the status is polled every second, so the objects
-	// are rebuilt under the cursor and an identity check would drop the hover on
-	// every tick.
-	const [hovered, setHovered] = useState<string | null>(null);
+const READOUT_TONE = {
+	failed: "text-fail",
+	running: "text-fg",
+	done: "text-ok",
+	idle: "text-muted",
+};
+
+export function StepMatrix({
+	registry,
+	steps,
+	labels,
+	failure,
+}: StepMatrixProps) {
 	const rows = toRows(steps, labels, registry);
 
 	return (
-		// Height follows the rows, up to what the viewport leaves: a stack of
-		// seven must not stretch to fill 600px, and a stack of twenty must
-		// shrink instead of scrolling.
-		<div className="flex flex-col gap-0.5 min-h-0 max-h-[calc(100vh-20rem)] overflow-hidden">
+		<section aria-label="Steps" className="rounded-lg bg-card px-6 py-1">
 			{rows.map((row) => {
 				const state = rowState(row.cells);
-				const hover = row.cells.find((c) => c.key === hovered) ?? null;
 				return (
-					<div
-						key={row.id}
-						className={`grow shrink basis-11 max-h-11 min-h-[26px] grid grid-cols-[9.5rem_minmax(13rem,max-content)_1fr] items-center gap-3.5 px-2.5 rounded-lg border transition-colors ${
-							state === "failed"
-								? "bg-step-fail/[0.07] border-step-fail/30"
-								: state === "running"
-									? "bg-ink-800 border-white/[0.07]"
-									: "border-transparent"
-						}`}
-					>
-						<div className="flex items-center gap-2.5 min-w-0">
+					<div key={row.id} className="border-t border-line first:border-t-0">
+						<div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
 							{/* The runner's own row is not a service, so it takes no
 							    service tint — a hue there would claim an identity. */}
-							<div
-								className={`w-6 h-6 shrink-0 grid place-items-center rounded-md ${
-									row.id === RUNNER_ROW ? "bg-white/[0.06] text-gray-400" : ""
+							<span
+								className={`grid h-9 w-9 flex-none place-items-center rounded ${
+									row.id === RUNNER_ROW ? "bg-fg/[0.08] text-muted" : ""
 								}`}
 								style={row.id === RUNNER_ROW ? undefined : serviceTint(row.id)}
 							>
 								<ServiceIcon id={row.id} />
-							</div>
-							<span className="text-sm font-semibold text-white truncate">
-								{row.name}
+							</span>
+							<strong className="flex-[0_0_110px] truncate">{row.name}</strong>
+							<span className="flex flex-[1_1_200px] flex-wrap gap-[3px]">
+								{row.cells.map((cell) => (
+									<span
+										key={cell.key}
+										// A title, not a hover readout: the row's text says where it
+										// is, and a cell names itself only when asked.
+										title={
+											cell.status === "skipped"
+												? `${cell.label} — already configured`
+												: cell.label
+										}
+										className={`h-3.5 w-3.5 rounded-sm transition-colors ${cellTone(cell, state)}`}
+									/>
+								))}
+							</span>
+							<span
+								className={`flex-[0_1_260px] text-right font-mono text-[13px] ${READOUT_TONE[state]}`}
+							>
+								{readout(row.cells)}
 							</span>
 						</div>
-
-						<div className="flex gap-1">
-							{row.cells.map((cell) => (
-								<div
-									key={cell.key}
-									title={cell.label}
-									onMouseEnter={() => setHovered(cell.key)}
-									onMouseLeave={() => setHovered(null)}
-									className={`w-[15px] h-[15px] rounded transition-colors ${cellTone(cell, state)}`}
-								/>
-							))}
-						</div>
-
-						<span
-							className={`text-xs font-mono truncate ${
-								// Hovering names a step, it does not flag one: the accent is
-								// reserved for what needs attention.
-								hover
-									? "text-white"
-									: state === "failed"
-										? "text-step-fail"
-										: state === "running"
-											? "text-white"
-											: "text-gray-500"
-							}`}
-						>
-							{hover
-								? hover.status === "skipped"
-									? `${hover.label} — already configured`
-									: hover.label
-								: readout(row.cells)}
-						</span>
+						{state === "failed" ? failure : null}
 					</div>
 				);
 			})}
-		</div>
+		</section>
 	);
 }

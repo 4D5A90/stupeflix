@@ -39,8 +39,8 @@ export function Unlock({ onUnlocked }: { onUnlocked: () => void }) {
 	};
 
 	return (
-		<form onSubmit={submit} className="space-y-4">
-			<h2 className="text-lg font-medium text-white">Unlock Stupeflix</h2>
+		<form onSubmit={submit} className="flex flex-col gap-4">
+			<h2 className="text-[32px] font-bold leading-tight">Unlock Stupeflix</h2>
 			<Input
 				label="Access token"
 				type="password"
@@ -52,7 +52,7 @@ export function Unlock({ onUnlocked }: { onUnlocked: () => void }) {
 			{/* Where to find it belongs here rather than above the field: it is
 			    noise to someone pasting a token they already have, and the only
 			    thing worth reading to someone who is stuck. */}
-			{error ? <p className="text-sm text-step-fail">{error}</p> : null}
+			{error ? <p className="text-sm font-bold text-fail">{error}</p> : null}
 			<Button
 				type="submit"
 				className="w-full"

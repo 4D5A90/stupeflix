@@ -9,6 +9,7 @@ import {
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
+import { ServiceIcon, serviceTint } from "../ui/ServiceIcon";
 
 interface CredentialsStepProps {
 	registry: ServiceMeta[];
@@ -109,116 +110,115 @@ export function CredentialsStep({
 	}, [handleKeyDown]);
 
 	return (
-		<div className="space-y-6">
-			<div>
-				<h2 className="text-xl font-semibold mb-2">Credentials</h2>
-				<p className="text-gray-400 text-sm">
-					Set up authentication for your services.
-				</p>
+		<>
+			<div className="flex flex-col gap-1.5">
+				<h2 className="text-[32px] font-bold leading-tight">Credentials</h2>
+				<p className="text-muted">Set up authentication for your services.</p>
 			</div>
 
-			<div className="space-y-6">
-				{enabledWithCreds.map((svc) => (
-					<div key={svc.id} className="space-y-4">
-						<h3 className="text-lg font-medium text-gray-300">{svc.name}</h3>
-						<div className="grid grid-cols-2 gap-4">
-							{svc.credentials.map((field) => {
-								const value = config.credentials[svc.id]?.[field.key] ?? "";
-								const error = allErrors[svc.id]?.[field.key];
-								return (
-									<div key={field.key}>
-										<div className="flex items-end gap-1">
-											<div className="flex-1">
-												{field.type === "select" ? (
-													<Select
-														label={field.label}
-														options={field.options ?? []}
-														value={value}
-														onChange={(e) =>
-															updateCredential(
-																svc.id,
-																field.key,
-																e.target.value,
-															)
-														}
-													/>
-												) : (
-													<Input
-														label={field.label}
-														type={
-															field.type === "text" ? undefined : field.type
-														}
-														suggestions={
-															field.type === "email" ? knownEmails : undefined
-														}
-														autoComplete={
-															field.type === "email"
-																? "email"
-																: field.type === "password"
-																	? "new-password"
-																	: undefined
-														}
-														placeholder={field.placeholder}
-														value={value}
-														onChange={(e) =>
-															updateCredential(
-																svc.id,
-																field.key,
-																e.target.value,
-															)
-														}
-													/>
-												)}
-											</div>
-											{field.type === "password" && field.generate !== false ? (
-												<button
-													type="button"
-													onClick={() => {
-														updateCredential(
-															svc.id,
-															field.key,
-															generatePassword(generatedLengthFor(field)),
-														);
-													}}
-													className="mb-0.5 p-2 text-gray-400 hover:text-brand-400 transition-colors"
-													title="Generate password"
-												>
-													<svg
-														aria-hidden="true"
-														viewBox="0 0 24 24"
-														fill="none"
-														stroke="currentColor"
-														strokeWidth={2}
-														className="w-5 h-5"
-													>
-														<path
-															strokeLinecap="round"
-															strokeLinejoin="round"
-															d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-														/>
-													</svg>
-												</button>
-											) : null}
+			{enabledWithCreds.map((svc) => (
+				<section
+					key={svc.id}
+					className="flex flex-col gap-4 rounded-lg bg-card px-6 pb-6 pt-5"
+				>
+					<h3 className="flex items-center gap-3 text-lg font-bold">
+						<span
+							className="grid h-9 w-9 flex-none place-items-center rounded"
+							style={serviceTint(svc.id)}
+						>
+							<ServiceIcon id={svc.id} />
+						</span>
+						{svc.name}
+					</h3>
+					<div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+						{svc.credentials.map((field) => {
+							const value = config.credentials[svc.id]?.[field.key] ?? "";
+							const error = allErrors[svc.id]?.[field.key];
+							return (
+								<div key={field.key} className="flex flex-col gap-1.5">
+									<div className="flex items-end gap-2">
+										<div className="min-w-0 flex-1">
+											{field.type === "select" ? (
+												<Select
+													label={field.label}
+													options={field.options ?? []}
+													value={value}
+													onChange={(e) =>
+														updateCredential(svc.id, field.key, e.target.value)
+													}
+												/>
+											) : (
+												<Input
+													label={field.label}
+													type={field.type === "text" ? undefined : field.type}
+													error={Boolean(error)}
+													suggestions={
+														field.type === "email" ? knownEmails : undefined
+													}
+													autoComplete={
+														field.type === "email"
+															? "email"
+															: field.type === "password"
+																? "new-password"
+																: undefined
+													}
+													placeholder={field.placeholder}
+													value={value}
+													onChange={(e) =>
+														updateCredential(svc.id, field.key, e.target.value)
+													}
+												/>
+											)}
 										</div>
-										{error ? (
-											<p className="mt-1 text-xs text-red-400">{error}</p>
+										{field.type === "password" && field.generate !== false ? (
+											<button
+												type="button"
+												onClick={() => {
+													updateCredential(
+														svc.id,
+														field.key,
+														generatePassword(generatedLengthFor(field)),
+													);
+												}}
+												className="grid h-11 w-11 flex-none place-items-center rounded border border-fg text-fg transition-colors hover:bg-fg/[0.06]"
+												aria-label="Generate password"
+												title="Generate password"
+											>
+												<svg
+													aria-hidden="true"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													strokeWidth={2}
+													className="h-[18px] w-[18px]"
+												>
+													<path
+														strokeLinecap="round"
+														strokeLinejoin="round"
+														d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+													/>
+												</svg>
+											</button>
 										) : null}
 									</div>
-								);
-							})}
-						</div>
+									{error ? (
+										<p className="text-[13px] font-bold text-fail">{error}</p>
+									) : null}
+								</div>
+							);
+						})}
 					</div>
-				))}
-			</div>
+				</section>
+			))}
 
-			<div className="flex justify-between">
-				<Button variant="secondary" onClick={onBack}>
+			<div className="mt-2 flex justify-end gap-2">
+				<Button variant="outline" onClick={onBack}>
 					Back
 				</Button>
 				<Button onClick={onNext} disabled={!canProceed}>
 					Next
 				</Button>
 			</div>
-		</div>
+		</>
 	);
 }
