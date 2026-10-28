@@ -4,11 +4,13 @@ import {
 	useQuery,
 } from "@tanstack/react-query";
 import { useState } from "react";
-import { Unauthorized, api, hasToken } from "./api/client";
+import { Unauthorized, api, clearToken, hasToken } from "./api/client";
 import { Dashboard } from "./components/Dashboard";
 import { InstallProgress } from "./components/InstallProgress";
+import { Settings } from "./components/Settings";
 import { Unlock } from "./components/Unlock";
 import { Wizard } from "./components/Wizard";
+import { Shell, Spinner } from "./components/ui/Shell";
 
 const queryClient = new QueryClient({
 	defaultOptions: {
@@ -20,32 +22,40 @@ const queryClient = new QueryClient({
 	},
 });
 
-const logo = (
-	<img src="/logo.png" alt="Stupeflix" className="h-24 mb-2 logo-spin" />
-);
-
 interface InstallState {
 	serviceId: string;
 	serviceName: string;
 }
 
+/** The two screens of an installed stack; the wizard and its kin are not views. */
+type View = "dashboard" | "settings";
+
 function AppContent() {
 	const [forceWizard, setForceWizard] = useState(false);
 	const [installing, setInstalling] = useState<InstallState | null>(null);
 	const [unlocked, setUnlocked] = useState(hasToken());
+	const [view, setView] = useState<View>("dashboard");
 	const { data, isLoading, error } = useQuery({
 		queryKey: ["app-status"],
 		queryFn: api.getAppStatus,
 		enabled: unlocked,
 	});
 
-	// Its own shell, narrower than the app's: one field does not want 896px.
+	// Forgetting the token is the same state as never having had one, so it
+	// lands on the same screen — and drops every cached answer that came with it.
+	const lock = () => {
+		clearToken();
+		setUnlocked(false);
+		setView("dashboard");
+		queryClient.clear();
+	};
+
+	// Its own column, narrower than the app's: one field does not want 1200px.
 	if (!unlocked || error instanceof Unauthorized) {
 		return (
-			<div className="min-h-screen flex items-start justify-center p-4 pt-8">
-				<div className="w-full max-w-md">
-					<div className="flex flex-col items-center mb-8">{logo}</div>
-					<div className="bg-ink-900 rounded-xl p-6 shadow-xl ring-1 ring-white/5">
+			<Shell mode="light">
+				<div className="mx-auto w-full max-w-md px-4 pt-16">
+					<div className="rounded-lg bg-card p-6">
 						<Unlock
 							onUnlocked={() => {
 								setUnlocked(true);
@@ -54,58 +64,61 @@ function AppContent() {
 						/>
 					</div>
 				</div>
-			</div>
+			</Shell>
 		);
 	}
 
 	if (isLoading) {
 		return (
-			<div className="min-h-screen flex items-center justify-center">
-				<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
-			</div>
+			<Shell mode="dark">
+				<Spinner />
+			</Shell>
 		);
 	}
 
-	const setupCompleted = data?.setup_completed && !forceWizard;
+	if (installing) {
+		return (
+			<InstallProgress
+				serviceId={installing.serviceId}
+				serviceName={installing.serviceName}
+				onDone={() => {
+					setInstalling(null);
+					queryClient.invalidateQueries({ queryKey: ["services"] });
+					queryClient.invalidateQueries({ queryKey: ["credentials"] });
+				}}
+			/>
+		);
+	}
 
-	// Anchored near the top rather than vertically centred: the panel grows with
-	// the number of services, and centring pushed the logo down the taller it got.
+	if (!data?.setup_completed || forceWizard) {
+		return (
+			<Wizard
+				onComplete={() => {
+					setForceWizard(false);
+					setView("dashboard");
+					queryClient.invalidateQueries({ queryKey: ["app-status"] });
+				}}
+			/>
+		);
+	}
+
+	if (view === "settings") {
+		return (
+			<Settings
+				onBack={() => setView("dashboard")}
+				onReconfigure={() => setForceWizard(true)}
+				onLock={lock}
+			/>
+		);
+	}
+
 	return (
-		<div className="min-h-screen flex items-start justify-center p-4 pt-8">
-			{/* One width throughout. The wizard used to be narrower on the grounds
-          that a form reads better that way, but its Services step is a table
-          now, and 672px squeezed the description column to nothing. */}
-			<div className="w-full max-w-4xl">
-				<div className="flex flex-col items-center mb-8">{logo}</div>
-				<div className="bg-ink-900 rounded-xl p-6 shadow-xl ring-1 ring-white/5">
-					{installing ? (
-						<InstallProgress
-							serviceId={installing.serviceId}
-							serviceName={installing.serviceName}
-							onDone={() => {
-								setInstalling(null);
-								queryClient.invalidateQueries({ queryKey: ["services"] });
-								queryClient.invalidateQueries({ queryKey: ["credentials"] });
-							}}
-						/>
-					) : setupCompleted ? (
-						<Dashboard
-							onReconfigure={() => setForceWizard(true)}
-							onInstall={(serviceId, serviceName) =>
-								setInstalling({ serviceId, serviceName })
-							}
-						/>
-					) : (
-						<Wizard
-							onComplete={() => {
-								setForceWizard(false);
-								queryClient.invalidateQueries({ queryKey: ["app-status"] });
-							}}
-						/>
-					)}
-				</div>
-			</div>
-		</div>
+		<Dashboard
+			onInstall={(serviceId, serviceName) =>
+				setInstalling({ serviceId, serviceName })
+			}
+			onSettings={() => setView("settings")}
+		/>
 	);
 }
 

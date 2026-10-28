@@ -7,7 +7,7 @@ import type { Credentials } from "../api/client";
  * `undefined`. The deprecated `execCommand("copy")` on a selected textarea is
  * the one copy a plain-HTTP page is still allowed.
  */
-async function writeClipboard(text: string): Promise<boolean> {
+export async function writeClipboard(text: string): Promise<boolean> {
 	if (navigator.clipboard) {
 		try {
 			await navigator.clipboard.writeText(text);

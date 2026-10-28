@@ -37,6 +37,11 @@ export function hasToken(): boolean {
 	return token !== "";
 }
 
+/** For Settings › Access token, which shows and copies what this browser holds. */
+export function getToken(): string {
+	return token;
+}
+
 /** Carried by every call — `uploadTemplate` included, since it skips `request`. */
 function authHeaders(): Record<string, string> {
 	return token ? { Authorization: `Bearer ${token}` } : {};
@@ -192,6 +197,9 @@ export const api = {
 	getRuntime: () => request<RuntimeInfo>("/runtime"),
 
 	getCredentials: () => request<Credentials>("/credentials"),
+
+	/** The readable settings, flat: `paths.media`, `libraries` (JSON text)… */
+	getSettings: () => request<Record<string, unknown>>("/settings"),
 
 	getTemplates: () => request<TemplateSummary[]>("/templates"),
 

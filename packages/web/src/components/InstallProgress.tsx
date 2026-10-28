@@ -1,5 +1,6 @@
 import { useSetupStatus } from "../hooks/useSetupStatus";
 import { Button } from "./ui/Button";
+import { Shell, Spinner } from "./ui/Shell";
 import { StatusBadge } from "./ui/StatusBadge";
 
 interface InstallProgressProps {
@@ -31,48 +32,57 @@ export function InstallProgress({
 
 	if (isLoading || !status || global === "pending") {
 		return (
-			<div className="flex items-center justify-center py-12">
-				<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
-			</div>
+			<Shell mode="light">
+				<Spinner />
+			</Shell>
 		);
 	}
 
 	return (
-		<div className="space-y-6">
-			<div>
-				<h2 className="text-xl font-semibold mb-2">
-					{isSuccess
-						? `${serviceName} installed`
-						: isDone
-							? "Installation failed"
-							: `Installing ${serviceName}...`}
-				</h2>
-				<p className="text-gray-400 text-sm">
-					{isSuccess
-						? "The service is ready."
-						: isDone
-							? "An error occurred during installation."
-							: "Setting up the service, please wait."}
-				</p>
-			</div>
-
-			<div className="space-y-2">
-				{serviceSteps.map((step) => (
-					<StatusBadge key={step.key} status={step.status} label={step.label} />
-				))}
-			</div>
-
-			{status.error ? (
-				<div className="p-4 bg-red-900/50 border border-red-700 rounded-lg">
-					<p className="text-red-300 text-sm font-mono">{status.error}</p>
+		<Shell mode="light">
+			<main
+				aria-live="polite"
+				className="mx-auto flex max-w-[720px] flex-col gap-5 px-[4%] pt-12"
+			>
+				<div className="flex flex-col gap-1.5">
+					<h2 className="text-[32px] font-bold leading-tight">
+						{isSuccess
+							? `${serviceName} installed`
+							: isDone
+								? "Installation failed"
+								: `Installing ${serviceName}...`}
+					</h2>
+					<p className="text-muted">
+						{isSuccess
+							? "The service is ready."
+							: isDone
+								? "An error occurred during installation."
+								: "Setting up the service, please wait."}
+					</p>
 				</div>
-			) : null}
 
-			{isDone ? (
-				<div className="flex justify-center">
-					<Button onClick={onDone}>Back to Dashboard</Button>
+				<div className="flex flex-col gap-2">
+					{serviceSteps.map((step) => (
+						<StatusBadge
+							key={step.key}
+							status={step.status}
+							label={step.label}
+						/>
+					))}
 				</div>
-			) : null}
-		</div>
+
+				{status.error ? (
+					<pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-fail-bg p-4 font-mono text-[13px] leading-relaxed text-fail">
+						{status.error}
+					</pre>
+				) : null}
+
+				{isDone ? (
+					<Button className="self-start" onClick={onDone}>
+						Back to Dashboard
+					</Button>
+				) : null}
+			</main>
+		</Shell>
 	);
 }

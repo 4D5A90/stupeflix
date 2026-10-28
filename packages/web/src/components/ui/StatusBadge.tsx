@@ -10,13 +10,13 @@ const statusStyles: Record<
 	StepStatus,
 	{ bg: string; text: string; icon: string }
 > = {
-	pending: { bg: "bg-gray-700", text: "text-gray-400", icon: "○" },
-	in_progress: { bg: "bg-blue-900", text: "text-blue-300", icon: "◔" },
-	completed: { bg: "bg-green-900", text: "text-green-300", icon: "✓" },
+	pending: { bg: "bg-card", text: "text-muted", icon: "○" },
+	in_progress: { bg: "bg-card", text: "text-fg font-bold", icon: "◔" },
+	completed: { bg: "bg-card", text: "text-ok", icon: "✓" },
 	// Reads as done, because it is: only the caller that cares knows nothing was
 	// sent for this one.
-	skipped: { bg: "bg-green-900", text: "text-green-300", icon: "✓" },
-	failed: { bg: "bg-red-900", text: "text-red-300", icon: "✗" },
+	skipped: { bg: "bg-card", text: "text-ok", icon: "✓" },
+	failed: { bg: "bg-fail-bg", text: "text-fail font-bold", icon: "✗" },
 };
 
 export function StatusBadge({ status, label, small }: StatusBadgeProps) {
@@ -32,7 +32,7 @@ export function StatusBadge({ status, label, small }: StatusBadgeProps) {
 	}
 
 	return (
-		<div className={`flex items-center gap-2 px-3 py-2 rounded-md ${style.bg}`}>
+		<div className={`flex items-center gap-2 rounded px-4 py-3 ${style.bg}`}>
 			<span className={`${style.text} text-lg`}>{style.icon}</span>
 			<span className={style.text}>{label}</span>
 		</div>

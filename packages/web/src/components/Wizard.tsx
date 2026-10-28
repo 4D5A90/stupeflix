@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useRegistry } from "../hooks/useRegistry";
 import {
@@ -7,11 +7,17 @@ import {
 	type StepId,
 	buildDefaultConfig,
 } from "../types/setup";
-import { StepIndicator } from "./StepIndicator";
+import { StepNav } from "./StepNav";
 import { CredentialsStep } from "./steps/CredentialsStep";
-import { PathsStep } from "./steps/PathsStep";
-import { ProgressStep } from "./steps/ProgressStep";
-import { ServicesStep } from "./steps/ServicesStep";
+import { type BasePath, INITIAL_BASE_PATH, PathsStep } from "./steps/PathsStep";
+import { ProgressStep, type SetupPhase } from "./steps/ProgressStep";
+import {
+	INITIAL_SERVICES_CHOICE,
+	type ServicesChoice,
+	ServicesStep,
+} from "./steps/ServicesStep";
+import { NavLayout } from "./ui/NavLayout";
+import { Shell, Spinner } from "./ui/Shell";
 
 interface WizardProps {
 	onComplete?: () => void;
@@ -20,12 +26,29 @@ interface WizardProps {
 export function Wizard({ onComplete }: WizardProps) {
 	const { data: registry, isLoading } = useRegistry();
 	const [step, setStep] = useState<StepId>("paths");
+	// Reported by the Setup step, which owns the run: the nav locks once it has
+	// started and ticks everything once it is ready.
+	const [phase, setPhase] = useState<SetupPhase>("review");
+
+	// A step is a new page now, taller than the window: arriving on one halfway
+	// down, where the previous step's Next button was, reads as a broken jump.
+	// A block, not an arrow expression: Chrome's scrollTo now returns a Promise,
+	// and an effect that returns one crashes React on cleanup.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: runs on step change only
+	useEffect(() => {
+		window.scrollTo(0, 0);
+	}, [step]);
 
 	const defaultConfig = useMemo(
 		() => buildDefaultConfig(registry ?? []),
 		[registry],
 	);
 	const [config, setConfig] = useState<SetupConfig | null>(null);
+	// Input that is not configuration, held here for the same reason `config`
+	// is: only one step is mounted at a time, so a step's own state is gone by
+	// the time the user comes back to it.
+	const [base, setBase] = useState<BasePath>(INITIAL_BASE_PATH);
+	const [choice, setChoice] = useState<ServicesChoice>(INITIAL_SERVICES_CHOICE);
 
 	const activeConfig = config ?? defaultConfig;
 
@@ -57,69 +80,92 @@ export function Wizard({ onComplete }: WizardProps) {
 	const handleRestart = useCallback(() => {
 		setStep("paths");
 		setConfig(null);
+		setBase(INITIAL_BASE_PATH);
+		setChoice(INITIAL_SERVICES_CHOICE);
+		setPhase("review");
 	}, []);
 
 	if (isLoading || !registry) {
 		return (
-			<div className="flex items-center justify-center py-12">
-				<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
-			</div>
+			<Shell mode="light">
+				<Spinner />
+			</Shell>
 		);
 	}
 
 	return (
-		<>
-			<StepIndicator current={step} />
+		<Shell mode="light">
+			<NavLayout
+				title="Set up your stack"
+				label="Setup steps"
+				live={step === "progress"}
+				nav={
+					<StepNav
+						current={step}
+						locked={step === "progress" && phase !== "review"}
+						done={phase === "ready"}
+						onGo={setStep}
+					/>
+				}
+			>
+				{step === "paths" ? (
+					<PathsStep
+						config={activeConfig}
+						onChange={setConfig}
+						base={base}
+						onBaseChange={setBase}
+						onNext={goToServices}
+						onCancel={goToHome}
+					/>
+				) : null}
 
-			{step === "paths" ? (
-				<PathsStep
-					config={activeConfig}
-					onChange={setConfig}
-					onNext={goToServices}
-					onCancel={goToHome}
-				/>
-			) : null}
+				{step === "services" ? (
+					<ServicesStep
+						registry={registry}
+						config={activeConfig}
+						onChange={setConfig}
+						choice={choice}
+						onChoiceChange={setChoice}
+						onNext={goToCredentials}
+						onBack={goToPaths}
+					/>
+				) : null}
 
-			{step === "services" ? (
-				<ServicesStep
-					registry={registry}
-					config={activeConfig}
-					onChange={setConfig}
-					onNext={goToCredentials}
-					onBack={goToPaths}
-				/>
-			) : null}
+				{step === "credentials" ? (
+					<CredentialsStep
+						registry={registry}
+						config={activeConfig}
+						onChange={setConfig}
+						onNext={goToProgress}
+						onBack={goToServices}
+					/>
+				) : null}
 
-			{step === "credentials" ? (
-				<CredentialsStep
-					registry={registry}
-					config={activeConfig}
-					onChange={setConfig}
-					onNext={goToProgress}
-					onBack={goToServices}
-				/>
-			) : null}
+				{step === "progress" ? (
+					<ProgressStep
+						registry={registry}
+						config={activeConfig}
+						onStart={handleStartSetup}
+						onBack={goToCredentials}
+						onRestart={handleRestart}
+						onComplete={onComplete}
+						onPhase={setPhase}
+					/>
+				) : null}
 
-			{step === "progress" ? (
-				<ProgressStep
-					registry={registry}
-					config={activeConfig}
-					onStart={handleStartSetup}
-					onBack={goToCredentials}
-					onRestart={handleRestart}
-					onComplete={onComplete}
-				/>
-			) : null}
-
-			{startSetup.error ? (
-				<div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg">
-					<p className="text-red-300 text-sm">
+				{/* The run was refused before it began (400, 409): under the step's
+			    own buttons, where the click that caused it was. */}
+				{startSetup.error ? (
+					<p
+						role="alert"
+						className="rounded bg-fail-bg p-4 text-sm font-bold text-fail"
+					>
 						{startSetup.error instanceof Error
 							? startSetup.error.message
 							: "Failed to start setup"}
 					</p>
-				</div>
-			) : null}
-		</>
+				) : null}
+			</NavLayout>
+		</Shell>
 	);
 }

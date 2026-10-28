@@ -3,14 +3,12 @@ import { useState } from "react";
 import { api } from "../api/client";
 
 /**
- * The templates section's own state, held here rather than in the section
- * itself: switching to the install or reconfigure screen unmounts everything the
- * dashboard renders, and an accordion that refolds behind your back — or a
- * confirmation that vanishes — would be a screen change you did not ask for.
+ * Reloading and uploading templates, and the short-lived "Reloaded N" that
+ * confirms a reload. Everything that caches the catalogue is invalidated on
+ * success, so a new template shows up wherever it is listed.
  */
 export function useTemplateCatalogue() {
 	const queryClient = useQueryClient();
-	const [open, setOpen] = useState(false);
 	const [reloaded, setReloaded] = useState<number | null>(null);
 
 	// `/templates/reload` rereads the stacks directory too, so a stack added or
@@ -44,7 +42,7 @@ export function useTemplateCatalogue() {
 		onSuccess: invalidateCatalogue,
 	});
 
-	return { open, setOpen, reloaded, reload, upload };
+	return { reloaded, reload, upload };
 }
 
 export type TemplateCatalogue = ReturnType<typeof useTemplateCatalogue>;

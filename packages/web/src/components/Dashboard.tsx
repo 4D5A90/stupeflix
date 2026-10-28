@@ -3,15 +3,17 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { useCopyCredentials } from "../hooks/useCopyCredentials";
 import { useServiceActions } from "../hooks/useServiceActions";
-import { useTemplateCatalogue } from "../hooks/useTemplateCatalogue";
+import { Billboard } from "./dashboard/Billboard";
 import { LibraryTiles } from "./dashboard/LibraryTiles";
 import { ServiceSetupScreen } from "./dashboard/ServiceSetupScreen";
 import { ServicesSection } from "./dashboard/ServicesSection";
-import { TemplatesSection } from "./dashboard/TemplatesSection";
+import { ActionIcon } from "./ui/ActionIcon";
+import { Button, buttonClass } from "./ui/Button";
+import { Shell, Spinner } from "./ui/Shell";
 
 interface DashboardProps {
-	onReconfigure: () => void;
 	onInstall: (serviceId: string, serviceName: string) => void;
+	onSettings: () => void;
 }
 
 /**
@@ -20,7 +22,7 @@ interface DashboardProps {
  * queries stay here rather than in the sections, because switching screens is a
  * `return` — the sections unmount, this component does not.
  */
-export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
+export function Dashboard({ onInstall, onSettings }: DashboardProps) {
 	const { data: services, isLoading } = useQuery({
 		queryKey: ["services"],
 		queryFn: api.getServices,
@@ -39,32 +41,32 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 		refetchInterval: 30000,
 	});
 
-	const { data: templates } = useQuery({
-		queryKey: ["templates"],
-		queryFn: api.getTemplates,
-	});
-
 	const { data: credentials } = useQuery({
 		queryKey: ["credentials"],
 		queryFn: api.getCredentials,
 	});
 	const [adding, setAdding] = useState(false);
 	const [reconfiguring, setReconfiguring] = useState<string | null>(null);
+	// Which row is on the billboard. A name, not an index, and resolved against
+	// the live list on every render: a removed service falls back to the first
+	// row instead of leaving the billboard pointing at nothing.
+	const [selected, setSelected] = useState<string | null>(null);
 
 	const actions = useServiceActions();
 	const copy = useCopyCredentials(credentials);
-	const catalogue = useTemplateCatalogue();
 
 	if (isLoading || !services) {
 		return (
-			<div className="flex items-center justify-center py-12">
-				<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
-			</div>
+			<Shell mode="dark">
+				<Spinner />
+			</Shell>
 		);
 	}
 
 	const enabledServices = services.filter((s) => s.enabled);
 	const enabledIds = new Set(enabledServices.map((s) => s.name));
+	const current =
+		enabledServices.find((s) => s.name === selected) ?? enabledServices[0];
 	const uninstalled = (registry ?? []).filter((svc) => !enabledIds.has(svc.id));
 	// Removing a service keeps its own settings on disk. The install screen asks
 	// what to do with them, and only for the services that have any.
@@ -121,21 +123,64 @@ export function Dashboard({ onReconfigure, onInstall }: DashboardProps) {
 	}
 
 	return (
-		<div className="space-y-6">
-			<LibraryTiles library={library} />
+		<Shell
+			mode="dark"
+			overlay={Boolean(current)}
+			actions={
+				<>
+					{/* Hidden rather than disabled when every template is installed:
+					    there is nothing it could lead to. */}
+					{uninstalled.length > 0 ? (
+						<Button size="sm" onClick={() => setAdding(true)}>
+							Add service
+						</Button>
+					) : null}
+					<button
+						type="button"
+						onClick={onSettings}
+						className={`${buttonClass("ghost", "sm")} pl-2.5`}
+					>
+						<ActionIcon name="cog" className="h-5 w-5" />
+						Settings
+					</button>
+				</>
+			}
+		>
+			{current ? (
+				<Billboard
+					service={current}
+					credentials={credentials}
+					actions={actions}
+					copy={copy}
+					notes={
+						(registry ?? []).find((svc) => svc.id === current.name)?.notes ?? []
+					}
+					onReconfigure={() => setReconfiguring(current.name)}
+				/>
+			) : null}
 
-			<ServicesSection
-				services={enabledServices}
-				uninstalled={uninstalled.length}
-				credentials={credentials}
-				actions={actions}
-				copy={copy}
-				onReconfigureAll={onReconfigure}
-				onReconfigureService={setReconfiguring}
-				onAdd={() => setAdding(true)}
-			/>
-
-			<TemplatesSection templates={templates} catalogue={catalogue} />
-		</div>
+			<div
+				className={`flex flex-wrap items-start gap-10 px-[4%] pt-10 ${current ? "relative isolate flex-1 lg:-mt-10" : ""}`}
+			>
+				{/* The page is a sheet of grey glass laid on a black ground, to the
+				    bottom of the screen (past the Shell's padding). From `lg` up it
+				    rides over the billboard's last 2.5rem with the glyph showing
+				    through; a grey ground behind it showed as a band through the
+				    glass. */}
+				{current ? (
+					<div
+						aria-hidden="true"
+						className="glass-sheet absolute inset-x-0 -bottom-[72px] top-0 -z-10"
+					/>
+				) : null}
+				<ServicesSection
+					services={enabledServices}
+					registry={registry ?? []}
+					selected={current?.name}
+					onSelect={setSelected}
+				/>
+				<LibraryTiles library={library} />
+			</div>
+		</Shell>
 	);
 }

@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadTemplates } from "../lib/service-registry.js";
 import { configuredDb } from "../test/fake-db.js";
-import { setupRoutes } from "./setup.js";
+import { failRun, setupRoutes } from "./setup.js";
 
 const FIXTURES = fileURLToPath(new URL("../test/fixtures", import.meta.url));
 
@@ -69,6 +69,27 @@ describe("POST /setup/preview", () => {
 		const keys = Object.keys(steps).filter((k) => k.includes("_"));
 		expect(keys.some((k) => k.endsWith("_Films"))).toBe(true);
 		expect(keys.some((k) => k.endsWith("_Movies"))).toBe(false);
+	});
+});
+
+describe("a run that throws", () => {
+	it("fails the step it was on, so the status says it stopped", async () => {
+		const db = configuredDb();
+		db.set("setup.status.compose", "completed");
+		db.set("setup.status.containers", "in_progress");
+
+		failRun(db, new Error("unable to get image"));
+
+		const res = await setupRoutes(db).request("/status");
+		const status = (await res.json()) as {
+			global: string;
+			steps: Record<string, string>;
+			error: string;
+		};
+		expect(status.global).toBe("failed");
+		expect(status.steps.containers).toBe("failed");
+		expect(status.steps.compose).toBe("completed");
+		expect(status.error).toBe("unable to get image");
 	});
 });
 
