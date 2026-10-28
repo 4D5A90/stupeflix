@@ -61,7 +61,7 @@ export function ServicesSection({
 							>
 								{/* The glyph as a watermark, cut by the corner. */}
 								<span
-									className={`pointer-events-none absolute -bottom-[18px] -right-3.5 h-[110px] w-[110px] ${off ? "opacity-[0.12] saturate-[0.15]" : "opacity-[0.22]"}`}
+									className={`pointer-events-none absolute -bottom-[18px] -right-3.5 h-[110px] w-[110px] ${off ? "opacity-[0.12] saturate-[0.15]" : "opacity-[0.3]"}`}
 									style={{ color: serviceTint(service.name).color }}
 								>
 									<ServiceIcon id={service.name} size="fill" />

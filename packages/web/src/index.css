@@ -18,27 +18,27 @@
 	--accent: 229 9 20;
 	--accent-hover: color-mix(in srgb, rgb(var(--accent)) 84%, black);
 	--accent-pressed: color-mix(in srgb, rgb(var(--accent)) 73%, black);
-	--stage: 0 0 0;
+	--stage: 11 13 20;
 }
 
 :root,
 .mode-dark {
-	--page: 20 20 20;
-	--card: 35 35 35;
-	--raised: 51 51 51;
+	--page: 20 22 31;
+	--card: 34 37 50;
+	--raised: 50 54 70;
 	--fg: 255 255 255;
-	--muted: 179 179 179;
-	--faint: 128 128 128;
-	--track: 95 95 95;
-	--field: 70 70 70; /* a hairline: hover and focus carry the edge */
+	--muted: 180 183 196;
+	--faint: 128 132 148;
+	--track: 92 97 115;
+	--field: 68 72 90; /* a hairline: hover and focus carry the edge */
 	--ok: 70 211 105;
 	--warn: 227 166 74;
 	--fail: 246 67 79;
 	--link: 68 142 244;
 	--link-hover: 120 172 246;
-	--line: rgb(255 255 255 / 0.12);
+	--line: rgb(200 210 255 / 0.12);
 	--fail-bg: rgb(246 67 79 / 0.12);
-	--secondary: rgb(109 109 110 / 0.7);
+	--secondary: rgb(109 112 130 / 0.7);
 	/* Service tiles: one formula, `hsl(<hue> var(--tile-s) var(--tile-l))`,
 	   and the mode picks how light the ground and the glyph on it are.
 	   `glyph-dir` is which way a bright tone moves: away from the ground. */
@@ -131,8 +131,8 @@ body {
 		--edge: inset 0 1px 0 rgb(var(--fg) / 0.08);
 		background: linear-gradient(
 				135deg,
-				hsl(var(--h) calc(30% * var(--c)) 14% / 0.65),
-				hsl(var(--h) calc(22% * var(--c)) 8% / 0.35) 70%
+				hsl(var(--h) calc(48% * var(--c)) 20% / 0.8),
+				hsl(var(--h) calc(34% * var(--c)) 11% / 0.45) 70%
 			), rgb(var(--fg) / 0.02);
 		box-shadow: var(--edge), inset 0 0 0 1px rgb(var(--fg) / 0.05);
 		transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.9s
