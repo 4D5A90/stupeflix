@@ -186,7 +186,7 @@ body {
 			-8px rgb(var(--fg) / 0.25);
 	}
 	/* The billboard takes the hue of the service it shows (`--fh`), as a glow
-	   behind its glyph. Registered below so the hue itself animates: picking
+	   behind its glyph. Registered above (`@property --fh`) so the hue itself animates: picking
 	   another card slides from one colour to the next instead of cutting. */
 	.billboard-halo {
 		background: radial-gradient(

@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import type { CSSProperties } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { Credentials, ServiceInfo } from "../../api/client";
 import type { CopyCredentials } from "../../hooks/useCopyCredentials";
@@ -45,6 +45,12 @@ export function Billboard({
 	const flags = conditions(service);
 	const down = service.status === "exited";
 	const hue = serviceHue(service.name);
+	// `--fh` transitions as a plain number, so it is carried unwrapped: 340 →
+	// 25 goes on to 385 (which hsl() reads as 25) instead of sweeping back
+	// through every hue between. A full-colour logo keeps the last hue and
+	// fades the halo out. Idempotent, so a second render changes nothing.
+	const haloHue = useRef(hue ?? 0);
+	if (hue !== null) haloHue.current = nearestTurn(haloHue.current, hue);
 	// A headless service declares no port, so there is nothing to open.
 	//
 	// The host comes from the page, not from a constant: a service is reachable
@@ -82,13 +88,11 @@ export function Billboard({
 		>
 			{/* The service's own hue as a glow. A full-colour logo has none, and
 			    a stopped service dims it, as it dims the glyph. */}
-			{hue === null ? null : (
-				<div
-					aria-hidden="true"
-					className={`billboard-halo pointer-events-none absolute inset-0 ${down ? "opacity-30" : ""}`}
-					style={{ "--fh": hue } as CSSProperties}
-				/>
-			)}
+			<div
+				aria-hidden="true"
+				className={`billboard-halo pointer-events-none absolute inset-0 ${hue === null ? "opacity-0" : down ? "opacity-30" : ""}`}
+				style={{ "--fh": haloHue.current } as CSSProperties}
+			/>
 			{/* A watermark, not a poster: the glyph faint, taller than the
 			    billboard, its tip kept clear of the browser's top edge. Decoration only — it hides at
 			    phone width rather than sit under the text. The bottom is left
@@ -239,4 +243,9 @@ export function Billboard({
 			</div>
 		</section>
 	);
+}
+
+/** `next` as the turn of the wheel nearest `from`, at most 180° away. */
+function nearestTurn(from: number, next: number): number {
+	return from + ((((next - from) % 360) + 540) % 360) - 180;
 }
