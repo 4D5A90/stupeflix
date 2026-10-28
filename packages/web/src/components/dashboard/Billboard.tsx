@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import type { CSSProperties } from "react";
 import { useState } from "react";
 import { api } from "../../api/client";
 import type { Credentials, ServiceInfo } from "../../api/client";
@@ -7,7 +8,7 @@ import type { ServiceActions } from "../../hooks/useServiceActions";
 import { ActionIcon } from "../ui/ActionIcon";
 import { Button, buttonClass } from "../ui/Button";
 import { Collapse } from "../ui/Collapse";
-import { ServiceIcon, serviceTint } from "../ui/ServiceIcon";
+import { ServiceIcon, serviceHue, serviceTint } from "../ui/ServiceIcon";
 import { ServiceInfoRow } from "./ServiceInfoRow";
 import { ServiceMenu } from "./ServiceMenu";
 import { conditions } from "./serviceStatus";
@@ -43,6 +44,7 @@ export function Billboard({
 	const label = service.label ?? service.name;
 	const flags = conditions(service);
 	const down = service.status === "exited";
+	const hue = serviceHue(service.name);
 	// A headless service declares no port, so there is nothing to open.
 	//
 	// The host comes from the page, not from a constant: a service is reachable
@@ -78,6 +80,15 @@ export function Billboard({
 			aria-label={label}
 			className="relative flex items-end bg-stage lg:-mt-[72px] lg:pb-16 lg:pt-[72px]"
 		>
+			{/* The service's own hue as a glow. A full-colour logo has none, and
+			    a stopped service dims it, as it dims the glyph. */}
+			{hue === null ? null : (
+				<div
+					aria-hidden="true"
+					className={`billboard-halo pointer-events-none absolute inset-0 ${down ? "opacity-30" : ""}`}
+					style={{ "--fh": hue } as CSSProperties}
+				/>
+			)}
 			{/* A watermark, not a poster: the glyph faint, taller than the
 			    billboard, its tip kept clear of the browser's top edge. Decoration only — it hides at
 			    phone width rather than sit under the text. The bottom is left
@@ -89,7 +100,7 @@ export function Billboard({
 				className="pointer-events-none absolute inset-0 hidden [clip-path:inset(0_0_-50%_0)] lg:block"
 			>
 				<div
-					className={`absolute right-[20%] top-6 h-[20rem] w-[20rem] ${down ? "opacity-5" : "opacity-10"}`}
+					className={`absolute right-[20%] top-6 h-[20rem] w-[20rem] ${down ? "opacity-[0.08]" : "opacity-20"}`}
 					style={{ color: serviceTint(service.name).color }}
 				>
 					<ServiceIcon id={service.name} size="fill" />

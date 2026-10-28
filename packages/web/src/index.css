@@ -79,6 +79,14 @@ body {
 	@apply bg-page text-fg font-sans antialiased;
 }
 
+/* A number, not a bare custom property, so `.billboard-halo` can transition
+   it — an unregistered one swaps at once. */
+@property --fh {
+	syntax: "<number>";
+	inherits: true;
+	initial-value: 0;
+}
+
 /*
  * A native <select> keeps its menu, but not the platform's arrow: Chrome pins
  * that one to the border whatever the padding. The chevron is drawn here
@@ -177,7 +185,24 @@ body {
 		box-shadow: var(--edge), inset 0 0 0 1px rgb(var(--fg) / 0.35), 0 0 24px
 			-8px rgb(var(--fg) / 0.25);
 	}
+	/* The billboard takes the hue of the service it shows (`--fh`), as a glow
+	   behind its glyph. Registered below so the hue itself animates: picking
+	   another card slides from one colour to the next instead of cutting. */
+	.billboard-halo {
+		background: radial-gradient(
+				55% 140% at 72% 45%,
+				hsl(var(--fh) 65% 32% / 0.55),
+				transparent 70%
+			),
+			radial-gradient(
+				90% 100% at 100% 0%,
+				hsl(var(--fh) 50% 22% / 0.35),
+				transparent 70%
+			);
+		transition: --fh 0.9s cubic-bezier(0.25, 0.1, 0.25, 1), opacity 0.6s ease;
+	}
 	@media (prefers-reduced-motion: reduce) {
+		.billboard-halo,
 		.tint-card,
 		.tint-card:hover,
 		.tint-card[aria-pressed="true"] {
