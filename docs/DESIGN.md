@@ -32,43 +32,48 @@ file and the code disagree, the code wins and this file is the one to fix.
 
 ## Tokens
 
-RGB channels (`--page: 20 20 20`) so `/alpha` works (`bg-fg/10`). `line`,
+RGB channels (`--page: 20 22 31`) so `/alpha` works (`bg-fg/10`). `line`,
 `fail-bg` and `secondary` are whole values and are used as they are.
 
 | Token | Dark (dashboard, night) | Light | Role |
 |---|---|---|---|
-| `page` | `#141414` | `#F4F4F4` | Screen ground |
-| `card` | `#232323` | `#FFFFFF` | Cards, fields, selected nav item |
-| `raised` | `#333333` | `#EDEDED` | One step above a card |
+| `page` | `#14161F` | `#F4F4F4` | Screen ground |
+| `card` | `#222532` | `#FFFFFF` | Cards, fields, selected nav item |
+| `raised` | `#323646` | `#EDEDED` | One step above a card |
 | `fg` | `#FFFFFF` | `#221F1F` | Text, `solid` button fill, focus ink |
-| `muted` | `#B3B3B3` | `#6D6D6D` | Secondary text |
-| `faint` | `#808080` | `#6D6D6D` | Tertiary text, field hover edge |
-| `track` | `#5F5F5F` | `#D6D6D6` | Switch off, progress track |
-| `field` | `#464646` | `#C8C8C8` | Field hairline at rest |
+| `muted` | `#B4B7C4` | `#6D6D6D` | Secondary text |
+| `faint` | `#808494` | `#6D6D6D` | Tertiary text, field hover edge |
+| `track` | `#5C6173` | `#D6D6D6` | Switch off, progress track |
+| `field` | `#44485A` | `#C8C8C8` | Field hairline at rest |
 | `ok` | `#46D369` | `#1E7A3C` | Running, done |
 | `warn` | `#E3A64A` | `#8A5A00` | Degraded, "worth knowing" |
 | `fail` | `#F6434F` | `#C11119` | Exited, refused field, failed step |
 | `fail-bg` | `fail` at 12% | `#FDECEC` | Failed badge ground |
 | `link` / hover | `#448EF4` / `#78ACF6` | `#0071EB` / `#005BBD` | Links |
-| `line` (default border) | white at 12% | `#E6E6E6` | Dividers |
-| `secondary` | `rgb(109 109 110 / 0.7)` | `fg` at 8% | `secondary` button |
+| `line` (default border) | `rgb(200 210 255)` at 12% | `#E6E6E6` | Dividers |
+| `secondary` | `rgb(109 112 130 / 0.7)` | `fg` at 8% | `secondary` button |
 
 Shared across modes (`:root`):
 
 | Token | Value | Role |
 |---|---|---|
 | `accent` | `#E50914` (`229 9 20`) | Next step. Hover = 84% mixed with black, pressed = 73%. Changing it is one line. |
-| `stage` | `#000000` | Top bar, dashboard ground |
+| `stage` | `#0B0D14` | Top bar, dashboard ground |
 
 Service tiles: `hsl(<hue> var(--tile-s) var(--tile-l))`. Dark mode uses
 34% / 18% with the glyph at 70% / 64%, and light mode uses 45% / 92% with the
 glyph at 55% / 34%.
 
-### Dashboard grey ladder (computed from the alphas)
+### Dashboard ink ladder (computed from the alphas)
 
-black stage → glass sheet behind the cards `#141414` (`page`) → resting card
-≈ `#191919` (library tile) → secondary button ≈ `#4c4c4c`. Service cards
-leave the ladder: their ground is their hue.
+The dark neutrals lean towards an ink blue (hue ≈ 230) instead of a pure grey:
+on `#000` and `#141414` the service tints read as mud, and a biased neutral
+ties the cards to the ground they sit on. The night mode of the light screens
+takes the same tokens.
+
+ink stage `#0B0D14` → glass sheet behind the cards `#14161F` (`page`) →
+resting card ≈ `#191B24` (library tile) → secondary button ≈ `#505261`.
+Service cards leave the ladder: their ground is their hue.
 
 ## Type
 
@@ -154,7 +159,7 @@ Top bar (overlay): `Add service` (primary sm, hidden when nothing is left to
 install) and `Settings` (ghost sm, cog).
 
 **Billboard** (`dashboard/Billboard.tsx`): the selected service on
-`bg-stage`, starting under the bar from `lg` (`lg:-mt-[72px] lg:pt-[72px]
+`bg-stage`, under a halo of its own hue, starting under the bar from `lg` (`lg:-mt-[72px] lg:pt-[72px]
 lg:pb-16`).
 - Name only, with no status word and no category, since the picked card shows
   both. Below it are the `info:` readouts row (15px muted), then condition
@@ -166,8 +171,13 @@ lg:pb-16`).
   the template has `notes`, opens them in a `Collapse` panel under the buttons,
   closed by its X or by picking another service.
 - Watermark: the service glyph at 20rem, tinted, `right-[20%]`, `top-6` so its
-  tip stays clear of the browser's edge, opacity 10% (5% when exited). It shows
+  tip stays clear of the browser's edge, opacity 20% (8% when exited). It shows
   from `lg` only, and is open at the bottom so the glass passes over it.
+- Halo: `.billboard-halo`, two radial gradients in `hsl(var(--fh) …)` — 65% /
+  32% at 55% alpha behind the glyph, 50% / 22% at 35% from the top-right
+  corner. `--fh` is the `serviceHue`, registered with `@property` so picking
+  another card slides the hue over 0.9s rather than cutting. At every width.
+  None for a full-colour logo (no hue); 30% opacity when exited.
 
 **Glass sheet**: the page below the billboard is one full-width, square-cornered
 `.glass-sheet` (absolute, `-z-10`, down to the screen's bottom past the Shell padding). From
@@ -184,9 +194,10 @@ showing through.
 all are up, `warn` when some are, `faint` when none are). Cards sit in a grid
 (`minmax(250px,1fr)`, `gap-5`: the zoom needs the room). Each card is
 `.tint-card`, 104px high, `rounded-[10px]`: a 135° gradient in the service's
-hue (`serviceHue`, `--h`; `--c: 0` turns it grey for a full-colour logo), name
+hue (`serviceHue`, `--h`; `--c: 0` turns it grey for a full-colour logo) —
+48% / 20% at 80% alpha, to 34% / 11% at 45% by 70% — name
 (17px bold) and category at the top, the glyph as a 110px watermark cut by the
-bottom-right corner (22% opacity), and the status badge at the bottom
+bottom-right corner (30% opacity), and the status badge at the bottom
 (`rowStatus`): a glass pill (`bg-fg/[0.07]`, inset 1px rim) with white text,
 colour only in its 7px dot (`TONE_DOT`). Every badge is `w-[5.5rem]` whatever
 the word, content centred; "Incomplete" is the longest and fits. A non-running
