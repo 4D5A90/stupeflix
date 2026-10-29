@@ -163,7 +163,9 @@ install) and `Settings` (ghost sm, cog).
 lg:pb-16`).
 - Name only, with no status word and no category, since the picked card shows
   both. Below it are the `info:` readouts row (15px muted), then condition
-  reasons in `warn`, then the buttons.
+  reasons in `warn`, then the buttons. The readouts row keeps its one line
+  (`min-h-[1lh]`) for a service without `info:`, so switching cards never moves
+  the buttons. Reasons are a state, not a slot, and do push them down.
 - Buttons: `Restart` (primary, only when exited), `Open` (solid with a play
   glyph, absent when there is no port or the service is down), the template's
   `actions:` (secondary), `Credentials` (secondary, key → check "Copied"), then

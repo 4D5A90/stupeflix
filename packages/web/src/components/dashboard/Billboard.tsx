@@ -116,12 +116,12 @@ export function Billboard({
 					{label}
 				</h1>
 				{/* No status word: the selected row beside it already says it. What
-				    the service reports about itself is the line's only content. */}
-				{service.info?.length ? (
-					<div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[15px] text-muted">
-						<ServiceInfoRow service={service} />
-					</div>
-				) : null}
+				    the service reports about itself is the line's only content. The
+				    line is kept, one line high, for a service with nothing to
+				    report: picking another card must not move the buttons. */}
+				<div className="flex min-h-[1lh] flex-wrap gap-x-3.5 gap-y-1.5 text-[15px] text-muted">
+					<ServiceInfoRow service={service} />
+				</div>
 				{/* Why it is not right, in the template's words — the row can only
 				    say "Unhealthy". */}
 				{flags.map((c) =>
