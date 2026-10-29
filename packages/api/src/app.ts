@@ -10,7 +10,7 @@ import { parse } from "yaml";
 import type { Db } from "./db.js";
 import { accessToken, tokenGate } from "./lib/auth.js";
 import { containerStatus } from "./lib/container-status.js";
-import { ROOT, SERVICE_HOST, WEB_DIR } from "./lib/env.js";
+import { PUBLIC_HOST, ROOT, SERVICE_HOST, WEB_DIR } from "./lib/env.js";
 import { getLibraryStats } from "./lib/library-stats.js";
 import {
 	SKIPPED,
@@ -63,7 +63,9 @@ export function createApp(db: Db, webDir: string | undefined = WEB_DIR): Hono {
 	api.get("/health", (c) => c.json({ status: "ok" }));
 
 	/** Runtime environment, so the wizard can prefill paths when a host root is mounted. */
-	api.get("/runtime", (c) => c.json({ root: ROOT, serviceHost: SERVICE_HOST }));
+	api.get("/runtime", (c) =>
+		c.json({ root: ROOT, serviceHost: SERVICE_HOST, publicHost: PUBLIC_HOST }),
+	);
 
 	api.get("/registry", (c) => c.json(getServiceMetas()));
 

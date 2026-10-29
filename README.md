@@ -115,6 +115,7 @@ the container.
 |----------|-----------------|-------------|
 | `STUPEFLIX_ROOT` | `/srv/stupeflix` | Host directory mounted at the same path; prefills the wizard |
 | `STUPEFLIX_SERVICE_HOST` | `host.docker.internal` | Host where the service containers publish their ports |
+| `STUPEFLIX_PUBLIC_HOST` | *(the page's host)* | Host a browser opens the services on. Set it when the dashboard sits behind a reverse proxy on another machine, e.g. `$(ipconfig getifaddr en0)` (macOS) or `$(hostname -I \| awk '{print $1}')` (Linux) |
 | `STUPEFLIX_DB_PATH` | `/data/stupeflix.db` | SQLite database |
 | `STUPEFLIX_COMPOSE_FILE` | `/data/docker-compose.yml` | Generated compose file |
 | `STUPEFLIX_COMPOSE_PROJECT` | `stupeflix` | Compose project name |

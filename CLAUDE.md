@@ -386,6 +386,10 @@ so everything path- or host-related goes through `lib/env.ts`:
   `STUPEFLIX_ROOT` bind mount, which also prefills the wizard (`GET /runtime`).
 - Service containers publish on the host, so template URLs (`http://localhost:8096`)
   are rewritten to `STUPEFLIX_SERVICE_HOST` by `serviceUrl()`.
+- That is the API's view. A **browser** opens a service on the host it reached
+  the dashboard by, or on `STUPEFLIX_PUBLIC_HOST` when set — behind a reverse
+  proxy on another machine, the page's host is the proxy and no port answers.
+  A bare host, checked at boot like a pinned token.
 - Never call `docker` directly, and never build a command as a string: use
   `runCompose` / `runComposeSync` / `runDockerSync` from `lib/docker-cli.ts`.
   They pin `-f <generated file>` and the project name, and they take an **argv

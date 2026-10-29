@@ -18,6 +18,8 @@ services:
       TZ: ${TZ:-Europe/Paris}
       # Empty means "mint one and print it at startup", which is the default path.
       STUPEFLIX_TOKEN: ${STUPEFLIX_TOKEN:-}
+      # Empty means "the host the dashboard was opened on".
+      STUPEFLIX_PUBLIC_HOST: ${STUPEFLIX_PUBLIC_HOST:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

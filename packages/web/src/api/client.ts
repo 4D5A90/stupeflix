@@ -70,6 +70,8 @@ export interface RuntimeInfo {
 	/** Host directory mounted into the container, empty when running on the host */
 	root: string;
 	serviceHost: string;
+	/** Where a browser opens a service, when not the page's own host */
+	publicHost?: string;
 }
 
 export interface AppStatus {

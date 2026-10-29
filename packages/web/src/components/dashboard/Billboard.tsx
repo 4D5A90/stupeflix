@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CSSProperties } from "react";
 import { useRef, useState } from "react";
 import { api } from "../../api/client";
@@ -37,6 +37,10 @@ export function Billboard({
 	const queryClient = useQueryClient();
 	const { ranAction, runningAction, runAction } = actions;
 	const { copied, copyPassword } = copy;
+	const { data: runtime } = useQuery({
+		queryKey: ["runtime"],
+		queryFn: api.getRuntime,
+	});
 	const [restarting, setRestarting] = useState(false);
 	// Keyed by service, so picking another row closes it without an effect
 	const [helpFor, setHelpFor] = useState<string | null>(null);
@@ -56,12 +60,15 @@ export function Billboard({
 	// The host comes from the page, not from a constant: a service is reachable
 	// wherever the dashboard was reached — localhost from this machine, the LAN
 	// address from another one. Hardcoding `localhost` sent every remote browser
-	// to itself, so the link was dead from any other computer.
+	// to itself, so the link was dead from any other computer. Behind a
+	// reverse proxy on another machine the page's host is the proxy, so the
+	// deployment can name the services' host (`STUPEFLIX_PUBLIC_HOST`).
 	//
 	// The scheme stays http: the services publish plain ports, and borrowing an
 	// https page's scheme would point at a port that speaks no TLS.
+	const host = runtime?.publicHost ?? window.location.hostname;
 	const url = service.port
-		? `http://${window.location.hostname}:${service.port}${service.webUiPath ?? ""}`
+		? `http://${host}:${service.port}${service.webUiPath ?? ""}`
 		: null;
 	const secret =
 		credentials?.[service.name]?.pass ?? credentials?.[service.name]?.token;

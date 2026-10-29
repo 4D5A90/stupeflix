@@ -43,6 +43,23 @@ export const WASM_PATH = fromEnv("STUPEFLIX_SQL_WASM");
  */
 export const SERVICE_HOST = fromEnv("STUPEFLIX_SERVICE_HOST") ?? "127.0.0.1";
 
+/**
+ * The host a browser opens a service on, when it is not the one the dashboard
+ * was reached by. Behind a reverse proxy on another machine, the page's own
+ * host is the proxy, where no service port answers. Unset, the dashboard uses
+ * the page's host — right whenever the page and the services share a machine.
+ */
+export const PUBLIC_HOST = fromEnv("STUPEFLIX_PUBLIC_HOST");
+
+/** A name, an IPv4 or a bracketed IPv6 — nothing that adds to `http://<host>:<port>`. */
+const HOST_SHAPE = /^([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])$/;
+
+export function publicHostProblem(host: string): string | null {
+	return HOST_SHAPE.test(host)
+		? null
+		: "must be a bare host, like 192.168.1.17 — no scheme, port or path";
+}
+
 /** Ownership applied to service containers — process uid/gid is meaningless in a container. */
 export const PUID = fromEnv("PUID") ?? String(process.getuid?.() ?? 1000);
 export const PGID = fromEnv("PGID") ?? String(process.getgid?.() ?? 1000);

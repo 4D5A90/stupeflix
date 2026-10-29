@@ -3,7 +3,15 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import { initDb } from "./db.js";
 import { accessToken } from "./lib/auth.js";
-import { HOST, PORT, STACKS_DIR, TEMPLATES_DIR, TOKEN } from "./lib/env.js";
+import {
+	HOST,
+	PORT,
+	PUBLIC_HOST,
+	STACKS_DIR,
+	TEMPLATES_DIR,
+	TOKEN,
+	publicHostProblem,
+} from "./lib/env.js";
 import { getTemplateDefaults, loadTemplates } from "./lib/service-registry.js";
 import { loadStacks } from "./lib/stacks.js";
 
@@ -19,6 +27,10 @@ if (db.get("setup.global") === "in_progress") {
 	db.set("setup.global", "failed");
 	db.set("setup.error", "Server was restarted during setup");
 }
+
+// Like a pinned token: a malformed host would only show as dead Open links.
+const hostProblem = PUBLIC_HOST && publicHostProblem(PUBLIC_HOST);
+if (hostProblem) throw new Error(`STUPEFLIX_PUBLIC_HOST ${hostProblem}`);
 
 serve({ fetch: createApp(db).fetch, port: PORT, hostname: HOST });
 console.log(`Stupeflix running on http://localhost:${PORT}`);
