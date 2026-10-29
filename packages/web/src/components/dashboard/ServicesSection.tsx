@@ -49,9 +49,11 @@ export function ServicesSection({
 					total={services.length}
 				/>
 			</div>
+			{/* Positioned so each card's offsetLeft/Top is measured from the grid
+			    itself — `useTileDrag` places the held card from those. */}
 			<ol
 				ref={gridRef}
-				className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5"
+				className="relative grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5"
 			>
 				{order.flatMap((name) => {
 					const service = byName.get(name);
