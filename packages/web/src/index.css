@@ -125,10 +125,64 @@ body {
 		box-shadow: inset 0 1px 0 rgb(var(--fg) / 0.12), inset 0 0 0 1px
 			rgb(var(--fg) / 0.05), inset 0 18px 30px -18px rgb(var(--fg) / 0.12);
 	}
+	.glass-card,
+	.tint-card {
+		--glass-arc: radial-gradient(
+			130% 70% at 25% -20%,
+			rgb(var(--fg) / 0.08),
+			transparent 62%
+		);
+		--glass-depth: inset 0 -14px 22px -18px rgb(0 0 0 / 0.33);
+	}
 	.glass-card {
-		background: rgb(var(--fg) / 0.02);
-		box-shadow: inset 0 1px 0 rgb(var(--fg) / 0.07), inset 0 0 0 1px
-			rgb(var(--fg) / 0.05);
+		position: relative;
+		background: var(--glass-arc), rgb(var(--fg) / 0.02);
+		box-shadow: var(--glass-depth);
+	}
+	/* Liquid glass, light: a 1px rim that catches the light top-left and
+	   returns a little of it bottom-right, an arc of highlight across the top
+	   (`--glass-arc`) and some depth at the bottom (`--glass-depth`). Nothing
+	   is blurred, so the glyph and the glow stay as they are. */
+	.glass-card::before,
+	.tint-card::before {
+		content: "";
+		position: absolute;
+		inset: 0;
+		z-index: 3;
+		padding: 1px;
+		border-radius: inherit;
+		pointer-events: none;
+		background: linear-gradient(
+			140deg,
+			rgb(var(--fg) / 0.25),
+			rgb(var(--fg) / 0.04) 30%,
+			rgb(var(--fg) / 0.02) 62%,
+			rgb(var(--fg) / 0.11)
+		);
+		-webkit-mask: linear-gradient(#000 0 0) content-box,
+			linear-gradient(#000 0 0);
+		-webkit-mask-composite: xor;
+		mask: linear-gradient(#000 0 0) content-box exclude,
+			linear-gradient(#000 0 0);
+	}
+	.tint-card.is-gone::before {
+		content: none;
+	}
+	/* A soft light that follows the pointer over a card (`--mx`/`--my`). */
+	.tile-sheen {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		opacity: 0;
+		background: radial-gradient(
+			150px circle at var(--mx, 70%) var(--my, 0%),
+			rgb(var(--fg) / 0.054),
+			transparent 65%
+		);
+		transition: opacity 0.4s ease;
+	}
+	.tint-card:not(.is-gone):hover .tile-sheen {
+		opacity: 1;
 	}
 	/* A service card tinted by its own hue (`--h`; `--c: 0` for a full-colour
 	   logo, which takes none), and the tint follows the state only where it
@@ -136,8 +190,9 @@ body {
 	   ghost when missing. The glow arrives slowly on purpose — a click that flares at
 	   full strength read as a flash, not a selection. */
 	.tint-card {
-		--edge: inset 0 1px 0 rgb(var(--fg) / 0.08);
-		background: linear-gradient(
+		--edge: inset 0 1px 0 rgb(var(--fg) / 0.08), var(--glass-depth);
+		background: var(--glass-arc),
+			linear-gradient(
 				135deg,
 				hsl(var(--h) calc(48% * var(--c)) 20% / 0.8),
 				hsl(var(--h) calc(34% * var(--c)) 11% / 0.45) 70%
@@ -159,7 +214,8 @@ body {
 			hsl(var(--h) calc(70% * var(--c)) 50% / 0.55);
 	}
 	.tint-card.is-off {
-		background: linear-gradient(
+		background: var(--glass-arc),
+			linear-gradient(
 				135deg,
 				hsl(var(--h) calc(8% * var(--c)) 15% / 0.8),
 				hsl(var(--h) calc(5% * var(--c)) 9% / 0.4) 70%

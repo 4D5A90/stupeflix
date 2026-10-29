@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, PointerEvent } from "react";
 import type { ServiceInfo } from "../../api/client";
 import { type ServiceMeta, categoryLabel } from "../../types/setup";
 import { ServiceIcon, serviceHue, serviceTint } from "../ui/ServiceIcon";
@@ -51,6 +51,7 @@ export function ServicesSection({
 								type="button"
 								aria-pressed={service.name === selected}
 								onClick={() => onSelect(service.name)}
+								onPointerMove={followSheen}
 								className={`tint-card ${STATE_CLASS[status.tone]} relative flex h-[104px] w-full flex-col items-start justify-between overflow-hidden rounded-[10px] px-4 py-3.5 text-left`}
 								style={
 									{
@@ -59,6 +60,7 @@ export function ServicesSection({
 									} as CSSProperties
 								}
 							>
+								<span aria-hidden="true" className="tile-sheen" />
 								{/* The glyph as a watermark, cut by the corner. */}
 								<span
 									className={`pointer-events-none absolute -bottom-[18px] -right-3.5 h-[110px] w-[110px] ${off ? "opacity-[0.12] saturate-[0.15]" : "opacity-[0.3]"}`}
@@ -84,7 +86,7 @@ export function ServicesSection({
 								    up is not a wall of green. One width for every word, the word
 								    centred in it. */}
 								<span
-									className={`relative flex w-[5.5rem] flex-none items-center justify-center gap-1.5 rounded-full py-[5px] px-2 text-xs font-semibold leading-none shadow-[inset_0_0_0_1px_rgb(var(--fg)/0.08)] ${gone ? "" : "bg-fg/[0.07]"} ${status.tone === "faint" ? "text-muted" : "text-fg"}`}
+									className={`relative flex w-[5.5rem] flex-none items-center justify-center gap-1.5 rounded-full py-[5px] px-2 text-xs font-semibold leading-none shadow-[inset_0_1px_0_rgb(var(--fg)/0.13),inset_0_0_0_1px_rgb(var(--fg)/0.08)] ${gone ? "" : "bg-fg/[0.07]"} ${status.tone === "faint" ? "text-muted" : "text-fg"}`}
 								>
 									<span
 										aria-hidden="true"
@@ -99,6 +101,13 @@ export function ServicesSection({
 			</ol>
 		</section>
 	);
+}
+
+/** Where the pointer is on the card, for the sheen that follows it. */
+function followSheen(e: PointerEvent<HTMLElement>) {
+	const r = e.currentTarget.getBoundingClientRect();
+	e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
+	e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
 }
 
 /** Green only when it is good news — every service up. */

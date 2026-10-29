@@ -215,12 +215,22 @@ Missing glow white, having no hue worth showing. The glow fades in over 0.9s,
 the zoom over 0.35s. A glow at full strength on click reads as a flash.
 Reduced motion drops the zoom. Picking a card swaps the billboard.
 
+**Liquid glass, light**, over the tint and the glow rather than instead of
+them, and never a blur: the glyph stays where it is. A 1px rim (`::before`,
+mask-composite) runs from `fg` 25% top-left to 2% and back up to 11%
+bottom-right; an arc of highlight (`--glass-arc`, `fg` 8%) crosses the top; an
+inner shadow (`--glass-depth`) gives the bottom some depth; a 150px sheen at
+`fg` 5.4% follows the pointer on hover (`--mx`/`--my`). The badge takes a 13%
+top line. Missing has no glass. A version that blurred the glyph behind frost
+was rejected: nothing was recognisable any more.
+
 **Libraries** (`LibraryTiles.tsx`): `.glass-card rounded-lg` tiles, one per
 library (count at 22px) plus Disk (used of total, a 4px `track` bar filled with
 `accent`).
 
-`.glass-card`: `fg` at 2% with an inset 1px top line at 7% and 1px all round at
-5%, in the components layer so utilities win over it.
+`.glass-card`: `fg` at 2% under the same light liquid glass as the service
+cards (rim, arc, depth; no sheen), in the components layer so utilities win
+over it.
 
 ## Configure screens (light, or night)
 
