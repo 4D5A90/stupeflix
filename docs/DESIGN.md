@@ -224,13 +224,21 @@ inner shadow (`--glass-depth`) gives the bottom some depth; a 150px sheen at
 top line. Missing has no glass. A version that blurred the glyph behind frost
 was rejected: nothing was recognisable any more.
 
+**Reordering**: drag a card (past 6px, so a click stays a click; a finger holds
+350ms first), or Alt + ←/→ on a focused one, announced through `aria-live`. The
+others slide out of the way (FLIP, Web Animations); the held card rides at 105%
+with a drop shadow, and the six-dot grip top-right shows on hover only. The
+order lives in this browser (`hooks/useTileOrder.ts`, `stupeflix.tileOrder`),
+so each device arranges its own. A service the saved order does not know goes
+at the end, and the first card is also the billboard's default.
+
 **Libraries** (`LibraryTiles.tsx`): `.glass-card rounded-lg` tiles, one per
 library (count at 22px) plus Disk (used of total, a 4px `track` bar filled with
 `accent`).
 
 `.glass-card`: `fg` at 2% under the same light liquid glass as the service
 cards (rim, arc, depth; no sheen), in the components layer so utilities win
-over it.
+over it. Library tiles keep their order.
 
 ## Configure screens (light, or night)
 

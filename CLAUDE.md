@@ -29,7 +29,7 @@ pnpm dev              # Run api + web in parallel
 pnpm dev:api          # Run API only
 pnpm dev:web          # Run web only
 pnpm build            # Build all packages
-pnpm test             # Vitest (api package)
+pnpm test             # Vitest (api + web)
 pnpm lint             # Biome: lint + format + import sorting, both packages
 ```
 
@@ -327,8 +327,10 @@ Two invariants that are easy to break:
 
 ### Tests (`pnpm test`)
 
-Vitest, colocated as `src/**/*.test.ts`. Fixture templates live in
-`src/test/fixtures/` so the engine is exercised without touching the real ones.
+Vitest, colocated as `src/**/*.test.ts`, in both packages. Fixture templates
+live in `src/test/fixtures/` so the engine is exercised without touching the
+real ones. The web side only tests pure logic (`dashboard/tileOrder.test.ts`);
+anything driven by the pointer or the DOM is checked in a browser.
 
 `src/templates.test.ts` is the important one: it runs against the **real**
 `templates/` directory and asserts what the code no longer can — that every

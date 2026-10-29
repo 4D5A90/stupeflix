@@ -4,6 +4,7 @@ import { type ServiceMeta, categoryLabel } from "../../types/setup";
 import { ServiceIcon, serviceHue, serviceTint } from "../ui/ServiceIcon";
 import { CATEGORY_LABELS } from "./categories";
 import { TONE_DOT, type Tone, rowStatus } from "./serviceStatus";
+import { useTileDrag } from "./useTileDrag";
 
 /** How loud a card's tint is: the state, said a second time in colour. */
 const STATE_CLASS: Record<Tone, string> = {
@@ -17,18 +18,28 @@ const STATE_CLASS: Record<Tone, string> = {
  * The running stack as a grid: one card per enabled service, and picking a
  * card puts it on the billboard. A card says what it is and one word about its
  * state, and its tint says the state again; everything else is the billboard's.
+ * Dragging a card, or Alt + arrow, moves it: `services` arrives in the saved
+ * order and `onReorder` hands the new one back.
  */
 export function ServicesSection({
 	services,
 	registry,
 	selected,
 	onSelect,
+	onReorder,
 }: {
 	services: ServiceInfo[];
 	registry: ServiceMeta[];
 	selected?: string;
 	onSelect: (name: string) => void;
+	onReorder: (names: string[]) => void;
 }) {
+	const byName = new Map(services.map((s) => [s.name, s]));
+	const { order, gridRef, cardProps, announcement } = useTileDrag(
+		services.map((s) => s.name),
+		onReorder,
+		(name) => byName.get(name)?.label ?? name,
+	);
 	return (
 		<section className="flex min-w-0 flex-[999_1_640px] flex-col gap-2">
 			<div className="mb-2 flex flex-wrap items-baseline gap-x-3.5 gap-y-1.5">
@@ -38,21 +49,28 @@ export function ServicesSection({
 					total={services.length}
 				/>
 			</div>
-			<ol className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5">
-				{services.map((service) => {
+			<ol
+				ref={gridRef}
+				className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5"
+			>
+				{order.flatMap((name) => {
+					const service = byName.get(name);
+					if (!service) return [];
 					const meta = registry.find((svc) => svc.id === service.name);
 					const status = rowStatus(service);
 					const hue = serviceHue(service.name);
 					const off = status.tone === "fail";
 					const gone = status.tone === "faint";
 					return (
-						<li key={service.name}>
+						<li key={service.name} data-id={service.name}>
 							<button
 								type="button"
 								aria-pressed={service.name === selected}
+								aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
 								onClick={() => onSelect(service.name)}
+								{...cardProps(service.name)}
 								onPointerMove={followSheen}
-								className={`tint-card ${STATE_CLASS[status.tone]} relative flex h-[104px] w-full flex-col items-start justify-between overflow-hidden rounded-[10px] px-4 py-3.5 text-left`}
+								className={`tint-card ${STATE_CLASS[status.tone]} group relative flex h-[104px] w-full flex-col items-start justify-between overflow-hidden rounded-[10px] px-4 py-3.5 text-left`}
 								style={
 									{
 										"--h": hue ?? 0,
@@ -61,6 +79,7 @@ export function ServicesSection({
 								}
 							>
 								<span aria-hidden="true" className="tile-sheen" />
+								<GripIcon />
 								{/* The glyph as a watermark, cut by the corner. */}
 								<span
 									className={`pointer-events-none absolute -bottom-[18px] -right-3.5 h-[110px] w-[110px] ${off ? "opacity-[0.12] saturate-[0.15]" : "opacity-[0.3]"}`}
@@ -99,6 +118,9 @@ export function ServicesSection({
 					);
 				})}
 			</ol>
+			<p className="sr-only" aria-live="polite">
+				{announcement}
+			</p>
 		</section>
 	);
 }
@@ -108,6 +130,25 @@ function followSheen(e: PointerEvent<HTMLElement>) {
 	const r = e.currentTarget.getBoundingClientRect();
 	e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
 	e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
+}
+
+/** Six dots on hover: the only hint that a card can be picked up. */
+function GripIcon() {
+	return (
+		<svg
+			aria-hidden="true"
+			viewBox="0 0 24 24"
+			fill="currentColor"
+			className="pointer-events-none absolute right-2.5 top-2.5 z-[4] h-4 w-4 text-fg opacity-0 transition-opacity duration-200 group-hover:opacity-60"
+		>
+			<circle cx="9" cy="6" r="1.6" />
+			<circle cx="15" cy="6" r="1.6" />
+			<circle cx="9" cy="12" r="1.6" />
+			<circle cx="15" cy="12" r="1.6" />
+			<circle cx="9" cy="18" r="1.6" />
+			<circle cx="15" cy="18" r="1.6" />
+		</svg>
+	);
 }
 
 /** Green only when it is good news — every service up. */

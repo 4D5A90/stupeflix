@@ -3,10 +3,12 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { useCopyCredentials } from "../hooks/useCopyCredentials";
 import { useServiceActions } from "../hooks/useServiceActions";
+import { useTileOrder } from "../hooks/useTileOrder";
 import { Billboard } from "./dashboard/Billboard";
 import { LibraryTiles } from "./dashboard/LibraryTiles";
 import { ServiceSetupScreen } from "./dashboard/ServiceSetupScreen";
 import { ServicesSection } from "./dashboard/ServicesSection";
+import { applyOrder } from "./dashboard/tileOrder";
 import { ActionIcon } from "./ui/ActionIcon";
 import { Button, buttonClass } from "./ui/Button";
 import { Shell, Spinner } from "./ui/Shell";
@@ -51,6 +53,7 @@ export function Dashboard({ onInstall, onSettings }: DashboardProps) {
 	// the live list on every render: a removed service falls back to the first
 	// row instead of leaving the billboard pointing at nothing.
 	const [selected, setSelected] = useState<string | null>(null);
+	const [order, setOrder] = useTileOrder();
 
 	const actions = useServiceActions();
 	const copy = useCopyCredentials(credentials);
@@ -63,7 +66,14 @@ export function Dashboard({ onInstall, onSettings }: DashboardProps) {
 		);
 	}
 
-	const enabledServices = services.filter((s) => s.enabled);
+	// In the order the cards were dragged into, so the first card is also the
+	// one the billboard falls back to.
+	const enabled = new Map(
+		services.filter((s) => s.enabled).map((s) => [s.name, s]),
+	);
+	const enabledServices = applyOrder([...enabled.keys()], order).flatMap(
+		(name) => enabled.get(name) ?? [],
+	);
 	const enabledIds = new Set(enabledServices.map((s) => s.name));
 	const current =
 		enabledServices.find((s) => s.name === selected) ?? enabledServices[0];
@@ -178,6 +188,7 @@ export function Dashboard({ onInstall, onSettings }: DashboardProps) {
 					registry={registry ?? []}
 					selected={current?.name}
 					onSelect={setSelected}
+					onReorder={setOrder}
 				/>
 				<LibraryTiles library={library} />
 			</div>
