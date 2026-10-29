@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "./app.js";
 import { loadTemplates } from "./lib/service-registry.js";
 import { fakeDb } from "./test/fake-db.js";
@@ -177,5 +177,27 @@ describe("POST /templates/upload", () => {
 		const body = (await res.json()) as { problems: string[] };
 		expect(body.problems.length).toBeGreaterThan(1);
 		expect(readdirSync(dir)).toHaveLength(before);
+	});
+});
+
+/*
+ * Docker polls the healthcheck every few seconds, and the request log was
+ * nothing but its lines — burying the requests anyone reads it for.
+ */
+describe("the request log", () => {
+	afterEach(() => vi.restoreAllMocks());
+
+	it("leaves the healthcheck out, at both spellings", async () => {
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		const app = createApp(db(), undefined);
+		await app.request("/health");
+		await app.request("/api/health");
+		expect(log).not.toHaveBeenCalled();
+	});
+
+	it("still logs every other request", async () => {
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		await createApp(db(), undefined).request("/settings");
+		expect(log).toHaveBeenCalledWith(expect.stringContaining("/settings"));
 	});
 });

@@ -30,6 +30,9 @@ import { servicesRoutes } from "./routes/services.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { setupRoutes } from "./routes/setup.js";
 
+/** Bare in dev, prefixed when the image serves the wizard on the same port. */
+const HEALTH_PATHS = new Set(["/health", "/api/health"]);
+
 /**
  * The whole HTTP surface, assembled.
  *
@@ -204,7 +207,11 @@ export function createApp(db: Db, webDir: string | undefined = WEB_DIR): Hono {
 
 	const app = new Hono();
 
-	app.use("*", logger());
+	// Docker polls the healthcheck every few seconds; logged, it is the whole log.
+	const log = logger();
+	app.use("*", (c, next) =>
+		HEALTH_PATHS.has(c.req.path) ? next() : log(c, next),
+	);
 
 	/*
 	 * No `cors()`. The browser is same-origin in both mounts — Vite proxies /api in
